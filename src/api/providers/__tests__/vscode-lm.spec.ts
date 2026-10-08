@@ -62,8 +62,27 @@ vi.mock("vscode", () => {
 		LanguageModelTextPart: MockLanguageModelTextPart,
 		LanguageModelToolCallPart: MockLanguageModelToolCallPart,
 		LanguageModelToolResultPart: MockLanguageModelToolResultPart,
+		LanguageModelDataPart: class {
+			constructor(
+				public data: Uint8Array,
+				public mimeType: string,
+			) {}
+			static image(data: Uint8Array, mimeType: string) {
+				return new this(data, mimeType)
+			}
+		},
 		lm: {
 			selectChatModels: vi.fn(),
+		},
+		authentication: {
+			getSession: vi.fn(),
+		},
+		extensions: {
+			getExtension: vi.fn(),
+		},
+		commands: {
+			getCommands: vi.fn(),
+			executeCommand: vi.fn(),
 		},
 	}
 })
@@ -71,6 +90,7 @@ vi.mock("vscode", () => {
 import * as vscode from "vscode"
 import {
 	VsCodeLmHandler,
+	getVsCodeLmModels,
 	extractLeakedToolCalls,
 	trailingPartialToolMarkerLength,
 	middleOutTruncate,
@@ -3079,5 +3099,59 @@ describe("context-window tool_result truncation", () => {
 			expect(parts[0].type).toBe("text")
 			expect(String(parts[0].text)).toContain("characters truncated")
 		})
+	})
+})
+
+describe("getVsCodeLmModels", () => {
+	const liveModel = (overrides: Record<string, unknown> = {}) => ({
+		...mockLanguageModelChat,
+		id: "listed-model",
+		vendor: "copilot",
+		family: "listed-family",
+		...overrides,
+	})
+
+	beforeEach(() => vi.clearAllMocks())
+
+	it("describes each model by identity and by the capabilities the host reports", async () => {
+		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([
+			liveModel({ maxInputTokens: 50000, capabilities: { supportsImageToText: true } }),
+		] as never)
+
+		const [listed] = await getVsCodeLmModels({ vendor: "copilot" })
+
+		expect(listed).toMatchObject({
+			id: "listed-model",
+			vendor: "copilot",
+			family: "listed-family",
+			maxInputTokens: 50000,
+			modelInfo: { contextWindow: 50000, supportsImages: true },
+		})
+	})
+
+	it("passes the selector through to the host", async () => {
+		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([])
+		await getVsCodeLmModels({ vendor: "copilot" })
+		expect(vscode.lm.selectChatModels).toHaveBeenCalledWith({ vendor: "copilot" })
+	})
+
+	it("omits models that can never work", async () => {
+		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([
+			liveModel({ id: "claude-3.7-sonnet" }),
+			liveModel({ id: "kept" }),
+		] as never)
+
+		expect((await getVsCodeLmModels()).map((model) => model.id)).toEqual(["kept"])
+	})
+
+	it("reports a host that has no models as an empty list", async () => {
+		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue(undefined as never)
+		await expect(getVsCodeLmModels()).resolves.toEqual([])
+	})
+
+	it("surfaces a failed lookup instead of passing it off as 'no models'", async () => {
+		vi.mocked(vscode.lm.selectChatModels).mockRejectedValue(new Error("host unavailable"))
+		await expect(getVsCodeLmModels({ vendor: "copilot" })).rejects.toThrow("host unavailable")
+		await expect(getVsCodeLmModels()).rejects.toThrow("host unavailable")
 	})
 })

@@ -23,6 +23,7 @@ import {
 	checkoutRestorePayloadSchema,
 	getCompletionCheckpoint,
 	providerIdentifiers,
+	githubCopilotLanguageModel,
 	retiredProviderIdentifiers,
 	LmStudioModelsMessageType,
 	OllamaModelsMessageType,
@@ -79,6 +80,11 @@ import { searchCommits } from "../../utils/git"
 import { exportSettings, importSettingsWithFeedback } from "../config/importExport"
 import { getOpenAiModels } from "../../api/providers/openai"
 import { getVsCodeLmModels } from "../../api/providers/vscode-lm"
+import {
+	connectGitHubCopilot,
+	getGitHubCopilotAccount,
+	openGitHubAccountManagement,
+} from "../../api/providers/github-copilot"
 import { openMention } from "../mentions"
 import { resolveImageMentions } from "../mentions/resolveImageMentions"
 import { RooIgnoreController } from "../ignore/RooIgnoreController"
@@ -1479,11 +1485,57 @@ export const webviewMessageHandler = async (
 			}
 
 			break
-		case VsCodeLmModelsMessageType.requestVsCodeLmModels:
-			const vsCodeLmModels = await getVsCodeLmModels()
-			// TODO: Cache like we do for OpenRouter, etc?
-			await provider.postMessageToWebview({ type: VsCodeLmModelsMessageType.vsCodeLmModels, vsCodeLmModels })
+		case VsCodeLmModelsMessageType.githubCopilotSignIn:
+		case VsCodeLmModelsMessageType.githubCopilotReconnect:
+			try {
+				const { models, account } = await connectGitHubCopilot(async (githubCopilotAccount: string) => {
+					await provider.postMessageToWebview({
+						type: VsCodeLmModelsMessageType.githubCopilotModels,
+						githubCopilotAccount,
+					})
+				}, message.type === VsCodeLmModelsMessageType.githubCopilotReconnect)
+				await provider.postMessageToWebview({
+					type: VsCodeLmModelsMessageType.githubCopilotSignInResult,
+					vsCodeLmModels: models,
+					githubCopilotAccount: account,
+				})
+			} catch (error) {
+				await provider.postMessageToWebview({
+					type: VsCodeLmModelsMessageType.githubCopilotSignInResult,
+					error: error instanceof Error ? error.message : String(error),
+				})
+			}
 			break
+		case VsCodeLmModelsMessageType.githubCopilotManageAccount:
+			try {
+				await openGitHubAccountManagement()
+			} catch (error) {
+				provider.log(
+					`Could not open VS Code account management: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			}
+			break
+		case VsCodeLmModelsMessageType.requestVsCodeLmModels: {
+			const isCopilot = message.apiConfiguration?.apiProvider === providerIdentifiers.githubCopilot
+			const type = isCopilot
+				? VsCodeLmModelsMessageType.githubCopilotModels
+				: VsCodeLmModelsMessageType.vsCodeLmModels
+			try {
+				const githubCopilotAccount = isCopilot ? await getGitHubCopilotAccount() : undefined
+				const vsCodeLmModels = await getVsCodeLmModels(isCopilot ? githubCopilotLanguageModel.selector : {})
+				await provider.postMessageToWebview({
+					type,
+					vsCodeLmModels,
+					...(isCopilot ? { githubCopilotAccount: githubCopilotAccount ?? null } : {}),
+				})
+			} catch (error) {
+				await provider.postMessageToWebview({
+					type,
+					error: error instanceof Error ? error.message : String(error),
+				})
+			}
+			break
+		}
 		case "openImage":
 			await openImage(message.text!, { values: message.values })
 			break

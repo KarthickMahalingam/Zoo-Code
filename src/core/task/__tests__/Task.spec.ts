@@ -10,6 +10,7 @@ import type { Mock } from "vitest"
 
 import {
 	providerIdentifiers,
+	MAX_MCP_TOOLS_THRESHOLD,
 	RooCodeEventName,
 	type GlobalState,
 	type HistoryItem,
@@ -5560,6 +5561,45 @@ describe("Cline", () => {
 			const history = historyFor(false)
 
 			expect(history).toEqual([{ role: "assistant", content: "answer" }])
+		})
+	})
+
+	describe("startTask MCP tool warning", () => {
+		const startWith = async (enabledToolCount: number, maxTools?: number) => {
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "new task",
+				startTask: false,
+			})
+			const taskAccess = getTaskTestAccess(task)
+			const saySpy = vi.spyOn(task, "say").mockResolvedValue(undefined)
+			vi.spyOn(taskAccess, "getEnabledMcpToolsCount").mockResolvedValue({
+				enabledToolCount,
+				enabledServerCount: 1,
+			})
+			vi.spyOn(taskAccess, "initiateTaskLoop").mockResolvedValue(undefined)
+			vi.spyOn(task.api, "getModel").mockReturnValue({
+				id: "test-model",
+				info: { contextWindow: 1000, supportsPromptCache: false, ...(maxTools ? { maxTools } : {}) },
+			})
+			await taskAccess.startTask("new task")
+			return saySpy.mock.calls.find(([type]) => type === "too_many_tools_warning")
+		}
+
+		it("keeps the advisory warning for providers that report no tool limit", async () => {
+			const warning = await startWith(MAX_MCP_TOOLS_THRESHOLD + 1)
+			expect(JSON.parse(warning![1] as string)).toMatchObject({ threshold: MAX_MCP_TOOLS_THRESHOLD })
+		})
+
+		it("does not warn at or below the advisory threshold", async () => {
+			expect(await startWith(MAX_MCP_TOOLS_THRESHOLD)).toBeUndefined()
+		})
+
+		it("lets a provider-reported limit replace the advisory in both directions", async () => {
+			expect(await startWith(130, 200)).toBeUndefined()
+			const warning = await startWith(21, 20)
+			expect(JSON.parse(warning![1] as string)).toMatchObject({ threshold: 20 })
 		})
 	})
 

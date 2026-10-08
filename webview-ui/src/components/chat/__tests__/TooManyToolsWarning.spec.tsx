@@ -12,10 +12,16 @@ vi.mock("@/utils/vscode", () => ({
 
 // Mock ExtensionState context with variable mcpServers
 const mockMcpServers = vi.fn()
+const mockModelInfo = vi.fn()
+
+vi.mock("@/components/ui/hooks/useSelectedModel", () => ({
+	useSelectedModel: () => ({ info: mockModelInfo() }),
+}))
 
 vi.mock("@/context/ExtensionStateContext", () => ({
 	useExtensionState: () => ({
 		mcpServers: mockMcpServers(),
+		apiConfiguration: {},
 	}),
 }))
 
@@ -52,6 +58,36 @@ describe("TooManyToolsWarning", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		mockMcpServers.mockReturnValue([])
+		mockModelInfo.mockReturnValue({ contextWindow: 1000, supportsPromptCache: false })
+	})
+
+	const serverWithTools = (count: number) => [
+		{
+			name: "server1",
+			status: "connected",
+			disabled: false,
+			tools: Array.from({ length: count }, (_, i) => ({ name: `tool${i}`, enabledForPrompt: true })),
+		},
+	]
+
+	it("still warns above the default advisory when the model reports no limit", () => {
+		mockMcpServers.mockReturnValue(serverWithTools(MAX_MCP_TOOLS_THRESHOLD + 1))
+		render(<TooManyToolsWarning />)
+		expect(screen.getByText("Too many tools enabled")).toBeInTheDocument()
+	})
+
+	it("uses a provider-supplied limit instead of the default advisory", () => {
+		mockModelInfo.mockReturnValue({ contextWindow: 1000, supportsPromptCache: false, maxTools: 200 })
+		mockMcpServers.mockReturnValue(serverWithTools(130))
+		const { container } = render(<TooManyToolsWarning />)
+		expect(container.firstChild).toBeNull()
+	})
+
+	it("warns once a provider-supplied limit is exceeded and reports that limit", () => {
+		mockModelInfo.mockReturnValue({ contextWindow: 1000, supportsPromptCache: false, maxTools: 20 })
+		mockMcpServers.mockReturnValue(serverWithTools(21))
+		render(<TooManyToolsWarning />)
+		expect(screen.getByText(/Try to keep it below 20\./)).toBeInTheDocument()
 	})
 
 	it("does not render when there are no MCP servers", () => {

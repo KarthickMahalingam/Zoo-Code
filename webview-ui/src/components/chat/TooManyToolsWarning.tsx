@@ -4,11 +4,10 @@ import { useTooManyTools } from "@src/hooks/useTooManyTools"
 import WarningRow from "./WarningRow"
 
 /**
- * Displays a warning when the user has too many MCP tools enabled.
- * LLMs get confused when offered too many tools, which can lead to errors.
+ * Displays a warning when enabled MCP tools exceed the model's advertised limit.
  *
  * The warning is shown when:
- * - The total number of enabled tools across all enabled MCP servers exceeds the threshold
+ * - The model advertises a limit and the enabled tool count exceeds it
  *
  * @example
  * <TooManyToolsWarning />
