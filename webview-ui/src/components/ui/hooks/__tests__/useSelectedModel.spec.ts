@@ -1341,6 +1341,27 @@ describe("useSelectedModel", () => {
 			).toBe(false)
 		})
 
+		it("finds the reported model by family when the saved selector has no id", () => {
+			reportedModels(
+				{ id: "other", family: "other", modelInfo: { contextWindow: 1, supportsPromptCache: false } },
+				{
+					id: "by-family",
+					family: "wanted-family",
+					modelInfo: { contextWindow: 555, supportsPromptCache: false },
+				},
+			)
+
+			const selected = selectCopilot({ vendor: "copilot", family: "wanted-family" })
+
+			expect(selected.info?.contextWindow).toBe(555)
+			expect(selected.id).toBe("copilot/wanted-family")
+		})
+
+		it("falls back to the default model id when nothing is selected yet", () => {
+			const { result } = renderHook(() => useSelectedModel({ apiProvider: providerIdentifiers.githubCopilot }))
+			expect(result.current.id).toBe(vscodeLlmDefaultModelId)
+		})
+
 		it("picks the reported model matching the saved id, not merely the first one", () => {
 			reportedModels(
 				{ id: "other", family: "other", modelInfo: { contextWindow: 1, supportsPromptCache: false } },

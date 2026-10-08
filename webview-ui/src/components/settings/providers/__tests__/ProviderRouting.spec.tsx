@@ -434,6 +434,84 @@ describe("provider model routing", () => {
 		expect(props.displayTransform?.({ vendor: model.vendor, family: model.family, id: model.id })).toBe(model.id)
 	})
 
+	describe("model picker wiring", () => {
+		const send = (data: object) => act(() => void window.dispatchEvent(new MessageEvent("message", { data })))
+		const pickerProps = () => modelPickerMock.mock.lastCall![0]
+		const mount = (provider: typeof providerIdentifiers.githubCopilot | typeof providerIdentifiers.vscodeLm) =>
+			renderWithQuery(
+				<VSCodeLM apiConfiguration={{ apiProvider: provider }} setApiConfigurationField={vi.fn()} />,
+			)
+
+		const listed = [
+			{ id: "m1", vendor: "copilot", family: "fam", version: "1" },
+			{ vendor: "other", family: "no-id" },
+		]
+
+		it("lists the legacy provider's models from its own messages and names its service accordingly", () => {
+			mount(providerIdentifiers.vscodeLm)
+
+			send({ type: VsCodeLmModelsMessageType.vsCodeLmModels, vsCodeLmModels: listed })
+
+			expect(pickerProps().serviceName).toBe("VS Code LM")
+			expect(Object.keys(pickerProps().models ?? {})).toEqual(["m1", "other/no-id"])
+		})
+
+		it("keeps each provider's list separate: the legacy picker ignores Copilot messages", () => {
+			mount(providerIdentifiers.vscodeLm)
+
+			send({ type: VsCodeLmModelsMessageType.githubCopilotModels, vsCodeLmModels: listed })
+
+			expect(modelPickerMock).not.toHaveBeenCalled()
+		})
+
+		it("ignores a legacy list that arrives with an error", () => {
+			mount(providerIdentifiers.vscodeLm)
+
+			send({ type: VsCodeLmModelsMessageType.vsCodeLmModels, vsCodeLmModels: listed, error: "partial" })
+
+			expect(modelPickerMock).not.toHaveBeenCalled()
+		})
+
+		describe("stored value mapping", () => {
+			beforeEach(() => {
+				mount(providerIdentifiers.vscodeLm)
+				send({ type: VsCodeLmModelsMessageType.vsCodeLmModels, vsCodeLmModels: listed })
+			})
+
+			it("stores a listed model by its identity, with no capability snapshot", () => {
+				expect(pickerProps().valueTransform?.("m1")).toEqual({
+					id: "m1",
+					vendor: "copilot",
+					family: "fam",
+					version: "1",
+				})
+			})
+
+			it("stores an unlisted value as vendor and family", () => {
+				expect(pickerProps().valueTransform?.("acme/model-x")).toEqual({ vendor: "acme", family: "model-x" })
+			})
+
+			it.each([
+				["nothing stored", undefined, ""],
+				["a stored id that is listed", { id: "m1" }, "m1"],
+				["a stored vendor and family whose model has an id", { vendor: "copilot", family: "fam" }, "m1"],
+				[
+					"a stored vendor and family whose model has no id",
+					{ vendor: "other", family: "no-id" },
+					"other/no-id",
+				],
+				[
+					"a stored vendor and family that is no longer listed",
+					{ vendor: "gone", family: "model" },
+					"gone/model",
+				],
+				["a stored selector too incomplete to name a model", { vendor: "copilot" }, ""],
+			])("shows %s as the right label", (_label, stored, expected) => {
+				expect(pickerProps().displayTransform?.(stored)).toBe(expected)
+			})
+		})
+	})
+
 	it("keeps the legacy VS Code LM provider free of Copilot login controls", () => {
 		renderWithQuery(
 			<VSCodeLM

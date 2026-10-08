@@ -192,6 +192,48 @@ describe("webviewMessageHandler - Copilot authentication", () => {
 		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("command missing"))
 	})
 
+	it("reports a non-Error sign-in failure as text", async () => {
+		vi.spyOn(copilotProvider, "connectGitHubCopilot").mockRejectedValue("denied")
+		await webviewMessageHandler(mockClineProvider, { type: "githubCopilotSignIn" })
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "githubCopilotSignInResult",
+			error: "denied",
+		})
+	})
+
+	it("logs a non-Error failure to open account management", async () => {
+		vi.spyOn(copilotProvider, "openGitHubAccountManagement").mockRejectedValue("no such command")
+		await webviewMessageHandler(mockClineProvider, { type: "githubCopilotManageAccount" })
+		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("no such command"))
+	})
+
+	describe("legacy VS Code LM model requests", () => {
+		it("lists every model unscoped and never looks up a GitHub account", async () => {
+			const account = vi.spyOn(copilotProvider, "getGitHubCopilotAccount")
+			const models = vi.spyOn(vsCodeLmProvider, "getVsCodeLmModels").mockResolvedValue([])
+
+			await webviewMessageHandler(mockClineProvider, { type: "requestVsCodeLmModels" })
+
+			expect(models).toHaveBeenCalledWith({})
+			expect(account).not.toHaveBeenCalled()
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledExactlyOnceWith({
+				type: "vsCodeLmModels",
+				vsCodeLmModels: [],
+			})
+		})
+
+		it("reports a failed lookup to the legacy list without touching the Copilot one", async () => {
+			vi.spyOn(vsCodeLmProvider, "getVsCodeLmModels").mockRejectedValue("host busy")
+
+			await webviewMessageHandler(mockClineProvider, { type: "requestVsCodeLmModels" })
+
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledExactlyOnceWith({
+				type: "vsCodeLmModels",
+				error: "host busy",
+			})
+		})
+	})
+
 	it("restores a signed-in account during passive model refresh", async () => {
 		vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")
 		vi.spyOn(vsCodeLmProvider, "getVsCodeLmModels").mockResolvedValue([])

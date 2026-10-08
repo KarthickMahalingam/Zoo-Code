@@ -190,6 +190,28 @@ describe("VsCodeLmHandler", () => {
 			expect(client.vendor).toBe("vscode")
 		})
 
+		it("gives the placeholder client a working stream, text and token counter", async () => {
+			;(vscode.lm.selectChatModels as Mock).mockResolvedValueOnce([])
+			const client = await handler["createClient"]({})
+
+			const response = await client.sendRequest([], {}, new vscode.CancellationTokenSource().token)
+			const streamed: unknown[] = []
+			for await (const part of response.stream) streamed.push(part)
+			const text: string[] = []
+			for await (const chunk of response.text) text.push(chunk)
+
+			expect(streamed).toHaveLength(1)
+			expect(streamed[0]).toBeInstanceOf(vscode.LanguageModelTextPart)
+			expect(text.join("")).toContain("functionality is limited")
+			await expect(client.countTokens("anything")).resolves.toBe(0)
+		})
+
+		it("counts nothing for input that is neither text nor a chat message", async () => {
+			handler["client"] = mockLanguageModelChat
+			await expect(handler["internalCountTokens"]({} as never)).resolves.toBe(0)
+			expect(mockLanguageModelChat.countTokens).not.toHaveBeenCalled()
+		})
+
 		it("should throw a Zoo Code branded error when selectChatModels fails", async () => {
 			;(vscode.lm.selectChatModels as Mock).mockRejectedValueOnce(new Error("network down"))
 
