@@ -78,6 +78,7 @@ import {
 	VercelAiGatewayHandler,
 	VertexHandler,
 	VsCodeLmHandler,
+	GitHubCopilotHandler,
 	XAIHandler,
 	ZAiHandler,
 	ZooGatewayHandler,
@@ -103,6 +104,7 @@ const expectedHandlers = {
 	[providerIdentifiers.moonshot]: MoonshotHandler,
 	[providerIdentifiers.kimiCode]: KimiCodeHandler,
 	[providerIdentifiers.vscodeLm]: VsCodeLmHandler,
+	[providerIdentifiers.githubCopilot]: GitHubCopilotHandler,
 	[providerIdentifiers.mistral]: MistralHandler,
 	[providerIdentifiers.requesty]: RequestyHandler,
 	[providerIdentifiers.unbound]: UnboundHandler,
@@ -133,6 +135,10 @@ describe("buildApiHandler", () => {
 		const handler = buildApiHandler({ apiProvider })
 
 		expect(handler).toBeInstanceOf(Handler)
+	})
+
+	it("keeps the generic VS Code LM provider free of Copilot-specific behavior", () => {
+		expect(buildApiHandler({ apiProvider: providerIdentifiers.vscodeLm })).not.toBeInstanceOf(GitHubCopilotHandler)
 	})
 
 	it.each([

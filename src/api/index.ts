@@ -31,6 +31,7 @@ import {
 	KimiCodeHandler,
 	MistralHandler,
 	VsCodeLmHandler,
+	GitHubCopilotHandler,
 	RequestyHandler,
 	UnboundHandler,
 	FakeAIHandler,
@@ -230,6 +231,8 @@ export function buildApiHandler(configuration: ProviderSettings): ApiHandler {
 			return new KimiCodeHandler(options)
 		case providerIdentifiers.vscodeLm:
 			return new VsCodeLmHandler(options)
+		case providerIdentifiers.githubCopilot:
+			return new GitHubCopilotHandler(options)
 		case providerIdentifiers.mistral:
 			return new MistralHandler(options)
 		case providerIdentifiers.requesty:
