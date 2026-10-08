@@ -98,6 +98,7 @@ import {
 import { getVsCodeLmModelInfo } from "../vscode-lm-capabilities"
 import type { ApiHandlerOptions } from "../../../shared/api"
 import { clearAllMocks } from "../../../test-utils/reset"
+import { checkContextWindowExceededError } from "../../../core/context/context-management/context-error-handling"
 import { collectStream } from "../../../test-utils/stream"
 
 /** The stable typings this extension builds against predate image parts, so reach them by name. */
@@ -440,5 +441,75 @@ describe("GitHubCopilotHandler", () => {
 		} finally {
 			copilotHandler.dispose()
 		}
+	})
+
+	describe("input limits", () => {
+		const copilotModel = (overrides: Record<string, unknown> = {}) => ({
+			...mockLanguageModelChat,
+			vendor: "copilot",
+			id: "limited",
+			family: "limited-family",
+			maxInputTokens: 16000,
+			...overrides,
+		})
+
+		const run = async (perMessageTokens: number) => {
+			vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([copilotModel()] as never)
+			mockLanguageModelChat.countTokens.mockResolvedValue(perMessageTokens)
+			mockLanguageModelChat.sendRequest.mockImplementation(async () => ({
+				stream: (async function* () {
+					yield new vscode.LanguageModelTextPart("ok")
+				})(),
+			}))
+			const handler = new GitHubCopilotHandler({})
+			try {
+				await collectStream(handler.createMessage("system", [{ role: "user", content: "hello" }]))
+			} finally {
+				handler.dispose()
+			}
+		}
+
+		it("refuses a request measured over the model's window, as an error Zoo recovers from by condensing", async () => {
+			const failure = await run(9000).catch((error: unknown) => error)
+
+			expect(checkContextWindowExceededError(failure)).toBe(true)
+			expect(mockLanguageModelChat.sendRequest).not.toHaveBeenCalled()
+		})
+
+		it("admits a request that exactly fills the window", async () => {
+			// System prompt and user message are counted separately: 2 x 8000 = 16000.
+			await expect(run(8000)).resolves.toBeUndefined()
+			expect(mockLanguageModelChat.sendRequest).toHaveBeenCalledTimes(1)
+		})
+	})
+
+	describe("countTokens", () => {
+		beforeEach(() => mockLanguageModelChat.countTokens.mockResolvedValue(42))
+
+		it("measures the content as a user message through the host's counter", async () => {
+			vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([
+				{ ...mockLanguageModelChat, vendor: "copilot" },
+			] as never)
+			const handler = new GitHubCopilotHandler({})
+			try {
+				await expect(handler.countTokens([{ type: "text", text: "hello" }])).resolves.toBe(42)
+				expect(mockLanguageModelChat.countTokens).toHaveBeenCalledTimes(1)
+				expect(mockLanguageModelChat.countTokens.mock.calls[0][0]).toMatchObject({ role: "user" })
+			} finally {
+				handler.dispose()
+			}
+		})
+
+		it("fails clearly, rather than returning a made-up count, when no Copilot model is available", async () => {
+			vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([])
+			const handler = new GitHubCopilotHandler({})
+			try {
+				await expect(handler.countTokens([{ type: "text", text: "hello" }])).rejects.toThrow(
+					"No matching GitHub Copilot model",
+				)
+			} finally {
+				handler.dispose()
+			}
+		})
 	})
 })

@@ -1,10 +1,11 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest"
+import * as vscode from "vscode"
 
 import { VsCodeLmModelsMessageType, githubCopilotLanguageModel } from "@roo-code/types"
 
 import { registerCopilotModelBroadcast, type CopilotModelBroadcastTarget } from "../copilotModelBroadcast"
 
-vi.mock("vscode", () => ({ lm: {} }))
+vi.mock("vscode", () => ({ lm: { onDidChangeChatModels: vi.fn() } }))
 vi.mock("../../../api/providers/vscode-lm", () => ({ getVsCodeLmModels: vi.fn() }))
 
 type Models = Awaited<ReturnType<typeof import("../../../api/providers/vscode-lm").getVsCodeLmModels>>
@@ -162,5 +163,55 @@ describe("registerCopilotModelBroadcast", () => {
 			subscribe: () => undefined,
 		})
 		expect(() => registration.dispose()).not.toThrow()
+	})
+
+	it("logs a failure that is not an Error as text", async () => {
+		const { notify, log } = setup({ fetchModels: vi.fn().mockRejectedValue("plain failure") })
+
+		notify()
+		await vi.advanceTimersByTimeAsync(100)
+
+		expect(log).toHaveBeenCalledWith("Failed to refresh GitHub Copilot models: plain failure")
+	})
+
+	describe("default host wiring", () => {
+		const hostEvent = vi.mocked(vscode.lm.onDidChangeChatModels)
+
+		it("listens to the host's model-change event and releases it on dispose", () => {
+			const hostSubscription = { dispose: vi.fn() }
+			hostEvent.mockReturnValue(hostSubscription as never)
+
+			const registration = registerCopilotModelBroadcast({ getTargets: () => [], log: vi.fn() })
+			expect(hostEvent).toHaveBeenCalledWith(expect.any(Function))
+
+			registration.dispose()
+			expect(hostSubscription.dispose).toHaveBeenCalledTimes(1)
+		})
+
+		it("refreshes when the host raises the event", async () => {
+			let raise: () => void = () => {}
+			hostEvent.mockImplementation(((listener: () => void) => {
+				raise = listener
+				return { dispose: vi.fn() }
+			}) as never)
+			const fetchModels = vi.fn().mockResolvedValue([])
+
+			registerCopilotModelBroadcast({
+				getTargets: () => [],
+				log: vi.fn(),
+				fetchModels: fetchModels as never,
+				debounceMs: 10,
+			})
+			raise()
+			await vi.advanceTimersByTimeAsync(10)
+
+			expect(fetchModels).toHaveBeenCalledTimes(1)
+		})
+
+		it("tolerates a host that does not expose the event", () => {
+			hostEvent.mockReturnValue(undefined as never)
+			const registration = registerCopilotModelBroadcast({ getTargets: () => [], log: vi.fn() })
+			expect(() => registration.dispose()).not.toThrow()
+		})
 	})
 })

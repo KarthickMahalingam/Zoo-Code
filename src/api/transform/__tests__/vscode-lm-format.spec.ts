@@ -123,6 +123,32 @@ describe("convertToVsCodeLmMessages", () => {
 		expect(result[0].content[0]).toEqual({ data: Buffer.from("image"), mimeType: "image/png" })
 	})
 
+	it("refuses an image on a host that cannot carry image data, instead of dropping it silently", () => {
+		const hostImagePart = Reflect.get(vscode, "LanguageModelDataPart")
+		const factory = hostImagePart.image
+		Object.assign(hostImagePart, { image: undefined })
+		try {
+			expect(() =>
+				convertToVsCodeLmMessages(
+					[
+						{
+							role: "user",
+							content: [
+								{
+									type: "image",
+									source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" },
+								},
+							],
+						},
+					],
+					true,
+				),
+			).toThrow("Image input requires a newer version of VS Code")
+		} finally {
+			Object.assign(hostImagePart, { image: factory })
+		}
+	})
+
 	it("preserves image bytes within tool results", () => {
 		const result = convertToVsCodeLmMessages(
 			[

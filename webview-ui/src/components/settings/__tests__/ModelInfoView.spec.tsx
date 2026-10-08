@@ -48,6 +48,18 @@ const getPricingRowValues = (tier: string) => {
 }
 
 describe("ModelInfoView service tier pricing", () => {
+	it("reports prompt caching as unsupported for other providers when the model says nothing about it", () => {
+		render(
+			<ModelInfoView
+				{...defaultProps}
+				apiProvider={providerIdentifiers.openai}
+				modelInfo={{ contextWindow: 128000 } as ModelInfo}
+				hidePricing
+			/>,
+		)
+		expect(screen.getByText("Does not support prompt caching")).toBeInTheDocument()
+	})
+
 	it("shows unknown Copilot image capability without claiming the model is text-only", () => {
 		render(
 			<ModelInfoView
