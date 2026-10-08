@@ -249,6 +249,20 @@ describe("webviewMessageHandler - Copilot authentication", () => {
 		})
 	})
 
+	it("reports no account as null, so the webview clears a stale sign-in rather than keeping it", async () => {
+		vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue(undefined)
+		vi.spyOn(vsCodeLmProvider, "getVsCodeLmModels").mockResolvedValue([])
+		await webviewMessageHandler(mockClineProvider, {
+			type: "requestVsCodeLmModels",
+			apiConfiguration: { apiProvider: providerIdentifiers.githubCopilot },
+		})
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "githubCopilotModels",
+			githubCopilotAccount: null,
+			vsCodeLmModels: [],
+		})
+	})
+
 	it("shows model discovery errors instead of silently returning an empty list", async () => {
 		vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")
 		vi.spyOn(vsCodeLmProvider, "getVsCodeLmModels").mockRejectedValue(new Error("Model access denied"))
