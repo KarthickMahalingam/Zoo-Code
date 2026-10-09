@@ -54,7 +54,7 @@ import {
 	DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
 	MAX_CHECKPOINT_TIMEOUT_SECONDS,
 	MIN_CHECKPOINT_TIMEOUT_SECONDS,
-	getMcpToolThreshold,
+	MAX_MCP_TOOLS_THRESHOLD,
 	countEnabledMcpTools,
 	providerIdentifiers,
 } from "@roo-code/types"
@@ -2974,14 +2974,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 			// Check for too many MCP tools and warn the user
 			const { enabledToolCount, enabledServerCount } = await this.getEnabledMcpToolsCount()
-			const threshold = getMcpToolThreshold(this.api.getModel().info)
-			if (enabledToolCount > threshold) {
+			if (enabledToolCount > MAX_MCP_TOOLS_THRESHOLD) {
 				await this.say(
 					"too_many_tools_warning",
 					JSON.stringify({
 						toolCount: enabledToolCount,
 						serverCount: enabledServerCount,
-						threshold,
+						threshold: MAX_MCP_TOOLS_THRESHOLD,
 					}),
 					undefined,
 					undefined,

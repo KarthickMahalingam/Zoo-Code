@@ -1,8 +1,7 @@
 import { useMemo } from "react"
 import { useExtensionState } from "@src/context/ExtensionStateContext"
 import { useAppTranslation } from "@src/i18n/TranslationContext"
-import { countEnabledMcpTools, getMcpToolThreshold } from "@roo-code/types"
-import { useSelectedModel } from "@src/components/ui/hooks/useSelectedModel"
+import { MAX_MCP_TOOLS_THRESHOLD, countEnabledMcpTools } from "@roo-code/types"
 
 export interface TooManyToolsInfo {
 	/** Number of enabled and connected MCP servers */
@@ -33,27 +32,25 @@ export interface TooManyToolsInfo {
  */
 export function useTooManyTools(): TooManyToolsInfo {
 	const { t } = useAppTranslation()
-	const { mcpServers, apiConfiguration } = useExtensionState()
-	const { info } = useSelectedModel(apiConfiguration)
+	const { mcpServers } = useExtensionState()
 
 	const { enabledServerCount, enabledToolCount } = useMemo(() => countEnabledMcpTools(mcpServers), [mcpServers])
 
-	const threshold = getMcpToolThreshold(info)
-	const isOverThreshold = enabledToolCount > threshold
+	const isOverThreshold = enabledToolCount > MAX_MCP_TOOLS_THRESHOLD
 
 	const toolsPart = t("chat:tooManyTools.toolsPart", { count: enabledToolCount })
 	const serversPart = t("chat:tooManyTools.serversPart", { count: enabledServerCount })
 	const message = t("chat:tooManyTools.messageTemplate", {
 		tools: toolsPart,
 		servers: serversPart,
-		threshold,
+		threshold: MAX_MCP_TOOLS_THRESHOLD,
 	})
 
 	return {
 		enabledServerCount,
 		enabledToolCount,
 		isOverThreshold,
-		threshold,
+		threshold: MAX_MCP_TOOLS_THRESHOLD,
 		title: t("chat:tooManyTools.title"),
 		message,
 	}

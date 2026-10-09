@@ -6,12 +6,6 @@ import { z } from "zod"
  */
 export const MAX_MCP_TOOLS_THRESHOLD = 60
 
-/** A provider-supplied `maxTools` replaces the generic advisory, so the warning tracks a real limit. */
-export function getMcpToolThreshold(modelInfo?: { maxTools?: number }): number {
-	const limit = modelInfo?.maxTools
-	return limit !== undefined && Number.isSafeInteger(limit) && limit > 0 ? limit : MAX_MCP_TOOLS_THRESHOLD
-}
-
 /**
  * McpServerUse
  */

@@ -301,7 +301,7 @@ describe("provider model routing", () => {
 				setApiConfigurationField={setField}
 			/>,
 		)
-		const modelInfo = { contextWindow: 260000, supportsImages: true, supportsPromptCache: false, maxTools: 200 }
+		const modelInfo = { contextWindow: 260000, supportsImages: true, supportsPromptCache: false }
 
 		act(() =>
 			window.dispatchEvent(

@@ -217,6 +217,60 @@ describe("connectGitHubCopilot", () => {
 		expect(vscode.authentication.getSession).toHaveBeenCalledTimes(1)
 	})
 
+	describe("overlapping sign-in requests with different intent", () => {
+		const session = (label: string) => ({ id: "s", accessToken: "t", scopes: [], account: { id: "a", label } })
+		const pendingSession = () => {
+			let finish: (value: ReturnType<typeof session>) => void = () => {}
+			const promise = new Promise((resolve) => (finish = resolve)) as never
+			return { promise, finish: (label: string) => finish(session(label)) }
+		}
+
+		it("gives a Reconnect its own forced session instead of the pending plain sign-in's", async () => {
+			const plain = pendingSession()
+			const fresh = pendingSession()
+			vi.mocked(vscode.authentication.getSession)
+				.mockImplementationOnce(() => plain.promise)
+				.mockImplementationOnce(() => fresh.promise)
+			vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([])
+			const onFresh = vi.fn()
+
+			const first = connectGitHubCopilot()
+			const second = connectGitHubCopilot(onFresh, true)
+			plain.finish("Plain User")
+			fresh.finish("Fresh User")
+
+			await expect(first).resolves.toMatchObject({ account: "Plain User" })
+			await expect(second).resolves.toMatchObject({ account: "Fresh User" })
+			expect(vscode.authentication.getSession).toHaveBeenCalledTimes(2)
+			expect(vscode.authentication.getSession).toHaveBeenLastCalledWith("github", ["user:email"], {
+				forceNewSession: true,
+				clearSessionPreference: true,
+			})
+			expect(onFresh).toHaveBeenCalledWith("Fresh User")
+		})
+
+		it("still shares one attempt between concurrent Reconnect requests", async () => {
+			const fresh = pendingSession()
+			vi.mocked(vscode.authentication.getSession).mockImplementationOnce(() => fresh.promise)
+			vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([])
+
+			const results = [connectGitHubCopilot(undefined, true), connectGitHubCopilot(undefined, true)]
+			fresh.finish("Fresh User")
+
+			await Promise.all(results)
+			expect(vscode.authentication.getSession).toHaveBeenCalledTimes(1)
+		})
+
+		it("lets a failed attempt of one kind be retried without disturbing the other", async () => {
+			vi.mocked(vscode.authentication.getSession).mockRejectedValueOnce(new Error("cancelled"))
+			await expect(connectGitHubCopilot(undefined, true)).rejects.toThrow("cancelled")
+
+			vi.mocked(vscode.authentication.getSession).mockResolvedValueOnce(session("Retry User"))
+			vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([])
+			await expect(connectGitHubCopilot(undefined, true)).resolves.toMatchObject({ account: "Retry User" })
+		})
+	})
+
 	it("allows a new sign-in once the previous one has settled", async () => {
 		vi.mocked(vscode.authentication.getSession).mockRejectedValueOnce(new Error("Sign-in cancelled"))
 		await expect(connectGitHubCopilot()).rejects.toThrow("Sign-in cancelled")
@@ -306,8 +360,8 @@ describe("Copilot model capabilities", () => {
 			expect(getVsCodeLmModelInfo(model).supportsImages).toBe(false)
 		})
 
-		it("falls back to the curated catalog only when the host reports nothing", () => {
-			expect(getVsCodeLmModelInfo(liveModel({ family: curatedFamily })).supportsImages).toBe(true)
+		it("does not borrow the catalog's vision flag for a live model the host reports nothing about", () => {
+			expect(getVsCodeLmModelInfo(liveModel({ family: curatedFamily })).supportsImages).toBeUndefined()
 		})
 
 		it("leaves vision unset rather than guessing when no source states it", () => {
@@ -336,11 +390,6 @@ describe("Copilot model capabilities", () => {
 			} finally {
 				handler.dispose()
 			}
-		})
-
-		it("does not set a tool-count limit, since consumers are only told whether tools are supported", () => {
-			const info = getVsCodeLmModelInfo(liveModel({ capabilities: { supportsToolCalling: true } }))
-			expect(info.maxTools).toBeUndefined()
 		})
 	})
 
