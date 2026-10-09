@@ -179,6 +179,51 @@ describe("webviewMessageHandler - Copilot authentication", () => {
 		})
 	})
 
+	it("drops a stale sign-in that completes after a newer reconnect", async () => {
+		let finishSignIn!: (value: { account: string; models: [] }) => void
+		let finishReconnect!: (value: { account: string; models: [] }) => void
+		vi.spyOn(copilotProvider, "connectGitHubCopilot")
+			.mockImplementationOnce(() => new Promise((resolve) => (finishSignIn = resolve)))
+			.mockImplementationOnce(() => new Promise((resolve) => (finishReconnect = resolve)))
+
+		const signIn = webviewMessageHandler(mockClineProvider, { type: "githubCopilotSignIn" })
+		const reconnect = webviewMessageHandler(mockClineProvider, { type: "githubCopilotReconnect" })
+
+		// The newer request finishes first, then the older one arrives late.
+		finishReconnect({ account: "New User", models: [] })
+		await reconnect
+		finishSignIn({ account: "Old User", models: [] })
+		await signIn
+
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "githubCopilotSignInResult",
+			githubCopilotAccount: "New User",
+			vsCodeLmModels: [],
+		})
+	})
+
+	it("drops a stale sign-in failure that arrives after a newer success", async () => {
+		let failSignIn!: (reason: Error) => void
+		let finishReconnect!: (value: { account: string; models: [] }) => void
+		vi.spyOn(copilotProvider, "connectGitHubCopilot")
+			.mockImplementationOnce(() => new Promise((_resolve, reject) => (failSignIn = reject)))
+			.mockImplementationOnce(() => new Promise((resolve) => (finishReconnect = resolve)))
+
+		const signIn = webviewMessageHandler(mockClineProvider, { type: "githubCopilotSignIn" })
+		const reconnect = webviewMessageHandler(mockClineProvider, { type: "githubCopilotReconnect" })
+
+		finishReconnect({ account: "New User", models: [] })
+		await reconnect
+		failSignIn(new Error("Sign-in cancelled"))
+		await signIn
+
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith(
+			expect.objectContaining({ error: expect.anything() }),
+		)
+	})
+
 	it("opens VS Code's account management and never signs out itself", async () => {
 		const open = vi.spyOn(copilotProvider, "openGitHubAccountManagement").mockResolvedValue(undefined)
 		await webviewMessageHandler(mockClineProvider, { type: "githubCopilotManageAccount" })

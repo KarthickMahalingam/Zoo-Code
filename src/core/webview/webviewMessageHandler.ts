@@ -124,6 +124,9 @@ import {
 	handleCheckoutBranch,
 } from "./worktree"
 
+/** Identifies the newest GitHub Copilot sign-in request so a slower, older one cannot overwrite its result. */
+let githubCopilotSignInRequestId = 0
+
 export const webviewMessageHandler = async (
 	provider: ClineProvider,
 	message: WebviewMessage,
@@ -1486,26 +1489,34 @@ export const webviewMessageHandler = async (
 
 			break
 		case VsCodeLmModelsMessageType.githubCopilotSignIn:
-		case VsCodeLmModelsMessageType.githubCopilotReconnect:
+		case VsCodeLmModelsMessageType.githubCopilotReconnect: {
+			// Plain sign-in and Reconnect run as separate attempts, so an older one can finish after a newer one.
+			// Only the latest request may publish, or its account and model list would overwrite newer state.
+			const requestId = ++githubCopilotSignInRequestId
+			const isLatest = () => requestId === githubCopilotSignInRequestId
 			try {
 				const { models, account } = await connectGitHubCopilot(async (githubCopilotAccount: string) => {
+					if (!isLatest()) return
 					await provider.postMessageToWebview({
 						type: VsCodeLmModelsMessageType.githubCopilotModels,
 						githubCopilotAccount,
 					})
 				}, message.type === VsCodeLmModelsMessageType.githubCopilotReconnect)
+				if (!isLatest()) break
 				await provider.postMessageToWebview({
 					type: VsCodeLmModelsMessageType.githubCopilotSignInResult,
 					vsCodeLmModels: models,
 					githubCopilotAccount: account,
 				})
 			} catch (error) {
+				if (!isLatest()) break
 				await provider.postMessageToWebview({
 					type: VsCodeLmModelsMessageType.githubCopilotSignInResult,
 					error: error instanceof Error ? error.message : String(error),
 				})
 			}
 			break
+		}
 		case VsCodeLmModelsMessageType.githubCopilotManageAccount:
 			try {
 				await openGitHubAccountManagement()
