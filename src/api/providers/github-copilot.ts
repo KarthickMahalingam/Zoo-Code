@@ -93,17 +93,23 @@ function getGitHubSession(options: vscode.AuthenticationGetSessionOptions) {
 	)
 }
 
-let signInInFlight: Promise<{ account: string; models: Awaited<ReturnType<typeof getVsCodeLmModels>> }> | undefined
+type SignInResult = { account: string; models: Awaited<ReturnType<typeof getVsCodeLmModels>> }
+
+// Keyed by whether a fresh session was requested, so a Reconnect is never answered by a plain sign-in.
+const signInsInFlight = new Map<boolean, Promise<SignInResult>>()
 
 /**
- * Signs in to GitHub and lists the Copilot models that become available. Concurrent calls share one
- * attempt, so a double click cannot open two sign-in prompts.
+ * Signs in to GitHub and lists the Copilot models that become available. Concurrent calls with the
+ * same `forceNewSession` share one attempt, so a double click cannot open two sign-in prompts.
  *
  * Authenticating does not prove a Copilot entitlement: an account without one signs in successfully
  * and simply sees no models, which callers must present as such.
  */
 export function connectGitHubCopilot(onAuthenticated?: (account: string) => Promise<void>, forceNewSession = false) {
-	signInInFlight ??= (async () => {
+	const pending = signInsInFlight.get(forceNewSession)
+	if (pending) return pending
+
+	const attempt = (async (): Promise<SignInResult> => {
 		try {
 			const { authProviderId, authScopeSets, chatExtensionId, selector } = githubCopilotLanguageModel
 			const session = await vscode.authentication.getSession(
@@ -116,10 +122,11 @@ export function connectGitHubCopilot(onAuthenticated?: (account: string) => Prom
 			await vscode.extensions.getExtension(chatExtensionId)?.activate()
 			return { account: session.account.label, models: await getVsCodeLmModels(selector) }
 		} finally {
-			signInInFlight = undefined
+			signInsInFlight.delete(forceNewSession)
 		}
 	})()
-	return signInInFlight
+	signInsInFlight.set(forceNewSession, attempt)
+	return attempt
 }
 
 /** The signed-in account, or undefined when there is none or the lookup is not possible. */

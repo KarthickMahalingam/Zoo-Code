@@ -400,7 +400,11 @@ function getSelectedModel({
 				info: {
 					...vscodeLlmBaselineModelInfo,
 					...knownModel,
+					// The extension enforces the curated input limit, so the UI must not show the larger window.
+					...(knownModel && { contextWindow: knownModel.maxInputTokens }),
 					...reported?.modelInfo,
+					// A reported model's vision is the host's alone; an omitted key must not fall back to the catalog.
+					...(reported && { supportsImages: reported.modelInfo?.supportsImages }),
 					supportsPromptCache: false,
 				},
 			}

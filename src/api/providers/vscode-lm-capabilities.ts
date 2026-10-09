@@ -32,8 +32,8 @@ export function reportedImageSupport(model: vscode.LanguageModelChat): boolean |
 }
 
 /**
- * Derives Zoo's model info from what VS Code reports for a live model. Reported values win; the
- * curated catalog only fills gaps, and anything neither source states stays unset rather than guessed.
+ * Derives Zoo's model info from what VS Code reports for a live model. The curated catalog only fills
+ * gaps in everything but vision, and anything neither source states stays unset rather than guessed.
  */
 export function getVsCodeLmModelInfo(model: vscode.LanguageModelChat): ModelInfo {
 	const curated = vscodeLlmModels[model.family as keyof typeof vscodeLlmModels]
@@ -48,8 +48,8 @@ export function getVsCodeLmModelInfo(model: vscode.LanguageModelChat): ModelInfo
 		...curated,
 		contextWindow:
 			curatedInputLimit && curatedInputLimit > 0 ? Math.min(liveInputLimit, curatedInputLimit) : liveInputLimit,
-		// Without image-part support in the host, no image can be sent whatever the model advertises.
-		supportsImages: canCreateImageParts() ? (reportedImageSupport(model) ?? curated?.supportsImages) : false,
+		// A live model's vision is the host's word alone; unreported stays unset rather than borrowing the catalog's.
+		supportsImages: canCreateImageParts() ? reportedImageSupport(model) : false,
 		supportsPromptCache: false,
 		inputPrice: 0,
 		outputPrice: 0,

@@ -69,16 +69,15 @@ Capabilities come from what VS Code reports for each Copilot model, so new model
 changes, and nothing about a model is saved into your settings where it could go stale.
 
 - **Context window:** the model's reported input limit, capped by Zoo Code's curated limit where one
-  is known.
-- **Images:** read from the host's reported capability, falling back to Zoo Code's curated catalog
-  only when the host reports nothing. A capability that neither states is shown as **Image support
-  not reported** rather than assumed unsupported. Images are sent as image data, not text
-  placeholders, and need a VS Code version that supports image parts; Zoo Code's minimum supported
-  VS Code version stays 1.100.
+  is known. Before the host reports, the curated limit is shown, matching what Zoo Code enforces.
+- **Images:** read from the capability the host reports for each live model. A model that reports
+  nothing shows **Image support not reported** instead of being assumed unsupported or borrowed from
+  Zoo Code's curated catalog, which only describes a model the host has not listed yet. Images are
+  sent as image data, not text placeholders, and need a VS Code version that supports image parts;
+  Zoo Code's minimum supported VS Code version stays 1.100.
 - **Tools:** VS Code tells extensions only whether a model supports tools, not how many it accepts,
-  so Zoo Code cannot enforce a per-model limit. The same advisory shown for any provider applies when
-  many MCP tools are enabled. GitHub plan limits, premium-request allowances, organization policies,
-  and backend limits still apply.
+  so Zoo Code applies the same advisory it shows for any provider when many MCP tools are enabled.
+  GitHub plan limits, premium-request allowances, organization policies, and backend limits still apply.
 - **Prompt caching:** Copilot owns any backend caching. The public VS Code Language Model API exposes
   no cache-control directives or cache-hit usage, so Zoo Code neither enables caching nor reports
   savings; the provider-managed label states this and does not promise a cache hit.

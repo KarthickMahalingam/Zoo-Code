@@ -1310,11 +1310,11 @@ describe("useSelectedModel", () => {
 			).toBeUndefined()
 		})
 
-		it("uses what the host reports for the selected model: context, vision, and tool limit", () => {
+		it("uses what the host reports for the selected model: context and vision", () => {
 			reportedModels({
 				id: "dynamic-vision",
 				family: "dynamic-vision",
-				modelInfo: { contextWindow: 260000, supportsImages: true, supportsPromptCache: false, maxTools: 200 },
+				modelInfo: { contextWindow: 260000, supportsImages: true, supportsPromptCache: false },
 			})
 
 			const selected = selectCopilot({ vendor: "copilot", id: "dynamic-vision", family: "dynamic-vision" })
@@ -1324,7 +1324,6 @@ describe("useSelectedModel", () => {
 				contextWindow: 260000,
 				supportsImages: true,
 				supportsPromptCache: false,
-				maxTools: 200,
 			})
 		})
 
@@ -1360,6 +1359,36 @@ describe("useSelectedModel", () => {
 		it("falls back to the default model id when nothing is selected yet", () => {
 			const { result } = renderHook(() => useSelectedModel({ apiProvider: providerIdentifiers.githubCopilot }))
 			expect(result.current.id).toBe(vscodeLlmDefaultModelId)
+		})
+
+		it("shows the window the extension enforces, not a larger curated one, before the host reports", () => {
+			const [family, entry] =
+				Object.entries(vscodeLlmModels).find(([, e]) => e.contextWindow !== e.maxInputTokens) ?? []
+			expect(family).toBeDefined()
+
+			const selected = selectCopilot({ vendor: githubCopilotLanguageModel.vendor, family })
+
+			expect(selected.info?.contextWindow).toBe(entry!.maxInputTokens)
+			expect(selected.info?.contextWindow).toBeLessThan(entry!.contextWindow)
+		})
+
+		it("does not let a reported model that says nothing about vision inherit the catalog's flag", () => {
+			const [family] = Object.entries(vscodeLlmModels).find(([, e]) => e.supportsImages) ?? []
+			// An unreported capability arrives with its key absent, as it does after crossing the message boundary.
+			reportedModels({
+				id: "silent",
+				family: family!,
+				modelInfo: { contextWindow: 1000, supportsPromptCache: false },
+			})
+
+			expect(selectCopilot({ vendor: "copilot", id: "silent", family }).info?.supportsImages).toBeUndefined()
+		})
+
+		it("keeps the catalog's vision flag only for a model the host has not reported", () => {
+			const [family] = Object.entries(vscodeLlmModels).find(([, e]) => e.supportsImages) ?? []
+			reportedModels({ id: "someone-else", family: "someone-else" })
+
+			expect(selectCopilot({ vendor: "copilot", id: "not-listed", family }).info?.supportsImages).toBe(true)
 		})
 
 		it("picks the reported model matching the saved id, not merely the first one", () => {
