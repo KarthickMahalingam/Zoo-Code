@@ -224,6 +224,31 @@ describe("webviewMessageHandler - Copilot authentication", () => {
 		)
 	})
 
+	it("answers every view that signs in, since only a view's own newer request makes its older one stale", async () => {
+		const otherView = {
+			...mockClineProvider,
+			postMessageToWebview: vi.fn(),
+		} as unknown as ClineProvider
+		let finishFirst!: (value: { account: string; models: [] }) => void
+		let finishSecond!: (value: { account: string; models: [] }) => void
+		vi.spyOn(copilotProvider, "connectGitHubCopilot")
+			.mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
+			.mockImplementationOnce(() => new Promise((resolve) => (finishSecond = resolve)))
+
+		const first = webviewMessageHandler(mockClineProvider, { type: "githubCopilotSignIn" })
+		const second = webviewMessageHandler(otherView, { type: "githubCopilotSignIn" })
+		finishSecond({ account: "Second User", models: [] })
+		finishFirst({ account: "First User", models: [] })
+		await Promise.all([first, second])
+
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+			expect.objectContaining({ type: "githubCopilotSignInResult", githubCopilotAccount: "First User" }),
+		)
+		expect(otherView.postMessageToWebview).toHaveBeenCalledWith(
+			expect.objectContaining({ type: "githubCopilotSignInResult", githubCopilotAccount: "Second User" }),
+		)
+	})
+
 	it("opens VS Code's account management and never signs out itself", async () => {
 		const open = vi.spyOn(copilotProvider, "openGitHubAccountManagement").mockResolvedValue(undefined)
 		await webviewMessageHandler(mockClineProvider, { type: "githubCopilotManageAccount" })

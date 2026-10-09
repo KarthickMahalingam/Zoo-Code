@@ -124,8 +124,8 @@ import {
 	handleCheckoutBranch,
 } from "./worktree"
 
-/** Identifies the newest GitHub Copilot sign-in request so a slower, older one cannot overwrite its result. */
-let githubCopilotSignInRequestId = 0
+/** The newest GitHub Copilot sign-in request per view, so a slower, older one cannot overwrite its result. */
+const githubCopilotSignInRequestIds = new WeakMap<ClineProvider, number>()
 
 export const webviewMessageHandler = async (
 	provider: ClineProvider,
@@ -1492,8 +1492,9 @@ export const webviewMessageHandler = async (
 		case VsCodeLmModelsMessageType.githubCopilotReconnect: {
 			// Plain sign-in and Reconnect run as separate attempts, so an older one can finish after a newer one.
 			// Only the latest request may publish, or its account and model list would overwrite newer state.
-			const requestId = ++githubCopilotSignInRequestId
-			const isLatest = () => requestId === githubCopilotSignInRequestId
+			const requestId = (githubCopilotSignInRequestIds.get(provider) ?? 0) + 1
+			githubCopilotSignInRequestIds.set(provider, requestId)
+			const isLatest = () => githubCopilotSignInRequestIds.get(provider) === requestId
 			try {
 				const { models, account } = await connectGitHubCopilot(async (githubCopilotAccount: string) => {
 					if (!isLatest()) return
