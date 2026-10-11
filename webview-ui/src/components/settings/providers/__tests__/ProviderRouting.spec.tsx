@@ -642,6 +642,18 @@ describe("provider model routing", () => {
 		})
 	})
 
+	it.each([
+		["Copilot", providerIdentifiers.githubCopilot],
+		["the legacy provider", providerIdentifiers.vscodeLm],
+	])("styles the model-wrapping note for %s as advisory text, not as an error", (_label, provider) => {
+		renderWithQuery(<VSCodeLM apiConfiguration={{ apiProvider: provider }} setApiConfigurationField={vi.fn()} />)
+
+		const note = screen.getByText("settings:providers.vscodeLmWarning")
+		expect(note).toHaveClass("text-vscode-descriptionForeground")
+		expect(note).not.toHaveClass("text-vscode-errorForeground")
+		expect(note).not.toHaveAttribute("role", "alert")
+	})
+
 	it("keeps the legacy VS Code LM provider free of Copilot login controls", () => {
 		renderWithQuery(
 			<VSCodeLM
