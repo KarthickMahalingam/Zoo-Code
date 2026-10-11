@@ -2,12 +2,14 @@ import * as vscode from "vscode"
 
 import { VsCodeLmModelsMessageType, githubCopilotLanguageModel } from "@roo-code/types"
 
-import { getVsCodeLmModels } from "../../api/providers/vscode-lm"
+import { getGitHubCopilotAccount, getGitHubCopilotModels } from "../../api/providers/github-copilot"
+import { getGitHubCopilotViewState } from "./copilotViewState"
 
 export interface CopilotModelBroadcastTarget {
 	postMessageToWebview(message: {
 		type: typeof VsCodeLmModelsMessageType.githubCopilotModels
-		vsCodeLmModels: Awaited<ReturnType<typeof getVsCodeLmModels>>
+		vsCodeLmModels: Awaited<ReturnType<typeof getGitHubCopilotModels>>
+		githubCopilotAccount: string | null
 	}): Promise<void>
 }
 
@@ -17,27 +19,43 @@ export interface CopilotModelBroadcastOptions {
 	log: (message: string) => void
 	/** Collapses the burst of events VS Code raises while models register into one refresh. */
 	debounceMs?: number
+	/** Calls the listener when the host's models or its GitHub sessions change. */
 	subscribe?: (listener: () => void) => vscode.Disposable | undefined
-	fetchModels?: typeof getVsCodeLmModels
+	fetchModels?: typeof getGitHubCopilotModels
+	fetchAccount?: typeof getGitHubCopilotAccount
 }
 
 const DEFAULT_DEBOUNCE_MS = 250
 
+const subscribeToHost = (listener: () => void): vscode.Disposable => {
+	const subscriptions = [
+		"lm" in vscode ? vscode.lm.onDidChangeChatModels?.(listener) : undefined,
+		"authentication" in vscode
+			? vscode.authentication.onDidChangeSessions?.((event) => {
+					if (event.provider.id === githubCopilotLanguageModel.authProviderId) listener()
+				})
+			: undefined,
+	]
+	return { dispose: () => subscriptions.forEach((subscription) => subscription?.dispose()) }
+}
+
 /**
- * Keeps every open webview's Copilot model list current as the host registers or removes models
- * (sign-in, sign-out, entitlement changes).
+ * Keeps every open webview's Copilot account and model list current as the host registers or removes
+ * models and as GitHub sessions change, including a sign-out done in VS Code's own account menu.
  *
  * One subscription serves all views, so a change costs one lookup however many views exist. A failed
- * lookup is logged and leaves each view's last known list in place: reporting failure as "no models"
- * would wrongly present a transient error as a lost entitlement.
+ * lookup is logged and leaves each view's last known state in place: reporting failure as "signed out"
+ * or "no models" would wrongly present a transient error as a lost account or entitlement. A view that
+ * signed in while the lookup ran is skipped, since its own result is newer.
  */
 export function registerCopilotModelBroadcast(options: CopilotModelBroadcastOptions): vscode.Disposable {
 	const {
 		getTargets,
 		log,
 		debounceMs = DEFAULT_DEBOUNCE_MS,
-		subscribe = (listener) => ("lm" in vscode ? vscode.lm.onDidChangeChatModels?.(listener) : undefined),
-		fetchModels = getVsCodeLmModels,
+		subscribe = subscribeToHost,
+		fetchModels = getGitHubCopilotModels,
+		fetchAccount = getGitHubCopilotAccount,
 	} = options
 
 	let timer: ReturnType<typeof setTimeout> | undefined
@@ -46,20 +64,29 @@ export function registerCopilotModelBroadcast(options: CopilotModelBroadcastOpti
 
 	const refresh = async () => {
 		const request = ++latestRequest
+		const changesAtStart = new Map(
+			getTargets().map((target) => [target, getGitHubCopilotViewState(target).changes]),
+		)
 		try {
-			const vsCodeLmModels = await fetchModels(githubCopilotLanguageModel.selector)
+			const [vsCodeLmModels, account] = await Promise.all([fetchModels(), fetchAccount()])
 			// A newer change superseded this lookup, or the extension is shutting down.
 			if (disposed || request !== latestRequest) return
 			await Promise.all(
-				getTargets().map((target) =>
-					target.postMessageToWebview({
-						type: VsCodeLmModelsMessageType.githubCopilotModels,
-						vsCodeLmModels,
-					}),
-				),
+				getTargets()
+					.filter((target) => {
+						const started = changesAtStart.get(target)
+						return started === undefined || getGitHubCopilotViewState(target).changes === started
+					})
+					.map((target) =>
+						target.postMessageToWebview({
+							type: VsCodeLmModelsMessageType.githubCopilotModels,
+							vsCodeLmModels,
+							githubCopilotAccount: account ?? null,
+						}),
+					),
 			)
 		} catch (error) {
-			log(`Failed to refresh GitHub Copilot models: ${error instanceof Error ? error.message : String(error)}`)
+			log(`Failed to refresh GitHub Copilot state: ${error instanceof Error ? error.message : String(error)}`)
 		}
 	}
 

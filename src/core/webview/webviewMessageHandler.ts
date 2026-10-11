@@ -81,9 +81,11 @@ import { searchCommits } from "../../utils/git"
 import { exportSettings, importSettingsWithFeedback } from "../config/importExport"
 import { getOpenAiModels } from "../../api/providers/openai"
 import { getVsCodeLmModels } from "../../api/providers/vscode-lm"
+import { getGitHubCopilotViewState } from "../../services/language-models/copilotViewState"
 import {
 	connectGitHubCopilot,
 	getGitHubCopilotAccount,
+	getGitHubCopilotModels,
 	openGitHubAccountManagement,
 } from "../../api/providers/github-copilot"
 import { openMention } from "../mentions"
@@ -128,24 +130,6 @@ import {
 
 const handlerFor = (apiConfiguration: ProviderSettings, provider: RouterName): ApiHandler =>
 	buildApiHandler({ ...apiConfiguration, apiProvider: provider })
-
-type GitHubCopilotViewState = {
-	/** The newest sign-in request, so a slower, older one cannot overwrite its result. */
-	signInId: number
-	/** Moves whenever a sign-in starts or settles; a passive refresh that began earlier is out of date. */
-	changes: number
-}
-
-const githubCopilotViewStates = new WeakMap<ClineProvider, GitHubCopilotViewState>()
-
-const getGitHubCopilotViewState = (provider: ClineProvider) => {
-	let state = githubCopilotViewStates.get(provider)
-	if (!state) {
-		state = { signInId: 0, changes: 0 }
-		githubCopilotViewStates.set(provider, state)
-	}
-	return state
-}
 
 export const webviewMessageHandler = async (
 	provider: ClineProvider,
@@ -1575,26 +1559,28 @@ export const webviewMessageHandler = async (
 			}
 			break
 		case VsCodeLmModelsMessageType.requestVsCodeLmModels: {
-			const isCopilot = message.apiConfiguration?.apiProvider === providerIdentifiers.githubCopilot
-			const type = isCopilot
-				? VsCodeLmModelsMessageType.githubCopilotModels
-				: VsCodeLmModelsMessageType.vsCodeLmModels
-			const viewState = isCopilot ? getGitHubCopilotViewState(provider) : undefined
-			const changesAtStart = viewState?.changes
-			const isOutOfDate = () => viewState !== undefined && viewState.changes !== changesAtStart
+			if (message.apiConfiguration?.apiProvider !== providerIdentifiers.githubCopilot) {
+				const vsCodeLmModels = await getVsCodeLmModels()
+				// TODO: Cache like we do for OpenRouter, etc?
+				await provider.postMessageToWebview({ type: VsCodeLmModelsMessageType.vsCodeLmModels, vsCodeLmModels })
+				break
+			}
+			const viewState = getGitHubCopilotViewState(provider)
+			const changesAtStart = viewState.changes
+			const isOutOfDate = () => viewState.changes !== changesAtStart
 			try {
-				const githubCopilotAccount = isCopilot ? await getGitHubCopilotAccount() : undefined
-				const vsCodeLmModels = await getVsCodeLmModels(isCopilot ? githubCopilotLanguageModel.selector : {})
+				const githubCopilotAccount = await getGitHubCopilotAccount()
+				const vsCodeLmModels = await getGitHubCopilotModels()
 				if (isOutOfDate()) break
 				await provider.postMessageToWebview({
-					type,
+					type: VsCodeLmModelsMessageType.githubCopilotModels,
 					vsCodeLmModels,
-					...(isCopilot ? { githubCopilotAccount: githubCopilotAccount ?? null } : {}),
+					githubCopilotAccount: githubCopilotAccount ?? null,
 				})
 			} catch (error) {
 				if (isOutOfDate()) break
 				await provider.postMessageToWebview({
-					type,
+					type: VsCodeLmModelsMessageType.githubCopilotModels,
 					error: error instanceof Error ? error.message : String(error),
 				})
 			}

@@ -69,6 +69,8 @@ export const VSCodeLM = ({ apiConfiguration, setApiConfigurationField }: VSCodeL
 			}
 			if (message.githubCopilotAccount !== undefined) setAccount(message.githubCopilotAccount ?? undefined)
 			if (isSignInResult || message.error) setError(message.error)
+			// A usable list proves the earlier failure has passed, so its banner must not outlive it.
+			else if (message.vsCodeLmModels) setError(undefined)
 			if (!isCopilot && !message.error && message.vsCodeLmModels) setLegacyModels(message.vsCodeLmModels)
 		},
 		[isCopilot],
@@ -76,12 +78,20 @@ export const VSCodeLM = ({ apiConfiguration, setApiConfigurationField }: VSCodeL
 
 	useEvent("message", onMessage)
 
-	// Convert VSCode LM models array to Record format for ModelPicker
+	// Copilot keys models by id and saves the exact model; the legacy provider keeps its original vendor/family shape.
 	const modelsRecord = useMemo((): Record<string, ModelInfo> => {
 		return vsCodeLmModels.reduce(
 			(acc, model) => {
-				const modelId = model.id ?? `${model.vendor}/${model.family}`
-				acc[modelId] = {
+				if (!isCopilot) {
+					acc[`${model.vendor}/${model.family}`] = {
+						maxTokens: 0,
+						contextWindow: 0,
+						supportsPromptCache: false,
+						description: `${model.vendor} - ${model.family}`,
+					}
+					return acc
+				}
+				acc[model.id ?? `${model.vendor}/${model.family}`] = {
 					maxTokens: 0,
 					contextWindow: model.maxInputTokens ?? 0,
 					supportsPromptCache: false,
@@ -93,39 +103,34 @@ export const VSCodeLM = ({ apiConfiguration, setApiConfigurationField }: VSCodeL
 			},
 			{} as Record<string, ModelInfo>,
 		)
-	}, [vsCodeLmModels])
+	}, [vsCodeLmModels, isCopilot])
 
-	// Transform string model ID to { vendor, family } object for storage
 	const valueTransform = useCallback(
 		(modelId: string) => {
-			const model = vsCodeLmModels.find((candidate) => candidate.id === modelId)
+			const model = isCopilot ? vsCodeLmModels.find((candidate) => candidate.id === modelId) : undefined
 			if (model) {
-				return {
-					id: model.id,
-					vendor: model.vendor,
-					family: model.family,
-					version: model.version,
-				}
+				return { id: model.id, vendor: model.vendor, family: model.family, version: model.version }
 			}
 			const [vendor, family] = modelId.split("/")
 			return { vendor, family }
 		},
-		[vsCodeLmModels],
+		[vsCodeLmModels, isCopilot],
 	)
 
-	// Transform stored { vendor, family } object back to display string
 	const displayTransform = useCallback(
 		(value: unknown) => {
 			if (!value) return ""
 			const selector = value as LanguageModelChatSelector
-			if (selector.id && vsCodeLmModels.some((model) => model.id === selector.id)) return selector.id
-			const model = vsCodeLmModels.find(
-				(candidate) => candidate.vendor === selector.vendor && candidate.family === selector.family,
-			)
-			if (model?.id) return model.id
+			if (isCopilot) {
+				if (selector.id && vsCodeLmModels.some((model) => model.id === selector.id)) return selector.id
+				const model = vsCodeLmModels.find(
+					(candidate) => candidate.vendor === selector.vendor && candidate.family === selector.family,
+				)
+				if (model?.id) return model.id
+			}
 			return selector.vendor && selector.family ? `${selector.vendor}/${selector.family}` : ""
 		},
-		[vsCodeLmModels],
+		[vsCodeLmModels, isCopilot],
 	)
 
 	return (

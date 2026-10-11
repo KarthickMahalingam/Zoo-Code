@@ -23,7 +23,6 @@ import {
 	sanitizeSurrogatesDeep,
 	sanitizeToolNameSurrogates,
 } from "../transform/vscode-lm-format"
-import { getVsCodeLmModelInfo } from "./vscode-lm-capabilities"
 
 import { CONTEXT_WINDOW_EXCEEDED_STATUS } from "../../core/context/context-management/context-error-handling"
 
@@ -1522,23 +1521,16 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 }
 
 // Static blacklist of VS Code Language Model IDs that should be excluded from the model list e.g. because they will never work
-const VSCODE_LM_STATIC_BLACKLIST: string[] = ["claude-3.7-sonnet", "claude-3.7-sonnet-thought"]
+export const VSCODE_LM_STATIC_BLACKLIST: string[] = ["claude-3.7-sonnet", "claude-3.7-sonnet-thought"]
 
-/**
- * Lists the language models the host currently offers. A failure is surfaced to the caller rather
- * than reported as an empty list: "no models" and "could not ask" call for different handling.
- */
-export async function getVsCodeLmModels(selector: vscode.LanguageModelChatSelector = {}) {
-	const models = (await vscode.lm.selectChatModels(selector)) || []
-	return models
-		.filter((model) => !VSCODE_LM_STATIC_BLACKLIST.includes(model.id))
-		.map((model) => ({
-			id: model.id,
-			vendor: model.vendor,
-			family: model.family,
-			version: model.version,
-			name: model.name,
-			maxInputTokens: model.maxInputTokens,
-			modelInfo: getVsCodeLmModelInfo(model),
-		}))
+export async function getVsCodeLmModels() {
+	try {
+		const models = (await vscode.lm.selectChatModels({})) || []
+		return models.filter((model) => !VSCODE_LM_STATIC_BLACKLIST.includes(model.id))
+	} catch (error) {
+		console.error(
+			`Error fetching VS Code LM models: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`,
+		)
+		return []
+	}
 }

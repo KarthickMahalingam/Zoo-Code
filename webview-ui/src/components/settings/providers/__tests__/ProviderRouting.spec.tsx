@@ -482,18 +482,54 @@ describe("provider model routing", () => {
 				<VSCodeLM apiConfiguration={{ apiProvider: provider }} setApiConfigurationField={vi.fn()} />,
 			)
 
+		// Raw host models carry an id and a version, which the legacy provider has never used.
 		const listed = [
-			{ id: "m1", vendor: "copilot", family: "fam", version: "1" },
+			{ id: "m1", vendor: "copilot", family: "fam", version: "1", name: "Model One" },
 			{ vendor: "other", family: "no-id" },
 		]
 
-		it("lists the legacy provider's models from its own messages and names its service accordingly", () => {
-			mount(providerIdentifiers.vscodeLm)
+		describe("legacy VS Code LM provider, unchanged from before Copilot support", () => {
+			beforeEach(async () => {
+				mount(providerIdentifiers.vscodeLm)
+				send({ type: VsCodeLmModelsMessageType.vsCodeLmModels, vsCodeLmModels: listed })
+				await waitFor(() => expect(modelPickerMock).toHaveBeenCalled())
+			})
 
-			send({ type: VsCodeLmModelsMessageType.vsCodeLmModels, vsCodeLmModels: listed })
+			it("names its service accordingly and keys every model by vendor and family, never by id", () => {
+				expect(pickerProps().serviceName).toBe("VS Code LM")
+				expect(Object.keys(pickerProps().models ?? {})).toEqual(["copilot/fam", "other/no-id"])
+			})
 
-			expect(pickerProps().serviceName).toBe("VS Code LM")
-			expect(Object.keys(pickerProps().models ?? {})).toEqual(["m1", "other/no-id"])
+			it("describes models plainly, without Copilot's capability or display data", () => {
+				expect(pickerProps().models?.["copilot/fam"]).toEqual({
+					maxTokens: 0,
+					contextWindow: 0,
+					supportsPromptCache: false,
+					description: "copilot - fam",
+				})
+			})
+
+			it("saves a chosen model as vendor and family only, so a profile is never pinned to one id or version", () => {
+				expect(pickerProps().valueTransform?.("copilot/fam")).toEqual({ vendor: "copilot", family: "fam" })
+			})
+
+			it("does not treat a model's id as a selection, even when one is listed", () => {
+				expect(pickerProps().valueTransform?.("m1")).toEqual({ vendor: "m1", family: undefined })
+			})
+
+			it.each([
+				["nothing stored", undefined, ""],
+				["a stored vendor and family", { vendor: "copilot", family: "fam" }, "copilot/fam"],
+				[
+					"a stored vendor and family that is no longer listed",
+					{ vendor: "gone", family: "model" },
+					"gone/model",
+				],
+				["a selector too incomplete to name a model", { vendor: "copilot" }, ""],
+				["a selector holding only an id", { id: "m1" }, ""],
+			])("shows %s as the right label", (_label, stored, expected) => {
+				expect(pickerProps().displayTransform?.(stored)).toBe(expected)
+			})
 		})
 
 		it("keeps each provider's list separate: the legacy picker ignores Copilot messages", () => {
@@ -512,13 +548,20 @@ describe("provider model routing", () => {
 			expect(modelPickerMock).not.toHaveBeenCalled()
 		})
 
-		describe("stored value mapping", () => {
-			beforeEach(() => {
-				mount(providerIdentifiers.vscodeLm)
-				send({ type: VsCodeLmModelsMessageType.vsCodeLmModels, vsCodeLmModels: listed })
+		describe("GitHub Copilot", () => {
+			beforeEach(async () => {
+				mount(providerIdentifiers.githubCopilot)
+				send({ type: VsCodeLmModelsMessageType.githubCopilotModels, vsCodeLmModels: listed })
+				await waitFor(() => expect(modelPickerMock).toHaveBeenCalled())
 			})
 
-			it("stores a listed model by its identity, with no capability snapshot", () => {
+			it("names its service accordingly and keys a model by its id, falling back to vendor and family", () => {
+				expect(pickerProps().serviceName).toBe("GitHub Copilot")
+				expect(Object.keys(pickerProps().models ?? {})).toEqual(["m1", "other/no-id"])
+				expect(pickerProps().models?.m1).toMatchObject({ displayName: "Model One" })
+			})
+
+			it("saves a chosen model by its exact identity, with no capability snapshot", () => {
 				expect(pickerProps().valueTransform?.("m1")).toEqual({
 					id: "m1",
 					vendor: "copilot",
@@ -527,7 +570,7 @@ describe("provider model routing", () => {
 				})
 			})
 
-			it("stores an unlisted value as vendor and family", () => {
+			it("saves an unlisted value as vendor and family", () => {
 				expect(pickerProps().valueTransform?.("acme/model-x")).toEqual({ vendor: "acme", family: "model-x" })
 			})
 
@@ -545,10 +588,57 @@ describe("provider model routing", () => {
 					{ vendor: "gone", family: "model" },
 					"gone/model",
 				],
-				["a stored selector too incomplete to name a model", { vendor: "copilot" }, ""],
+				["a selector too incomplete to name a model", { vendor: "copilot" }, ""],
 			])("shows %s as the right label", (_label, stored, expected) => {
 				expect(pickerProps().displayTransform?.(stored)).toBe(expected)
 			})
+		})
+	})
+
+	describe("error banner", () => {
+		const send = (data: object) => act(() => void window.dispatchEvent(new MessageEvent("message", { data })))
+
+		it.each([
+			["Copilot", providerIdentifiers.githubCopilot, VsCodeLmModelsMessageType.githubCopilotModels],
+			["the legacy provider", providerIdentifiers.vscodeLm, VsCodeLmModelsMessageType.vsCodeLmModels],
+		])("is cleared for %s once a usable model list arrives", (_label, provider, type) => {
+			renderWithQuery(
+				<VSCodeLM apiConfiguration={{ apiProvider: provider }} setApiConfigurationField={vi.fn()} />,
+			)
+			send({ type, error: "Model discovery failed" })
+			expect(screen.getByRole("alert")).toHaveTextContent("Model discovery failed")
+
+			send({ type, vsCodeLmModels: [{ id: "m1", vendor: "copilot", family: "fam", version: "1" }] })
+
+			expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+		})
+
+		it("is cleared by an empty list too, since an empty answer is still an answer", () => {
+			renderWithQuery(
+				<VSCodeLM
+					apiConfiguration={{ apiProvider: providerIdentifiers.githubCopilot }}
+					setApiConfigurationField={vi.fn()}
+				/>,
+			)
+			send({ type: VsCodeLmModelsMessageType.githubCopilotModels, error: "Model discovery failed" })
+
+			send({ type: VsCodeLmModelsMessageType.githubCopilotModels, vsCodeLmModels: [] })
+
+			expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+		})
+
+		it("survives an account-only update, which says nothing about whether discovery recovered", () => {
+			renderWithQuery(
+				<VSCodeLM
+					apiConfiguration={{ apiProvider: providerIdentifiers.githubCopilot }}
+					setApiConfigurationField={vi.fn()}
+				/>,
+			)
+			send({ type: VsCodeLmModelsMessageType.githubCopilotModels, error: "Model discovery failed" })
+
+			send({ type: VsCodeLmModelsMessageType.githubCopilotModels, githubCopilotAccount: "octocat" })
+
+			expect(screen.getByRole("alert")).toHaveTextContent("Model discovery failed")
 		})
 	})
 

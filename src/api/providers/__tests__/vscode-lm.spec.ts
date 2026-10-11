@@ -4505,26 +4505,17 @@ describe("getVsCodeLmModels", () => {
 
 	beforeEach(() => vi.clearAllMocks())
 
-	it("describes each model by identity and by the capabilities the host reports", async () => {
-		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([
-			liveModel({ maxInputTokens: 50000, capabilities: { supportsImageToText: true } }),
-		] as never)
+	it("returns the host's models as they are, with no added capability data", async () => {
+		const model = liveModel({ capabilities: { supportsImageToText: true } })
+		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([model] as never)
 
-		const [listed] = await getVsCodeLmModels({ vendor: "copilot" })
-
-		expect(listed).toMatchObject({
-			id: "listed-model",
-			vendor: "copilot",
-			family: "listed-family",
-			maxInputTokens: 50000,
-			modelInfo: { contextWindow: 50000, supportsImages: true },
-		})
+		await expect(getVsCodeLmModels()).resolves.toEqual([model])
 	})
 
-	it("passes the selector through to the host", async () => {
+	it("asks the host for every model, whatever the vendor", async () => {
 		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([])
-		await getVsCodeLmModels({ vendor: "copilot" })
-		expect(vscode.lm.selectChatModels).toHaveBeenCalledWith({ vendor: "copilot" })
+		await getVsCodeLmModels()
+		expect(vscode.lm.selectChatModels).toHaveBeenCalledWith({})
 	})
 
 	it("omits models that can never work", async () => {
@@ -4541,9 +4532,12 @@ describe("getVsCodeLmModels", () => {
 		await expect(getVsCodeLmModels()).resolves.toEqual([])
 	})
 
-	it("surfaces a failed lookup instead of passing it off as 'no models'", async () => {
+	it("keeps its long-standing behaviour of answering a failed lookup with an empty list", async () => {
+		const logged = vi.spyOn(console, "error").mockImplementation(() => {})
 		vi.mocked(vscode.lm.selectChatModels).mockRejectedValue(new Error("host unavailable"))
-		await expect(getVsCodeLmModels({ vendor: "copilot" })).rejects.toThrow("host unavailable")
-		await expect(getVsCodeLmModels()).rejects.toThrow("host unavailable")
+
+		await expect(getVsCodeLmModels()).resolves.toEqual([])
+		expect(logged).toHaveBeenCalledWith(expect.stringContaining("host unavailable"))
+		logged.mockRestore()
 	})
 })

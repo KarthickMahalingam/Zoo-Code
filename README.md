@@ -61,7 +61,8 @@ signs in successfully and simply sees no models.
   sign out on a user's behalf, so signing out happens there. It affects Copilot and every other
   extension using the account.
 
-VS Code manages the GitHub session; Zoo Code never displays or stores the access token.
+VS Code manages the GitHub session; Zoo Code never displays or stores the access token. The account
+label follows VS Code, so signing out in the Accounts menu clears it.
 
 ### Capabilities
 
@@ -70,11 +71,11 @@ changes, and nothing about a model is saved into your settings where it could go
 
 - **Context window:** the model's reported input limit, capped by Zoo Code's curated limit where one
   is known. Before the host reports, the curated limit is shown, matching what Zoo Code enforces.
-- **Images:** read from the capability the host reports for each live model. A model that reports
-  nothing shows **Image support not reported** instead of being assumed unsupported or borrowed from
-  Zoo Code's curated catalog, which only describes a model the host has not listed yet. Images are
-  sent as image data, not text placeholders, and need a VS Code version that supports image parts;
-  Zoo Code's minimum supported VS Code version stays 1.100.
+- **Images:** read only from the capability the host reports for each model. Until it reports, or if it
+  reports nothing, the model shows **Image support not reported** instead of being assumed supported
+  or unsupported, and Zoo Code will not send images to it. Images are sent as image data, not text
+  placeholders, and need a VS Code version that supports image parts; Zoo Code's minimum supported
+  VS Code version stays 1.100.
 - **Tools:** VS Code tells extensions only whether a model supports tools, not how many it accepts,
   so Zoo Code applies the same advisory it shows for any provider when many MCP tools are enabled.
   GitHub plan limits, premium-request allowances, organization policies, and backend limits still apply.

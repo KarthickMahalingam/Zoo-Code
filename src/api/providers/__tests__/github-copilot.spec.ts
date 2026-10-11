@@ -92,6 +92,7 @@ import * as vscode from "vscode"
 import {
 	GitHubCopilotHandler,
 	connectGitHubCopilot,
+	getGitHubCopilotModels,
 	getGitHubCopilotAccount,
 	openGitHubAccountManagement,
 } from "../github-copilot"
@@ -560,5 +561,58 @@ describe("GitHubCopilotHandler", () => {
 				handler.dispose()
 			}
 		})
+	})
+})
+
+describe("getGitHubCopilotModels", () => {
+	const copilotModel = (overrides: Record<string, unknown> = {}) => ({
+		...mockLanguageModelChat,
+		id: "listed-model",
+		vendor: "copilot",
+		family: "listed-family",
+		...overrides,
+	})
+
+	beforeEach(() => vi.clearAllMocks())
+
+	it("describes each model by identity and by the capabilities the host reports", async () => {
+		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([
+			copilotModel({ maxInputTokens: 50000, capabilities: { supportsImageToText: true } }),
+		] as never)
+
+		const [listed] = await getGitHubCopilotModels()
+
+		expect(listed).toMatchObject({
+			id: "listed-model",
+			vendor: "copilot",
+			family: "listed-family",
+			maxInputTokens: 50000,
+			modelInfo: { contextWindow: 50000, supportsImages: true },
+		})
+	})
+
+	it("asks the host only for Copilot's models", async () => {
+		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([])
+		await getGitHubCopilotModels()
+		expect(vscode.lm.selectChatModels).toHaveBeenCalledWith({ vendor: "copilot" })
+	})
+
+	it("omits models that can never work", async () => {
+		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([
+			copilotModel({ id: "claude-3.7-sonnet" }),
+			copilotModel({ id: "kept" }),
+		] as never)
+
+		expect((await getGitHubCopilotModels()).map((model) => model.id)).toEqual(["kept"])
+	})
+
+	it("reports a host that has no models as an empty list", async () => {
+		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue(undefined as never)
+		await expect(getGitHubCopilotModels()).resolves.toEqual([])
+	})
+
+	it("surfaces a failed lookup instead of passing it off as 'no models'", async () => {
+		vi.mocked(vscode.lm.selectChatModels).mockRejectedValue(new Error("host unavailable"))
+		await expect(getGitHubCopilotModels()).rejects.toThrow("host unavailable")
 	})
 })

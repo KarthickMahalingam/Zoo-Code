@@ -8,7 +8,7 @@ import { CONTEXT_WINDOW_EXCEEDED_STATUS } from "../../core/context/context-manag
 
 import { convertToVsCodeLmMessages } from "../transform/vscode-lm-format"
 
-import { VsCodeLmHandler, containsImageBlock, getVsCodeLmModels } from "./vscode-lm"
+import { VSCODE_LM_STATIC_BLACKLIST, VsCodeLmHandler, containsImageBlock } from "./vscode-lm"
 import { getVsCodeLmModelInfo } from "./vscode-lm-capabilities"
 
 /**
@@ -93,7 +93,27 @@ function getGitHubSession(options: vscode.AuthenticationGetSessionOptions) {
 	)
 }
 
-type SignInResult = { account: string; models: Awaited<ReturnType<typeof getVsCodeLmModels>> }
+/**
+ * Lists the Copilot models the host currently offers, with the capabilities it reports for each. A
+ * failure reaches the caller rather than becoming an empty list: "no models" and "could not ask" call
+ * for different handling.
+ */
+export async function getGitHubCopilotModels() {
+	const models = (await vscode.lm.selectChatModels(githubCopilotLanguageModel.selector)) || []
+	return models
+		.filter((model) => !VSCODE_LM_STATIC_BLACKLIST.includes(model.id))
+		.map((model) => ({
+			id: model.id,
+			vendor: model.vendor,
+			family: model.family,
+			version: model.version,
+			name: model.name,
+			maxInputTokens: model.maxInputTokens,
+			modelInfo: getVsCodeLmModelInfo(model),
+		}))
+}
+
+type SignInResult = { account: string; models: Awaited<ReturnType<typeof getGitHubCopilotModels>> }
 
 // Keyed by whether a fresh session was requested, so a Reconnect is never answered by a plain sign-in.
 const signInsInFlight = new Map<boolean, Promise<SignInResult>>()
@@ -111,7 +131,7 @@ export function connectGitHubCopilot(onAuthenticated?: (account: string) => Prom
 
 	const attempt = (async (): Promise<SignInResult> => {
 		try {
-			const { authProviderId, authScopeSets, chatExtensionId, selector } = githubCopilotLanguageModel
+			const { authProviderId, authScopeSets, chatExtensionId } = githubCopilotLanguageModel
 			const session = await vscode.authentication.getSession(
 				authProviderId,
 				authScopeSets[0],
@@ -120,7 +140,7 @@ export function connectGitHubCopilot(onAuthenticated?: (account: string) => Prom
 			if (!session) throw new Error("GitHub sign-in did not complete. Please try again.")
 			await onAuthenticated?.(session.account.label)
 			await vscode.extensions.getExtension(chatExtensionId)?.activate()
-			return { account: session.account.label, models: await getVsCodeLmModels(selector) }
+			return { account: session.account.label, models: await getGitHubCopilotModels() }
 		} finally {
 			signInsInFlight.delete(forceNewSession)
 		}
