@@ -62,7 +62,14 @@ import { TelemetryService } from "@roo-code/telemetry"
 import { CloudService } from "@roo-code/cloud"
 
 // api
-import { ApiHandler, ApiHandlerCreateMessageMetadata, buildApiHandler, disposeApiHandler } from "../../api"
+import { ApiHandler, ApiHandlerCreateMessageMetadata, buildApiHandler } from "../../api"
+
+/** Releases host resources a handler owns, such as the VS Code LM / GitHub Copilot configuration listener. */
+function disposeApiHandler(handler: ApiHandler | undefined): void {
+	if (handler && "dispose" in handler && typeof handler.dispose === "function") {
+		handler.dispose()
+	}
+}
 import { ApiStream, GroundingSource } from "../../api/transform/stream"
 import { maybeRemoveImageBlocks } from "../../api/transform/image-cleaning"
 import { OutputTokenLimitError } from "../../api/providers/utils/output-token-limit-error"
