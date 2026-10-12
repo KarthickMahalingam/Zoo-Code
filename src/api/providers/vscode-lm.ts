@@ -1501,13 +1501,14 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 		return {}
 	}
 
-	async completePrompt(prompt: string, _options?: CompletePromptOptions): Promise<string> {
+	async completePrompt(prompt: string, options?: CompletePromptOptions): Promise<string> {
+		const cancellation = new vscode.CancellationTokenSource()
 		try {
 			const client = await this.getClient()
 			const response = await client.sendRequest(
 				[vscode.LanguageModelChatMessage.User(prompt)],
 				this.getCompletionRequestOptions(client),
-				new vscode.CancellationTokenSource().token,
+				cancellation.token,
 			)
 			let result = ""
 			for await (const chunk of response.stream) {
@@ -1521,6 +1522,8 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 				throw new Error(`VSCode LM completion error: ${error.message}`)
 			}
 			throw error
+		} finally {
+			cancellation.dispose()
 		}
 	}
 }

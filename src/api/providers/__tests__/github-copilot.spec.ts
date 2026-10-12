@@ -140,6 +140,41 @@ describe("connectGitHubCopilot", () => {
 		expect(vscode.lm.selectChatModels).toHaveBeenCalledWith({ vendor: "copilot" })
 	})
 
+	it("activates Copilot Chat after sign-in so model discovery can see its models", async () => {
+		const activate = vi.fn(async () => {
+			expect(vscode.lm.selectChatModels).not.toHaveBeenCalled()
+		})
+		vi.mocked(vscode.extensions.getExtension).mockReturnValue({ activate } as unknown as vscode.Extension<unknown>)
+		vi.mocked(vscode.authentication.getSession).mockResolvedValue({
+			id: "test-session",
+			accessToken: "test-token",
+			scopes: ["user:email"],
+			account: { id: "test-account", label: "Test User" },
+		})
+		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([])
+
+		await expect(connectGitHubCopilot()).resolves.toEqual({ account: "Test User", models: [] })
+
+		expect(vscode.extensions.getExtension).toHaveBeenCalledWith("GitHub.copilot-chat")
+		expect(activate).toHaveBeenCalledOnce()
+		expect(vscode.lm.selectChatModels).toHaveBeenCalledOnce()
+	})
+
+	it("still lists models when Copilot Chat is not installed", async () => {
+		vi.mocked(vscode.extensions.getExtension).mockReturnValue(undefined)
+		vi.mocked(vscode.authentication.getSession).mockResolvedValue({
+			id: "test-session",
+			accessToken: "test-token",
+			scopes: ["user:email"],
+			account: { id: "test-account", label: "Test User" },
+		})
+		vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([])
+
+		await expect(connectGitHubCopilot()).resolves.toEqual({ account: "Test User", models: [] })
+		expect(vscode.extensions.getExtension).toHaveBeenCalledWith("GitHub.copilot-chat")
+		expect(vscode.lm.selectChatModels).toHaveBeenCalledOnce()
+	})
+
 	it("rejects an incomplete sign-in rather than reporting a connected account", async () => {
 		vi.mocked(vscode.authentication.getSession).mockResolvedValueOnce(undefined)
 		await expect(connectGitHubCopilot()).rejects.toThrow("GitHub sign-in did not complete")
@@ -559,6 +594,44 @@ describe("GitHubCopilotHandler", () => {
 			const requestOptions = mockLanguageModelChat.sendRequest.mock.calls[0][1]
 			expect(requestOptions.justification).toContain("Zoo Code")
 			expect(requestOptions.justification).toContain(mockLanguageModelChat.name)
+		})
+
+		it("disposes each request's cancellation source and the handler's configuration listener", async () => {
+			mockLanguageModelChat.sendRequest.mockImplementation(async () => ({
+				stream: (async function* () {
+					yield new vscode.LanguageModelTextPart("enhanced")
+				})(),
+			}))
+
+			for (let i = 0; i < 3; i++) {
+				const handler = new GitHubCopilotHandler(defaultOptions)
+				try {
+					await expect(handler.completePrompt("improve this")).resolves.toBe("enhanced")
+				} finally {
+					handler.dispose()
+				}
+			}
+
+			const sources = vi.mocked(vscode.CancellationTokenSource).mock.results.map((r) => r.value)
+			expect(sources).toHaveLength(3)
+			for (const source of sources) expect(source.dispose).toHaveBeenCalledOnce()
+
+			const subscriptions = vi.mocked(vscode.workspace.onDidChangeConfiguration).mock.results.map((r) => r.value)
+			expect(subscriptions).toHaveLength(3)
+			for (const subscription of subscriptions) expect(subscription.dispose).toHaveBeenCalledOnce()
+		})
+
+		it("disposes the cancellation source when the request fails", async () => {
+			mockLanguageModelChat.sendRequest.mockRejectedValueOnce(new Error("boom"))
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			try {
+				await expect(handler.completePrompt("improve this")).rejects.toThrow("boom")
+			} finally {
+				handler.dispose()
+			}
+
+			const [source] = vi.mocked(vscode.CancellationTokenSource).mock.results.map((r) => r.value)
+			expect(source.dispose).toHaveBeenCalledOnce()
 		})
 	})
 

@@ -46,6 +46,18 @@ describe("enhancePrompt", () => {
 		expect((handler as any).completePrompt).toHaveBeenCalledWith(`Test prompt`, undefined)
 	})
 
+	it("disposes a disposable handler after every completion, including failures", async () => {
+		const dispose = vi.fn()
+		const completePrompt = vi.fn().mockResolvedValueOnce("ok").mockRejectedValueOnce(new Error("boom"))
+		vi.mocked(buildApiHandler).mockReturnValue({ completePrompt, dispose } as unknown as ReturnType<
+			typeof buildApiHandler
+		>)
+
+		await expect(singleCompletionHandler(mockApiConfig, "a")).resolves.toBe("ok")
+		await expect(singleCompletionHandler(mockApiConfig, "b")).rejects.toThrow("boom")
+		expect(dispose).toHaveBeenCalledTimes(2)
+	})
+
 	it("enhances prompt using custom enhancement prompt when provided", async () => {
 		const customEnhancePrompt = "You are a custom prompt enhancer"
 		const customEnhancePromptWithTemplate = customEnhancePrompt + "\n\n${userInput}"
