@@ -577,6 +577,118 @@ describe("GitHubCopilotHandler", () => {
 		}
 	})
 
+	describe("createMessage cancellation", () => {
+		beforeEach(() => mockLanguageModelChat.countTokens.mockResolvedValue(10))
+
+		/** A stream whose next read stays pending until `release`, as when the host waits on a chunk. */
+		const pendingStream = () => {
+			let release!: () => void
+			const released = new Promise<void>((resolve) => (release = resolve))
+			let token: vscode.CancellationToken | undefined
+			mockLanguageModelChat.sendRequest.mockImplementation(async (_m, _o, t: vscode.CancellationToken) => {
+				token = t
+				return {
+					stream: (async function* () {
+						yield new vscode.LanguageModelTextPart("first")
+						await released
+						yield new vscode.LanguageModelTextPart("late")
+					})(),
+				}
+			})
+			return { release, token: () => token }
+		}
+
+		it("cancels the host request when the task aborts while a chunk is pending", async () => {
+			const stream = pendingStream()
+			const controller = new AbortController()
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			try {
+				const messages = handler.createMessage("system", [{ role: "user", content: "hi" }], {
+					taskId: "t",
+					abortSignal: controller.signal,
+				})
+				await messages.next()
+				const [source] = vi.mocked(vscode.CancellationTokenSource).mock.results.map((r) => r.value)
+				expect(stream.token()).toBe(source.token)
+				expect(source.cancel).not.toHaveBeenCalled()
+
+				controller.abort()
+				expect(source.cancel).toHaveBeenCalledOnce()
+
+				stream.release()
+				await messages.return(undefined)
+			} finally {
+				handler.dispose()
+			}
+		})
+
+		it("cancels before sending when the task already aborted", async () => {
+			pendingStream()
+			const controller = new AbortController()
+			controller.abort()
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			try {
+				const messages = handler.createMessage("system", [{ role: "user", content: "hi" }], {
+					taskId: "t",
+					abortSignal: controller.signal,
+				})
+				await messages.next()
+				const source = vi.mocked(vscode.CancellationTokenSource).mock.results.at(-1)?.value
+				expect(source.cancel).toHaveBeenCalled()
+				await messages.return(undefined)
+			} finally {
+				handler.dispose()
+			}
+		})
+
+		it("removes exactly the abort listener it added when the stream is closed early", async () => {
+			const stream = pendingStream()
+			const controller = new AbortController()
+			const addSpy = vi.spyOn(controller.signal, "addEventListener")
+			const removeSpy = vi.spyOn(controller.signal, "removeEventListener")
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			try {
+				const messages = handler.createMessage("system", [{ role: "user", content: "hi" }], {
+					taskId: "t",
+					abortSignal: controller.signal,
+				})
+				await messages.next()
+				stream.release()
+				await messages.return(undefined)
+			} finally {
+				handler.dispose()
+			}
+
+			expect(addSpy).toHaveBeenCalledOnce()
+			expect(removeSpy).toHaveBeenCalledOnce()
+			expect(removeSpy.mock.calls[0][0]).toBe("abort")
+			expect(removeSpy.mock.calls[0][1]).toBe(addSpy.mock.calls[0][1])
+		})
+
+		it("removes the abort listener after the stream completes normally", async () => {
+			mockLanguageModelChat.sendRequest.mockImplementation(async () => ({
+				stream: (async function* () {
+					yield new vscode.LanguageModelTextPart("done")
+				})(),
+			}))
+			const controller = new AbortController()
+			const addSpy = vi.spyOn(controller.signal, "addEventListener")
+			const removeSpy = vi.spyOn(controller.signal, "removeEventListener")
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			try {
+				await collectStream(
+					handler.createMessage("system", [{ role: "user", content: "hi" }], {
+						taskId: "t",
+						abortSignal: controller.signal,
+					}),
+				)
+			} finally {
+				handler.dispose()
+			}
+			expect(removeSpy.mock.calls[0]?.[1]).toBe(addSpy.mock.calls[0][1])
+		})
+	})
+
 	describe("completePrompt", () => {
 		it("sends a justification so the host's consent prompt names Zoo Code", async () => {
 			mockLanguageModelChat.sendRequest.mockImplementation(async () => ({

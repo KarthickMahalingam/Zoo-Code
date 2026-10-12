@@ -1189,8 +1189,18 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 			...convertToVsCodeLmMessages(cleanedMessages, this.supportsImageInput(modelInfo)),
 		]
 
-		// Initialize cancellation token for the request
-		this.currentRequestCancellation = new vscode.CancellationTokenSource()
+		// Initialize cancellation token for the request, and let the caller's abort
+		// cancel the host request. Without this, a pending `response.stream` read
+		// keeps waiting after the task aborts, so the request never unwinds.
+		const requestCancellation = new vscode.CancellationTokenSource()
+		this.currentRequestCancellation = requestCancellation
+		const abortSignal = metadata?.abortSignal
+		const cancelOnAbort = () => requestCancellation.cancel()
+		if (abortSignal?.aborted) {
+			cancelOnAbort()
+		} else {
+			abortSignal?.addEventListener("abort", cancelOnAbort, { once: true })
+		}
 
 		// Calculate input tokens before starting the stream
 		const totalInputTokens: number = await this.calculateTotalInputTokens(vsCodeLmMessages)
@@ -1407,7 +1417,7 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 		} catch (error: unknown) {
 			this.ensureCleanState()
 
-			if (error instanceof vscode.CancellationError) {
+			if (error instanceof vscode.CancellationError || requestCancellation.token.isCancellationRequested) {
 				throw new Error("Zoo Code <Language Model API>: Request cancelled by user")
 			}
 
@@ -1431,6 +1441,9 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 				console.error("Zoo Code <Language Model API>: Unknown stream error:", errorMessage)
 				throw new Error(`Zoo Code <Language Model API>: Response stream error: ${errorMessage}`)
 			}
+		} finally {
+			// Runs on completion, failure, and early close via the generator's return().
+			abortSignal?.removeEventListener("abort", cancelOnAbort)
 		}
 	}
 
