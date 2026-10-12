@@ -41,6 +41,12 @@ export class GitHubCopilotHandler extends VsCodeLmHandler {
 		return vscodeLlmBaselineModelInfo
 	}
 
+	protected override getCompletionRequestOptions(client: vscode.LanguageModelChat) {
+		return {
+			justification: `Zoo Code would like to use '${client.name}' from '${client.vendor}', Click 'Allow' to proceed.`,
+		}
+	}
+
 	protected override supportsImageInput(info: ModelInfo): boolean {
 		return info.supportsImages === true
 	}

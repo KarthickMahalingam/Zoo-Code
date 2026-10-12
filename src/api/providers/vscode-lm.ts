@@ -1496,12 +1496,17 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 		return this.getModel().info.contextWindow
 	}
 
+	/** Request options for single-shot completions; the generic provider sends none. */
+	protected getCompletionRequestOptions(_client: vscode.LanguageModelChat): vscode.LanguageModelChatRequestOptions {
+		return {}
+	}
+
 	async completePrompt(prompt: string, _options?: CompletePromptOptions): Promise<string> {
 		try {
 			const client = await this.getClient()
 			const response = await client.sendRequest(
 				[vscode.LanguageModelChatMessage.User(prompt)],
-				{},
+				this.getCompletionRequestOptions(client),
 				new vscode.CancellationTokenSource().token,
 			)
 			let result = ""
