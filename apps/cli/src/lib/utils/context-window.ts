@@ -60,6 +60,8 @@ function getModelIdForProvider(config: ProviderSettings): string | undefined {
 			return config.nanoGptModelId
 		case providerIdentifiers.zooGateway:
 			return config.zooGatewayModelId
+		case providerIdentifiers.githubCopilot:
+			return config.vsCodeLmModelSelector?.id
 		case providerIdentifiers.anthropic:
 		case providerIdentifiers.bedrock:
 		case providerIdentifiers.baseten:
@@ -91,7 +93,6 @@ function getModelIdForProvider(config: ProviderSettings): string | undefined {
 		case retiredProviderIdentifiers.ioIntelligence:
 		case retiredProviderIdentifiers.roo:
 		case providerIdentifiers.vscodeLm:
-		case providerIdentifiers.githubCopilot:
 		case providerIdentifiers.fakeAi:
 		case undefined:
 			return config.apiModelId
