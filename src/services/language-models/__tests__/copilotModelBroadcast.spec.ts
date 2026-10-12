@@ -135,6 +135,62 @@ describe("registerCopilotModelBroadcast", () => {
 		expect(log).toHaveBeenCalledWith("Failed to refresh GitHub Copilot state: auth down")
 	})
 
+	describe("a view that cannot be reached", () => {
+		// The refresh runs from a timer, so a rejection that escaped it would be unhandled.
+		const unhandled = vi.fn()
+		beforeEach(() => {
+			unhandled.mockClear()
+			process.on("unhandledRejection", unhandled)
+		})
+		afterEach(() => void process.off("unhandledRejection", unhandled))
+
+		it("is logged and never escapes the refresh", async () => {
+			const broken = { postMessageToWebview: vi.fn().mockRejectedValue(new Error("webview disposed")) }
+			const { notify, log } = setup({ targets: [broken] })
+
+			notify()
+			await vi.advanceTimersByTimeAsync(100)
+
+			expect(broken.postMessageToWebview).toHaveBeenCalledTimes(1)
+			expect(log).toHaveBeenCalledExactlyOnceWith("Failed to refresh GitHub Copilot state: webview disposed")
+			expect(unhandled).not.toHaveBeenCalled()
+		})
+
+		it("does not stop the other views from receiving the update", async () => {
+			const broken = { postMessageToWebview: vi.fn().mockRejectedValue(new Error("webview disposed")) }
+			const healthy = newTarget()
+			const { notify } = setup({ targets: [broken, healthy] })
+
+			notify()
+			await vi.advanceTimersByTimeAsync(100)
+
+			expect(healthy.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: VsCodeLmModelsMessageType.githubCopilotModels,
+					githubCopilotAccount: "octocat",
+				}),
+			)
+			expect(unhandled).not.toHaveBeenCalled()
+		})
+
+		it("is retried on the next change, since one failed delivery does not disable later refreshes", async () => {
+			const flaky = {
+				postMessageToWebview: vi
+					.fn()
+					.mockRejectedValueOnce(new Error("not ready"))
+					.mockResolvedValue(undefined),
+			}
+			const { notify } = setup({ targets: [flaky] })
+
+			notify()
+			await vi.advanceTimersByTimeAsync(100)
+			notify()
+			await vi.advanceTimersByTimeAsync(100)
+
+			expect(flaky.postMessageToWebview).toHaveBeenCalledTimes(2)
+		})
+	})
+
 	it("logs a failure that is not an Error as text", async () => {
 		const { notify, log } = setup({ fetchModels: vi.fn().mockRejectedValue("plain failure") })
 

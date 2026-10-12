@@ -318,6 +318,48 @@ describe("webviewMessageHandler - Copilot authentication", () => {
 		})
 	})
 
+	it("drops the early account update of a sign-in that a newer one has superseded", async () => {
+		let supersededCallback!: (account: string) => Promise<void>
+		let finishSupersededSignIn!: (value: { account: string; models: [] }) => void
+		vi.spyOn(copilotProvider, "connectGitHubCopilot")
+			.mockImplementationOnce((onAuthenticated) => {
+				supersededCallback = onAuthenticated!
+				return new Promise((resolve) => (finishSupersededSignIn = resolve))
+			})
+			.mockResolvedValueOnce({ account: "New User", models: [] })
+
+		const superseded = webviewMessageHandler(mockClineProvider, { type: "githubCopilotSignIn" })
+		await webviewMessageHandler(mockClineProvider, { type: "githubCopilotReconnect" })
+		await supersededCallback("Old User")
+		finishSupersededSignIn({ account: "Old User", models: [] })
+		await superseded
+
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledExactlyOnceWith({
+			type: "githubCopilotSignInResult",
+			githubCopilotAccount: "New User",
+			vsCodeLmModels: [],
+		})
+	})
+
+	it("publishes the early account update of a sign-in that is still the newest", async () => {
+		let callback!: (account: string) => Promise<void>
+		let finish!: (value: { account: string; models: [] }) => void
+		vi.spyOn(copilotProvider, "connectGitHubCopilot").mockImplementation((onAuthenticated) => {
+			callback = onAuthenticated!
+			return new Promise((resolve) => (finish = resolve))
+		})
+
+		const signIn = webviewMessageHandler(mockClineProvider, { type: "githubCopilotSignIn" })
+		await callback("Test User")
+
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "githubCopilotModels",
+			githubCopilotAccount: "Test User",
+		})
+		finish({ account: "Test User", models: [] })
+		await signIn
+	})
+
 	it("reports no account as null, so the webview clears a stale sign-in rather than keeping it", async () => {
 		vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue(undefined)
 		vi.spyOn(copilotProvider, "getGitHubCopilotModels").mockResolvedValue([])
@@ -443,6 +485,19 @@ describe("webviewMessageHandler - Copilot authentication", () => {
 			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
 				expect.objectContaining({ type: "githubCopilotModels", githubCopilotAccount: "Test User" }),
 			)
+		})
+	})
+
+	it("reports a model discovery failure that is not an Error as text", async () => {
+		vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")
+		vi.spyOn(copilotProvider, "getGitHubCopilotModels").mockRejectedValue("quota exceeded")
+		await webviewMessageHandler(mockClineProvider, {
+			type: "requestVsCodeLmModels",
+			apiConfiguration: { apiProvider: providerIdentifiers.githubCopilot },
+		})
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "githubCopilotModels",
+			error: "quota exceeded",
 		})
 	})
 

@@ -346,6 +346,7 @@ export class ClineProvider
 		)
 
 		ClineProvider.activeInstances.add(this)
+
 		this.mdmService = mdmService
 		void this.updateGlobalState("codebaseIndexModels", EMBEDDING_MODEL_PROFILES)
 

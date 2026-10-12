@@ -369,6 +369,14 @@ describe("Copilot model capabilities", () => {
 			expect(getVsCodeLmModelInfo(liveModel()).supportsImages).toBeUndefined()
 		})
 
+		it.each([
+			["a capabilities object that says nothing about vision", { supportsToolCalling: true }],
+			["an empty capabilities object", {}],
+			["vision reported as something other than a boolean", { supportsImageToText: "yes", imageInput: 1 }],
+		])("leaves vision unset for %s", (_label, capabilities) => {
+			expect(getVsCodeLmModelInfo(liveModel({ capabilities })).supportsImages).toBeUndefined()
+		})
+
 		it("reports no vision when this host cannot construct image parts", () => {
 			const parts = dataPart()
 			const original = parts.image
