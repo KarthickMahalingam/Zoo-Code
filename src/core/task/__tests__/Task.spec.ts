@@ -1777,6 +1777,47 @@ describe("Cline", () => {
 		})
 	})
 
+	describe("API handler disposal", () => {
+		const disposableApi = (task: Task) => {
+			const dispose = vi.fn()
+			task.api = Object.assign(Object.create(task.api), { dispose })
+			return dispose
+		}
+
+		it("disposes the replaced handler when the configuration changes while idle", async () => {
+			const task = new Task({ provider: mockProvider, apiConfiguration: mockApiConfig, task: "t", startTask: false })
+			const dispose = disposableApi(task)
+
+			task.updateApiConfiguration({ ...mockApiConfig })
+			expect(dispose).toHaveBeenCalledOnce()
+
+			await task.dispose()
+			expect(dispose).toHaveBeenCalledOnce()
+		})
+
+		it("defers disposing a handler replaced mid-stream until the task is disposed", async () => {
+			const task = new Task({ provider: mockProvider, apiConfiguration: mockApiConfig, task: "t", startTask: false })
+			const oldDispose = disposableApi(task)
+			task.isStreaming = true
+
+			task.updateApiConfiguration({ ...mockApiConfig })
+			expect(oldDispose).not.toHaveBeenCalled()
+			const newDispose = disposableApi(task)
+
+			await task.dispose()
+			expect(oldDispose).toHaveBeenCalledOnce()
+			expect(newDispose).toHaveBeenCalledOnce()
+		})
+
+		it("disposes the current handler exactly once even when dispose is called twice", async () => {
+			const task = new Task({ provider: mockProvider, apiConfiguration: mockApiConfig, task: "t", startTask: false })
+			const dispose = disposableApi(task)
+
+			await Promise.all([task.dispose(), task.dispose()])
+			expect(dispose).toHaveBeenCalledOnce()
+		})
+	})
+
 	describe("task-local configuration isolation", () => {
 		it("uses the task mode and API configuration when focused provider state differs", async () => {
 			const taskApiConfiguration: ProviderSettings = {

@@ -185,6 +185,16 @@ export interface ApiHandler {
 	getModelCacheScope(): ModelCacheScope
 }
 
+/**
+ * Releases host resources a handler owns (for example the VS Code LM / GitHub Copilot configuration
+ * listener). Handlers without a `dispose()` method hold nothing that needs releasing.
+ */
+export function disposeApiHandler(handler: ApiHandler | undefined): void {
+	if (handler && "dispose" in handler && typeof handler.dispose === "function") {
+		handler.dispose()
+	}
+}
+
 export function buildApiHandler(configuration: ProviderSettings): ApiHandler {
 	const { apiProvider, ...options } = configuration
 

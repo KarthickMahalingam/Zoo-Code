@@ -10,6 +10,7 @@ import { providerIdentifiers } from "@roo-code/types/provider-identifiers"
 // Mock the API handler
 vi.mock("../../api", () => ({
 	buildApiHandler: vi.fn(),
+	disposeApiHandler: vi.fn((handler?: { dispose?: () => void }) => handler?.dispose?.()),
 }))
 
 describe("enhancePrompt", () => {
@@ -46,16 +47,21 @@ describe("enhancePrompt", () => {
 		expect((handler as any).completePrompt).toHaveBeenCalledWith(`Test prompt`, undefined)
 	})
 
-	it("disposes a disposable handler after every completion, including failures", async () => {
-		const dispose = vi.fn()
-		const completePrompt = vi.fn().mockResolvedValueOnce("ok").mockRejectedValueOnce(new Error("boom"))
-		vi.mocked(buildApiHandler).mockReturnValue({ completePrompt, dispose } as unknown as ReturnType<
-			typeof buildApiHandler
-		>)
+	it("disposes each handler it builds, after success and after failure", async () => {
+		const succeeding = { completePrompt: vi.fn().mockResolvedValue("ok"), dispose: vi.fn() }
+		const failing = { completePrompt: vi.fn().mockRejectedValue(new Error("boom")), dispose: vi.fn() }
+		type Handler = ReturnType<typeof buildApiHandler>
+		vi.mocked(buildApiHandler)
+			.mockReturnValueOnce(succeeding as unknown as Handler)
+			.mockReturnValueOnce(failing as unknown as Handler)
 
 		await expect(singleCompletionHandler(mockApiConfig, "a")).resolves.toBe("ok")
+		expect(succeeding.dispose).toHaveBeenCalledOnce()
+		expect(failing.dispose).not.toHaveBeenCalled()
+
 		await expect(singleCompletionHandler(mockApiConfig, "b")).rejects.toThrow("boom")
-		expect(dispose).toHaveBeenCalledTimes(2)
+		expect(failing.dispose).toHaveBeenCalledOnce()
+		expect(succeeding.dispose).toHaveBeenCalledOnce()
 	})
 
 	it("enhances prompt using custom enhancement prompt when provided", async () => {

@@ -62,7 +62,7 @@ import { TelemetryService } from "@roo-code/telemetry"
 import { CloudService } from "@roo-code/cloud"
 
 // api
-import { ApiHandler, ApiHandlerCreateMessageMetadata, buildApiHandler } from "../../api"
+import { ApiHandler, ApiHandlerCreateMessageMetadata, buildApiHandler, disposeApiHandler } from "../../api"
 import { ApiStream, GroundingSource } from "../../api/transform/stream"
 import { maybeRemoveImageBlocks } from "../../api/transform/image-cleaning"
 import { OutputTokenLimitError } from "../../api/providers/utils/output-token-limit-error"
@@ -405,6 +405,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// API
 	apiConfiguration: ProviderSettings
 	api: ApiHandler
+	/** Handlers replaced while a stream may still be reading from them; disposed with the task. */
+	private retiredApis: ApiHandler[] = []
 	private rateLimitClock: RateLimitClock
 	private autoApprovalHandler: AutoApprovalHandler
 
@@ -2459,9 +2461,17 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 * @param newApiConfiguration - The new API configuration to use
 	 */
 	public updateApiConfiguration(newApiConfiguration: ProviderSettings): void {
-		// Update the configuration and rebuild the API handler
+		// Update the configuration and rebuild the API handler. Handlers such as
+		// VS Code LM / GitHub Copilot own host listeners, so release the old one;
+		// a stream still reading from it keeps it alive until the task is disposed.
+		const previousApi = this.api
 		this.apiConfiguration = newApiConfiguration
 		this.api = buildApiHandler(this.apiConfiguration)
+		if (this.isStreaming) {
+			this.retiredApis.push(previousApi)
+		} else {
+			disposeApiHandler(previousApi)
+		}
 
 		// Refresh only the soft tool-repetition limit from the new profile so an
 		// active task immediately enforces it. The task-level
@@ -3514,6 +3524,16 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	private async disposeOnce(): Promise<void> {
 		console.log(`[Task#dispose] disposing task ${this.taskId}.${this.instanceId}`)
 		this.cancelAssistantMessagePersistence()
+
+		// Release handler-owned host resources (e.g. VS Code configuration listeners).
+		for (const api of [...this.retiredApis, this.api]) {
+			try {
+				disposeApiHandler(api)
+			} catch (error) {
+				console.error("Error disposing API handler:", error)
+			}
+		}
+		this.retiredApis = []
 
 		// Stop the idle telemetry check and report any unflushed activity as a
 		// shutdown installment, so a task torn down mid-work (panel closed, task

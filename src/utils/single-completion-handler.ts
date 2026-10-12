@@ -1,6 +1,6 @@
 import type { ProviderSettings } from "@roo-code/types"
 
-import { buildApiHandler, SingleCompletionHandler, type CompletePromptOptions } from "../api"
+import { buildApiHandler, disposeApiHandler, SingleCompletionHandler, type CompletePromptOptions } from "../api"
 
 /**
  * Enhances a prompt using the configured API without creating a full Cline instance or task history.
@@ -29,8 +29,6 @@ export async function singleCompletionHandler(
 		return await (handler as SingleCompletionHandler).completePrompt(promptText, options)
 	} finally {
 		// Handlers such as VS Code LM / GitHub Copilot hold listeners that must be released.
-		if ("dispose" in handler && typeof handler.dispose === "function") {
-			handler.dispose()
-		}
+		disposeApiHandler(handler)
 	}
 }

@@ -1503,7 +1503,19 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 
 	async completePrompt(prompt: string, options?: CompletePromptOptions): Promise<string> {
 		const cancellation = new vscode.CancellationTokenSource()
+		const cancel = () => cancellation.cancel()
+		const abortSignal = options?.abortSignal
+		const timeoutMs = options?.timeoutMs ?? this.timeoutMs
+		const timer = timeoutMs > 0 ? setTimeout(cancel, timeoutMs) : undefined
+		if (abortSignal?.aborted) {
+			cancel()
+		} else {
+			abortSignal?.addEventListener("abort", cancel, { once: true })
+		}
 		try {
+			if (cancellation.token.isCancellationRequested) {
+				throw new vscode.CancellationError()
+			}
 			const client = await this.getClient()
 			const response = await client.sendRequest(
 				[vscode.LanguageModelChatMessage.User(prompt)],
@@ -1523,6 +1535,8 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 			}
 			throw error
 		} finally {
+			if (timer) clearTimeout(timer)
+			abortSignal?.removeEventListener("abort", cancel)
 			cancellation.dispose()
 		}
 	}
