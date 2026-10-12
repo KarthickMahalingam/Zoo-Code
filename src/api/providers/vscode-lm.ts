@@ -1189,18 +1189,13 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 			...convertToVsCodeLmMessages(cleanedMessages, this.supportsImageInput(modelInfo)),
 		]
 
-		// Initialize cancellation token for the request, and let the caller's abort
-		// cancel the host request. Without this, a pending `response.stream` read
-		// keeps waiting after the task aborts, so the request never unwinds.
+		// Initialize cancellation token for the request. The caller's abort signal is
+		// connected to it inside the request `try` below, so its `finally` removes the
+		// listener on every exit path.
 		const requestCancellation = new vscode.CancellationTokenSource()
 		this.currentRequestCancellation = requestCancellation
 		const abortSignal = metadata?.abortSignal
 		const cancelOnAbort = () => requestCancellation.cancel()
-		if (abortSignal?.aborted) {
-			cancelOnAbort()
-		} else {
-			abortSignal?.addEventListener("abort", cancelOnAbort, { once: true })
-		}
 
 		// Calculate input tokens before starting the stream
 		const totalInputTokens: number = await this.calculateTotalInputTokens(vsCodeLmMessages)
@@ -1290,6 +1285,16 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 		}
 
 		try {
+			// Let the caller's abort cancel the host request. Without this, a pending
+			// `response.stream` read keeps waiting after the task aborts, so the request
+			// never unwinds. An abort that already happened (including during token
+			// counting above) cancels before the request is sent.
+			if (abortSignal?.aborted) {
+				cancelOnAbort()
+			} else {
+				abortSignal?.addEventListener("abort", cancelOnAbort, { once: true })
+			}
+
 			// Create the response stream with required options
 			const requestOptions: vscode.LanguageModelChatRequestOptions = {
 				justification: `Zoo Code would like to use '${client.name}' from '${client.vendor}', Click 'Allow' to proceed.`,

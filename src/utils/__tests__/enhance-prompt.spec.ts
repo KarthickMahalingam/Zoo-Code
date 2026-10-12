@@ -64,6 +64,16 @@ describe("enhancePrompt", () => {
 		expect(succeeding.dispose).toHaveBeenCalledOnce()
 	})
 
+	it("disposes the handler when the provider does not support prompt enhancement", async () => {
+		const unsupported = { createMessage: vi.fn(), dispose: vi.fn() }
+		vi.mocked(buildApiHandler).mockReturnValueOnce(unsupported as unknown as ReturnType<typeof buildApiHandler>)
+
+		await expect(singleCompletionHandler(mockApiConfig, "a")).rejects.toThrow(
+			"The selected API provider does not support prompt enhancement",
+		)
+		expect(unsupported.dispose).toHaveBeenCalledOnce()
+	})
+
 	it("enhances prompt using custom enhancement prompt when provided", async () => {
 		const customEnhancePrompt = "You are a custom prompt enhancer"
 		const customEnhancePromptWithTemplate = customEnhancePrompt + "\n\n${userInput}"

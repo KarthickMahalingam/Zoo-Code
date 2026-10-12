@@ -598,8 +598,45 @@ describe("GitHubCopilotHandler", () => {
 			return { release, token: () => token }
 		}
 
-		it("cancels the host request when the task aborts while a chunk is pending", async () => {
-			const stream = pendingStream()
+		/**
+		 * A cancellation source whose `cancel()` fires the token's listeners, like VS Code's,
+		 * so a fake host stream can end its pending read the way the real host does.
+		 */
+		const firingCancellationSource = () => {
+			const listeners: Array<() => void> = []
+			const token = {
+				isCancellationRequested: false,
+				onCancellationRequested: vi.fn((listener: () => void) => {
+					listeners.push(listener)
+					return { dispose: vi.fn() }
+				}),
+			}
+			const source = {
+				token,
+				cancel: vi.fn(() => {
+					if (token.isCancellationRequested) return
+					token.isCancellationRequested = true
+					for (const listener of listeners) listener()
+				}),
+				dispose: vi.fn(),
+			}
+			vi.mocked(vscode.CancellationTokenSource).mockImplementationOnce(function () {
+				return source as unknown as vscode.CancellationTokenSource
+			})
+			return source
+		}
+
+		it("ends a stream read that is already pending when the task aborts", async () => {
+			const source = firingCancellationSource()
+			mockLanguageModelChat.sendRequest.mockImplementation(async (_m, _o, token: vscode.CancellationToken) => ({
+				stream: (async function* () {
+					yield new vscode.LanguageModelTextPart("first")
+					// Like the host: the next chunk never arrives, and only cancellation ends the read.
+					await new Promise<never>((_, reject) =>
+						token.onCancellationRequested(() => reject(new vscode.CancellationError())),
+					)
+				})(),
+			}))
 			const controller = new AbortController()
 			const handler = new GitHubCopilotHandler(defaultOptions)
 			try {
@@ -608,14 +645,70 @@ describe("GitHubCopilotHandler", () => {
 					abortSignal: controller.signal,
 				})
 				await messages.next()
-				const [source] = vi.mocked(vscode.CancellationTokenSource).mock.results.map((r) => r.value)
-				expect(stream.token()).toBe(source.token)
+
+				// Request the next chunk first, so the read is in flight when the abort lands.
+				const pendingRead = messages.next()
+				let settled = false
+				void pendingRead.then(
+					() => (settled = true),
+					() => (settled = true),
+				)
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				expect(settled).toBe(false)
 				expect(source.cancel).not.toHaveBeenCalled()
 
 				controller.abort()
-				expect(source.cancel).toHaveBeenCalledOnce()
 
-				stream.release()
+				await expect(pendingRead).rejects.toThrow("Request cancelled by user")
+				expect(source.cancel).toHaveBeenCalled()
+			} finally {
+				handler.dispose()
+			}
+		})
+
+		it("leaves no abort listener behind when pre-request validation fails", async () => {
+			// Over the model's input window, so the context-window check throws before sending.
+			mockLanguageModelChat.countTokens.mockResolvedValue(mockLanguageModelChat.maxInputTokens + 1)
+			const controller = new AbortController()
+			const addSpy = vi.spyOn(controller.signal, "addEventListener")
+			const removeSpy = vi.spyOn(controller.signal, "removeEventListener")
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			try {
+				await expect(
+					collectStream(
+						handler.createMessage("system", [{ role: "user", content: "hi" }], {
+							taskId: "t",
+							abortSignal: controller.signal,
+						}),
+					),
+				).rejects.toThrow("exceeds the selected Copilot model's input context window")
+			} finally {
+				handler.dispose()
+			}
+
+			// Every listener added must have been removed, so none outlives the request.
+			expect(removeSpy.mock.calls.map(([, listener]) => listener)).toEqual(
+				addSpy.mock.calls.map(([, listener]) => listener),
+			)
+			expect(mockLanguageModelChat.sendRequest).not.toHaveBeenCalled()
+		})
+
+		it("cancels before sending when the task aborts during token counting", async () => {
+			const controller = new AbortController()
+			mockLanguageModelChat.countTokens.mockImplementation(async () => {
+				controller.abort()
+				return 10
+			})
+			pendingStream()
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			try {
+				const messages = handler.createMessage("system", [{ role: "user", content: "hi" }], {
+					taskId: "t",
+					abortSignal: controller.signal,
+				})
+				await messages.next()
+				const source = vi.mocked(vscode.CancellationTokenSource).mock.results.at(-1)?.value
+				expect(source.cancel).toHaveBeenCalled()
 				await messages.return(undefined)
 			} finally {
 				handler.dispose()
