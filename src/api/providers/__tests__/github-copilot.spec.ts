@@ -671,6 +671,7 @@ describe("GitHubCopilotHandler", () => {
 				mockLanguageModelChat.sendRequest.mockImplementation(async () => ({
 					stream: (async function* () {
 						await new Promise<void>((r) => (release = r))
+						yield new vscode.LanguageModelTextPart("late")
 					})(),
 				}))
 				const handler = new GitHubCopilotHandler(defaultOptions)
