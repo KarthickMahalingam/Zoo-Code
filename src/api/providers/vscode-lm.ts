@@ -1197,9 +1197,17 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 		const abortSignal = metadata?.abortSignal
 		const cancelOnAbort = () => requestCancellation.cancel()
 
-		// Calculate input tokens before starting the stream
-		const totalInputTokens: number = await this.calculateTotalInputTokens(vsCodeLmMessages)
-		this.assertWithinContextWindow(totalInputTokens, modelInfo)
+		// Calculate input tokens before starting the stream. A failure here ends the request
+		// before it is sent, so release its cancellation source now instead of leaving it
+		// for the next request's ensureCleanState(). The abort listener is not attached yet.
+		let totalInputTokens: number
+		try {
+			totalInputTokens = await this.calculateTotalInputTokens(vsCodeLmMessages)
+			this.assertWithinContextWindow(totalInputTokens, modelInfo)
+		} catch (error) {
+			this.ensureCleanState()
+			throw error
+		}
 
 		// Accumulate the text and count at the end of the stream to reduce token counting overhead.
 		let accumulatedText: string = ""

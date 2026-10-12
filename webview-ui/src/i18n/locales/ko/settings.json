@@ -1013,10 +1013,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "이미지 지원 여부가 보고되지 않음",
+		"toolSupportUnknown": "도구 지원 여부가 보고되지 않음",
 		"promptCacheManagedByCopilot": "프롬프트 캐싱은 GitHub Copilot이 관리합니다",
 		"promptCacheCopilotDetails": "캐싱은 모델과 GitHub Copilot 백엔드에 따라 달라집니다. Zoo Code는 VS Code API를 통해 캐시 보존 기간을 설정하거나 캐시 적중 여부를 확인할 수 없습니다.",
 		"supportsImages": "이미지 지원",
 		"noImages": "이미지 지원 안 함",
+		"supportsTools": "도구 지원",
+		"noTools": "도구 지원 안 함",
 		"supportsPromptCache": "프롬프트 캐시 지원",
 		"noPromptCache": "프롬프트 캐시 지원 안 함",
 		"contextWindow": "컨텍스트 창:",

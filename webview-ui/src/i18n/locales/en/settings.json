@@ -1093,10 +1093,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "Image support not reported",
+		"toolSupportUnknown": "Tool support not reported",
 		"promptCacheManagedByCopilot": "Prompt caching managed by GitHub Copilot",
 		"promptCacheCopilotDetails": "Caching depends on the model and GitHub Copilot backend. Zoo Code cannot configure cache retention or observe cache hits through the VS Code API.",
 		"supportsImages": "Supports images",
 		"noImages": "Does not support images",
+		"supportsTools": "Supports tools",
+		"noTools": "Does not support tools",
 		"supportsPromptCache": "Supports prompt caching",
 		"noPromptCache": "Does not support prompt caching",
 		"contextWindow": "Context Window:",

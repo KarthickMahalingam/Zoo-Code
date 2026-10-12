@@ -1040,10 +1040,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "未回報圖片支援情況",
+		"toolSupportUnknown": "未回報工具支援情況",
 		"promptCacheManagedByCopilot": "提示詞快取由 GitHub Copilot 管理",
 		"promptCacheCopilotDetails": "快取行為取決於模型與 GitHub Copilot 後端。Zoo Code 無法透過 VS Code API 設定快取保留時間，也無法觀察快取命中情況。",
 		"supportsImages": "支援影像",
 		"noImages": "不支援影像",
+		"supportsTools": "支援工具",
+		"noTools": "不支援工具",
 		"supportsPromptCache": "支援提示快取",
 		"noPromptCache": "不支援提示快取",
 		"contextWindow": "上下文視窗：",

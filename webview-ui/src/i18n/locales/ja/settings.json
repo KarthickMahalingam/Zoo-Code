@@ -1013,10 +1013,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "画像サポートが報告されていません",
+		"toolSupportUnknown": "ツールサポートが報告されていません",
 		"promptCacheManagedByCopilot": "プロンプトキャッシュは GitHub Copilot が管理します",
 		"promptCacheCopilotDetails": "キャッシュの動作はモデルと GitHub Copilot のバックエンドに依存します。Zoo Code は VS Code API を通じて、キャッシュの保持期間を設定したりキャッシュヒットを確認したりすることはできません。",
 		"supportsImages": "画像をサポート",
 		"noImages": "画像をサポートしていません",
+		"supportsTools": "ツールをサポート",
+		"noTools": "ツールをサポートしていません",
 		"supportsPromptCache": "プロンプトキャッシュをサポート",
 		"noPromptCache": "プロンプトキャッシュをサポートしていません",
 		"contextWindow": "コンテキストウィンドウ:",

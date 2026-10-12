@@ -1013,10 +1013,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "Ondersteuning voor afbeeldingen niet gemeld",
+		"toolSupportUnknown": "Ondersteuning voor tools niet gemeld",
 		"promptCacheManagedByCopilot": "Prompt-caching wordt beheerd door GitHub Copilot",
 		"promptCacheCopilotDetails": "Caching hangt af van het model en de GitHub Copilot-backend. Zoo Code kan de cachebewaartermijn niet instellen en cachetreffers niet waarnemen via de VS Code API.",
 		"supportsImages": "Ondersteunt afbeeldingen",
 		"noImages": "Ondersteunt geen afbeeldingen",
+		"supportsTools": "Ondersteunt tools",
+		"noTools": "Ondersteunt geen tools",
 		"supportsPromptCache": "Ondersteunt prompt caching",
 		"noPromptCache": "Ondersteunt geen prompt caching",
 		"contextWindow": "Contextvenster:",

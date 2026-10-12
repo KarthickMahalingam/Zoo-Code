@@ -218,6 +218,14 @@ describe("connectGitHubCopilot", () => {
 			expect(vscode.authentication.getSession).toHaveBeenCalledTimes(1)
 		})
 
+		it("reports no account when no supported scope set holds a session", async () => {
+			vi.mocked(vscode.authentication.getSession).mockResolvedValue(undefined)
+			await expect(getGitHubCopilotAccount()).resolves.toBeUndefined()
+			expect(vscode.authentication.getSession).toHaveBeenCalledTimes(2)
+			expect(vscode.authentication.getSession).toHaveBeenCalledWith("github", ["user:email"], { silent: true })
+			expect(vscode.authentication.getSession).toHaveBeenCalledWith("github", ["read:user"], { silent: true })
+		})
+
 		it("reports no account rather than failing when the lookup throws", async () => {
 			vi.mocked(vscode.authentication.getSession).mockRejectedValue(new Error("auth unavailable"))
 			await expect(getGitHubCopilotAccount()).resolves.toBeUndefined()
@@ -434,6 +442,64 @@ describe("Copilot model capabilities", () => {
 			} finally {
 				handler.dispose()
 			}
+		})
+	})
+
+	describe("tool support resolution", () => {
+		it.each([true, false])("treats the host-reported tool flag (%s) as authoritative", (reported) => {
+			const info = getVsCodeLmModelInfo(liveModel({ capabilities: { supportsToolCalling: reported } }))
+			expect(info.supportsToolCalling).toBe(reported)
+		})
+
+		it.each([
+			[true, 128],
+			[true, 1],
+			[false, 0],
+		])("reads the provider-side tool count as supported=%s for %s tools, never as a limit", (expected, count) => {
+			const info = getVsCodeLmModelInfo(liveModel({ capabilities: { toolCalling: count } }))
+			expect(info.supportsToolCalling).toBe(expected)
+			// The count must not be carried into model info as if it were a per-model tool limit.
+			const withoutCount = getVsCodeLmModelInfo(liveModel({ capabilities: { toolCalling: expected } }))
+			expect(Object.keys(info).sort()).toEqual(Object.keys(withoutCount).sort())
+		})
+
+		it("accepts the provider-side boolean spelling when the consumer-side one is absent", () => {
+			expect(getVsCodeLmModelInfo(liveModel({ capabilities: { toolCalling: true } })).supportsToolCalling).toBe(
+				true,
+			)
+		})
+
+		it("does not borrow the curated catalog's tool flag for a model the host reports nothing about", () => {
+			// The curated catalog marks every family `supportsToolCalling: true`; that is not a host report.
+			expect(getVsCodeLmModelInfo(liveModel({ family: curatedFamily })).supportsToolCalling).toBeUndefined()
+		})
+
+		it.each([
+			["no capabilities object", undefined],
+			["an empty capabilities object", {}],
+			["a capabilities object that says nothing about tools", { supportsImageToText: true }],
+			["tools reported as something other than a boolean or count", { supportsToolCalling: "yes" }],
+			["a non-finite tool count", { toolCalling: Number.NaN }],
+		])("leaves tool support unset for %s", (_label, capabilities) => {
+			expect(getVsCodeLmModelInfo(liveModel({ capabilities })).supportsToolCalling).toBeUndefined()
+		})
+
+		it("keeps tool support independent of vision", () => {
+			const info = getVsCodeLmModelInfo(
+				liveModel({ capabilities: { supportsImageToText: false, supportsToolCalling: true } }),
+			)
+			expect(info.supportsImages).toBe(false)
+			expect(info.supportsToolCalling).toBe(true)
+		})
+
+		it("passes the host report through to the models Copilot lists", async () => {
+			vi.mocked(vscode.lm.selectChatModels).mockResolvedValueOnce([
+				liveModel({ id: "tools-yes", capabilities: { supportsToolCalling: true } }),
+				liveModel({ id: "tools-unreported" }),
+			] as never)
+			const models = await getGitHubCopilotModels()
+			expect(models.find((m) => m.id === "tools-yes")?.modelInfo.supportsToolCalling).toBe(true)
+			expect(models.find((m) => m.id === "tools-unreported")?.modelInfo.supportsToolCalling).toBeUndefined()
 		})
 	})
 
@@ -691,6 +757,34 @@ describe("GitHubCopilotHandler", () => {
 				addSpy.mock.calls.map(([, listener]) => listener),
 			)
 			expect(mockLanguageModelChat.sendRequest).not.toHaveBeenCalled()
+		})
+
+		it("releases the request's cancellation source when a request is rejected before sending", async () => {
+			// A pre-send check that throws without cleaning up after itself, so only the shared
+			// request path can release the source. (Copilot's own context-window check also releases it.)
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			handler["assertWithinContextWindow"] = () => {
+				throw new Error("rejected before sending")
+			}
+			try {
+				await expect(
+					collectStream(handler.createMessage("system", [{ role: "user", content: "hi" }], { taskId: "t" })),
+				).rejects.toThrow("rejected before sending")
+
+				// The request's source is the one token counting used; it must be released at failure,
+				// not left for the next request's or the handler's cleanup.
+				const countToken = mockLanguageModelChat.countTokens.mock.calls[0][1]
+				const requestSource = vi
+					.mocked(vscode.CancellationTokenSource)
+					.mock.results.map((r) => r.value)
+					.find((source) => source.token === countToken)
+				expect(requestSource).toBeDefined()
+				expect(requestSource.dispose).toHaveBeenCalled()
+				expect(handler["currentRequestCancellation"]).toBeNull()
+				expect(mockLanguageModelChat.sendRequest).not.toHaveBeenCalled()
+			} finally {
+				handler.dispose()
+			}
 		})
 
 		it("cancels before sending when the task aborts during token counting", async () => {

@@ -1013,10 +1013,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "Görsel desteği bildirilmedi",
+		"toolSupportUnknown": "Araç desteği bildirilmedi",
 		"promptCacheManagedByCopilot": "İstem önbelleğini GitHub Copilot yönetir",
 		"promptCacheCopilotDetails": "Önbellekleme modele ve GitHub Copilot arka ucuna bağlıdır. Zoo Code, VS Code API'si üzerinden önbellek saklama süresini yapılandıramaz veya önbellek isabetlerini gözlemleyemez.",
 		"supportsImages": "Görüntüleri destekler",
 		"noImages": "Görüntüleri desteklemez",
+		"supportsTools": "Araçları destekler",
+		"noTools": "Araçları desteklemez",
 		"supportsPromptCache": "İstem önbelleğini destekler",
 		"noPromptCache": "İstem önbelleğini desteklemez",
 		"contextWindow": "Bağlam Penceresi:",

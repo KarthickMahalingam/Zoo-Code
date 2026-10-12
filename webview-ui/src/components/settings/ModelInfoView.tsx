@@ -82,6 +82,21 @@ export const ModelInfoView = ({
 				doesNotSupportLabel={t("settings:modelInfo.noImages")}
 			/>
 		),
+		// Tool support is shown only where the host reports it per model. It is a yes/no answer:
+		// VS Code does not report how many tools a model accepts, so no limit is implied.
+		apiProvider === providerIdentifiers.githubCopilot &&
+			(modelInfo?.supportsToolCalling === undefined ? (
+				<div className="flex items-center gap-1 font-medium">
+					<span className="codicon codicon-info" aria-hidden="true" />
+					{t("settings:modelInfo.toolSupportUnknown")}
+				</div>
+			) : (
+				<ModelInfoSupportsItem
+					isSupported={modelInfo.supportsToolCalling}
+					supportsLabel={t("settings:modelInfo.supportsTools")}
+					doesNotSupportLabel={t("settings:modelInfo.noTools")}
+				/>
+			)),
 		apiProvider === providerIdentifiers.githubCopilot ? (
 			<StandardTooltip content={t("settings:modelInfo.promptCacheCopilotDetails")}>
 				<div

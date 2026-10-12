@@ -1013,10 +1013,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "Dukungan gambar tidak dilaporkan",
+		"toolSupportUnknown": "Dukungan alat tidak dilaporkan",
 		"promptCacheManagedByCopilot": "Prompt caching dikelola oleh GitHub Copilot",
 		"promptCacheCopilotDetails": "Caching bergantung pada model dan backend GitHub Copilot. Zoo Code tidak dapat mengonfigurasi retensi cache atau mengamati cache hit melalui API VS Code.",
 		"supportsImages": "Mendukung gambar",
 		"noImages": "Tidak mendukung gambar",
+		"supportsTools": "Mendukung alat",
+		"noTools": "Tidak mendukung alat",
 		"supportsPromptCache": "Mendukung prompt caching",
 		"noPromptCache": "Tidak mendukung prompt caching",
 		"contextWindow": "Jendela Konteks:",

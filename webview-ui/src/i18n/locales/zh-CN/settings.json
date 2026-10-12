@@ -1013,10 +1013,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "未报告图像支持情况",
+		"toolSupportUnknown": "未报告工具支持情况",
 		"promptCacheManagedByCopilot": "提示词缓存由 GitHub Copilot 管理",
 		"promptCacheCopilotDetails": "缓存行为取决于模型和 GitHub Copilot 后端。Zoo Code 无法通过 VS Code API 配置缓存保留时间，也无法观察缓存命中情况。",
 		"supportsImages": "支持图像",
 		"noImages": "不支持图像",
+		"supportsTools": "支持工具",
+		"noTools": "不支持工具",
 		"supportsPromptCache": "支持提示缓存",
 		"noPromptCache": "不支持提示缓存",
 		"contextWindow": "上下文窗口:",

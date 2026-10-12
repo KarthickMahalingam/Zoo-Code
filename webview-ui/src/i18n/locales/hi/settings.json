@@ -1013,10 +1013,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "छवि समर्थन की जानकारी नहीं दी गई",
+		"toolSupportUnknown": "टूल समर्थन की जानकारी नहीं दी गई",
 		"promptCacheManagedByCopilot": "प्रॉम्प्ट कैशिंग GitHub Copilot द्वारा प्रबंधित है",
 		"promptCacheCopilotDetails": "कैशिंग मॉडल और GitHub Copilot बैकएंड पर निर्भर करती है। Zoo Code VS Code API के माध्यम से कैश प्रतिधारण को कॉन्फ़िगर नहीं कर सकता और न ही कैश हिट देख सकता है।",
 		"supportsImages": "छवियों का समर्थन करता है",
 		"noImages": "छवियों का समर्थन नहीं करता है",
+		"supportsTools": "टूल का समर्थन करता है",
+		"noTools": "टूल का समर्थन नहीं करता है",
 		"supportsPromptCache": "प्रॉम्प्ट कैशिंग का समर्थन करता है",
 		"noPromptCache": "प्रॉम्प्ट कैशिंग का समर्थन नहीं करता है",
 		"contextWindow": "संदर्भ विंडो:",

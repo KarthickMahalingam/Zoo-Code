@@ -1013,10 +1013,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "Compatibilidad con imágenes no informada",
+		"toolSupportUnknown": "Compatibilidad con herramientas no informada",
 		"promptCacheManagedByCopilot": "El almacenamiento en caché de prompts lo gestiona GitHub Copilot",
 		"promptCacheCopilotDetails": "El almacenamiento en caché depende del modelo y del backend de GitHub Copilot. Zoo Code no puede configurar la retención de la caché ni observar sus aciertos a través de la API de VS Code.",
 		"supportsImages": "Soporta imágenes",
 		"noImages": "No soporta imágenes",
+		"supportsTools": "Soporta herramientas",
+		"noTools": "No soporta herramientas",
 		"supportsPromptCache": "Soporta caché de prompts",
 		"noPromptCache": "No soporta caché de prompts",
 		"contextWindow": "Ventana de contexto",

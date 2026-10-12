@@ -1013,10 +1013,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "Compatibilitat amb imatges no informada",
+		"toolSupportUnknown": "Compatibilitat amb eines no informada",
 		"promptCacheManagedByCopilot": "La memòria cau de prompts la gestiona GitHub Copilot",
 		"promptCacheCopilotDetails": "La memòria cau depèn del model i del backend de GitHub Copilot. Zoo Code no pot configurar la retenció de la memòria cau ni observar-ne els encerts a través de l'API de VS Code.",
 		"supportsImages": "Suporta imatges",
 		"noImages": "No suporta imatges",
+		"supportsTools": "Suporta eines",
+		"noTools": "No suporta eines",
 		"supportsPromptCache": "Suporta emmagatzematge en caché de prompts",
 		"noPromptCache": "No suporta emmagatzematge en caché de prompts",
 		"contextWindow": "Finestra de context:",

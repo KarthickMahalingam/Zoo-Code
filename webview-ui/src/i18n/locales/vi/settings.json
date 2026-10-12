@@ -1013,10 +1013,13 @@
 	},
 	"modelInfo": {
 		"imageSupportUnknown": "Chưa báo cáo khả năng hỗ trợ hình ảnh",
+		"toolSupportUnknown": "Chưa báo cáo khả năng hỗ trợ công cụ",
 		"promptCacheManagedByCopilot": "Bộ nhớ đệm prompt do GitHub Copilot quản lý",
 		"promptCacheCopilotDetails": "Bộ nhớ đệm phụ thuộc vào mô hình và backend của GitHub Copilot. Zoo Code không thể cấu hình thời gian lưu bộ nhớ đệm hay quan sát lượt trúng bộ nhớ đệm qua API của VS Code.",
 		"supportsImages": "Hỗ trợ hình ảnh",
 		"noImages": "Không hỗ trợ hình ảnh",
+		"supportsTools": "Hỗ trợ công cụ",
+		"noTools": "Không hỗ trợ công cụ",
 		"supportsPromptCache": "Hỗ trợ bộ nhớ đệm lời nhắc",
 		"noPromptCache": "Không hỗ trợ bộ nhớ đệm lời nhắc",
 		"contextWindow": "Cửa sổ ngữ cảnh:",

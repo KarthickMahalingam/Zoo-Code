@@ -11,6 +11,9 @@ vi.mock("@src/i18n/TranslationContext", () => ({
 				"settings:modelInfo.imageSupportUnknown": "Image support not reported",
 				"settings:modelInfo.supportsImages": "Supports images",
 				"settings:modelInfo.noImages": "Does not support images",
+				"settings:modelInfo.toolSupportUnknown": "Tool support not reported",
+				"settings:modelInfo.supportsTools": "Supports tools",
+				"settings:modelInfo.noTools": "Does not support tools",
 				"settings:modelInfo.noPromptCache": "Does not support prompt caching",
 				"settings:modelInfo.promptCacheManagedByCopilot": "Prompt caching managed by GitHub Copilot",
 				"settings:serviceTier.pricingTableTitle": "Service tier pricing",
@@ -101,6 +104,49 @@ describe("ModelInfoView service tier pricing", () => {
 		expect(screen.getByText("Prompt caching managed by GitHub Copilot")).toBeInTheDocument()
 		expect(screen.getByText("Prompt caching managed by GitHub Copilot")).toHaveAttribute("tabindex", "0")
 		expect(screen.queryByText("Does not support prompt caching")).not.toBeInTheDocument()
+	})
+
+	it.each([
+		[true, "Supports tools"],
+		[false, "Does not support tools"],
+	])("shows host-reported Copilot tool support (%s) as reported", (supportsToolCalling, label) => {
+		render(
+			<ModelInfoView
+				{...defaultProps}
+				apiProvider={providerIdentifiers.githubCopilot}
+				modelInfo={{ contextWindow: 128000, supportsPromptCache: false, supportsToolCalling }}
+				hidePricing
+			/>,
+		)
+		expect(screen.getByText(label)).toBeInTheDocument()
+		expect(screen.queryByText("Tool support not reported")).not.toBeInTheDocument()
+	})
+
+	it("shows unreported Copilot tool support without claiming either way", () => {
+		render(
+			<ModelInfoView
+				{...defaultProps}
+				apiProvider={providerIdentifiers.githubCopilot}
+				modelInfo={{ contextWindow: 128000, supportsPromptCache: false }}
+				hidePricing
+			/>,
+		)
+		expect(screen.getByText("Tool support not reported")).toBeInTheDocument()
+		expect(screen.queryByText("Supports tools")).not.toBeInTheDocument()
+		expect(screen.queryByText("Does not support tools")).not.toBeInTheDocument()
+	})
+
+	it("does not add a tool-support row for other providers", () => {
+		render(
+			<ModelInfoView
+				{...defaultProps}
+				apiProvider={providerIdentifiers.openai}
+				modelInfo={{ contextWindow: 128000, supportsPromptCache: false, supportsToolCalling: true }}
+				hidePricing
+			/>,
+		)
+		expect(screen.queryByText("Supports tools")).not.toBeInTheDocument()
+		expect(screen.queryByText("Tool support not reported")).not.toBeInTheDocument()
 	})
 
 	it("keeps unsupported caching labels for providers whose models do not support caching", () => {
