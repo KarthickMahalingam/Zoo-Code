@@ -161,6 +161,41 @@ describe("VsCodeLmHandler", () => {
 			// The constructor triggers initializeClient which calls selectChatModels
 			expect(vscode.lm.selectChatModels).toHaveBeenCalled()
 		})
+
+		describe("when the initial model lookup fails", () => {
+			let deferred: VsCodeLmHandler
+
+			beforeEach(() => {
+				vi.spyOn(console, "error").mockImplementation(() => {})
+				vi.spyOn(console, "debug").mockImplementation(() => {})
+				;(vscode.lm.selectChatModels as Mock).mockRejectedValueOnce(new Error("models not ready"))
+				deferred = new VsCodeLmHandler(defaultOptions)
+			})
+
+			afterEach(() => {
+				deferred.dispose()
+				vi.restoreAllMocks()
+			})
+
+			it("does not throw from the constructor and logs that setup is deferred", async () => {
+				expect(deferred["client"]).toBeNull()
+				await vi.waitFor(() =>
+					expect(console.debug).toHaveBeenCalledWith(
+						"Zoo Code <Language Model API>: Initial client setup failed; retrying on first use:",
+						expect.objectContaining({ message: expect.stringContaining("models not ready") }),
+					),
+				)
+				expect(deferred["client"]).toBeNull()
+			})
+
+			it("creates the client on first use once the lookup succeeds", async () => {
+				await vi.waitFor(() => expect(console.debug).toHaveBeenCalled())
+				;(vscode.lm.selectChatModels as Mock).mockResolvedValue([{ ...mockLanguageModelChat }])
+
+				await expect(deferred["getClient"]()).resolves.toMatchObject({ id: mockLanguageModelChat.id })
+				expect(deferred["client"]).not.toBeNull()
+			})
+		})
 	})
 
 	describe("createClient", () => {
