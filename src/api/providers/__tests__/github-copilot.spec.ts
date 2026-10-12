@@ -414,6 +414,47 @@ describe("Copilot model capabilities", () => {
 				openAiModelInfoSaneDefaults.contextWindow,
 			)
 		})
+
+		describe("when the host reports no usable limit for a model the catalog knows", () => {
+			const fallback = openAiModelInfoSaneDefaults.contextWindow
+			const catalog = Object.entries(vscodeLlmModels)
+			const above = catalog.find(([, entry]) => entry.maxInputTokens > fallback)
+			const below = catalog.find(([, entry]) => entry.maxInputTokens < fallback)
+
+			it.each([0, Number.NaN, -1])("assumes the fallback, capped by the curated limit, for %s", (reported) => {
+				expect(above).toBeDefined()
+				const [family, entry] = above!
+
+				const { contextWindow } = getVsCodeLmModelInfo(liveModel({ family, maxInputTokens: reported }))
+
+				expect(contextWindow).toBe(fallback)
+				expect(contextWindow).toBeLessThan(entry.maxInputTokens)
+			})
+
+			it("keeps a curated limit that is already below the fallback", () => {
+				expect(below).toBeDefined()
+				const [family, entry] = below!
+
+				expect(getVsCodeLmModelInfo(liveModel({ family, maxInputTokens: 0 })).contextWindow).toBe(
+					entry.maxInputTokens,
+				)
+			})
+
+			it("is the window the handler enforces and condenses against, not a larger curated one", async () => {
+				const [family] = above!
+				vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([
+					liveModel({ family, maxInputTokens: 0 }),
+				] as never)
+				const handler = new GitHubCopilotHandler({})
+				try {
+					await handler.initializeClient()
+					expect(handler.getCondenseContextWindow()).toBe(fallback)
+					expect(handler.getModel().info.contextWindow).toBe(fallback)
+				} finally {
+					handler.dispose()
+				}
+			})
+		})
 	})
 
 	describe("requests", () => {

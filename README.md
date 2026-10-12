@@ -70,7 +70,8 @@ Capabilities come from what VS Code reports for each Copilot model, so new model
 changes, and nothing about a model is saved into your settings where it could go stale.
 
 - **Context window:** the model's reported input limit, capped by Zoo Code's curated limit where one
-  is known. Before the host reports, the curated limit is shown, matching what Zoo Code enforces.
+  is known. Before the host reports, or if it reports no usable limit, the limit shown matches what
+  Zoo Code enforces.
 - **Images:** read only from the capability the host reports for each model. Until it reports, or if it
   reports nothing, the model shows **Image support not reported** instead of being assumed supported
   or unsupported, and Zoo Code will not send images to it. Images are sent as image data, not text
