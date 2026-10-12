@@ -1785,7 +1785,12 @@ describe("Cline", () => {
 		}
 
 		it("disposes the replaced handler when the configuration changes while idle", async () => {
-			const task = new Task({ provider: mockProvider, apiConfiguration: mockApiConfig, task: "t", startTask: false })
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "t",
+				startTask: false,
+			})
 			const dispose = disposableApi(task)
 
 			task.updateApiConfiguration({ ...mockApiConfig })
@@ -1796,7 +1801,12 @@ describe("Cline", () => {
 		})
 
 		it("defers disposing a handler replaced mid-stream until the task is disposed", async () => {
-			const task = new Task({ provider: mockProvider, apiConfiguration: mockApiConfig, task: "t", startTask: false })
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "t",
+				startTask: false,
+			})
 			const oldDispose = disposableApi(task)
 			task.isStreaming = true
 
@@ -1810,7 +1820,12 @@ describe("Cline", () => {
 		})
 
 		it("disposes the current handler exactly once even when dispose is called twice", async () => {
-			const task = new Task({ provider: mockProvider, apiConfiguration: mockApiConfig, task: "t", startTask: false })
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "t",
+				startTask: false,
+			})
 			const dispose = disposableApi(task)
 
 			await Promise.all([task.dispose(), task.dispose()])
