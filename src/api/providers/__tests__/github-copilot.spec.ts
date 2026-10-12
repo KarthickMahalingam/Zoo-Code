@@ -621,13 +621,48 @@ describe("GitHubCopilotHandler", () => {
 			for (const subscription of subscriptions) expect(subscription.dispose).toHaveBeenCalledOnce()
 		})
 
-		it("cancels the VS Code request when the caller aborts, and stops listening afterwards", async () => {
+		it("cancels the in-flight VS Code request when the caller aborts mid-stream", async () => {
 			let token: vscode.CancellationToken | undefined
+			let streamStarted!: () => void
+			const started = new Promise<void>((resolve) => (streamStarted = resolve))
+			let release!: () => void
 			mockLanguageModelChat.sendRequest.mockImplementation(async (_m, _o, t: vscode.CancellationToken) => {
 				token = t
-				return { stream: (async function* () {})() }
+				return {
+					stream: (async function* () {
+						streamStarted()
+						await new Promise<void>((resolve) => (release = resolve))
+						yield new vscode.LanguageModelTextPart("late")
+					})(),
+				}
 			})
 			const controller = new AbortController()
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			try {
+				const pending = handler.completePrompt("improve this", { abortSignal: controller.signal })
+				await started
+				const [source] = vi.mocked(vscode.CancellationTokenSource).mock.results.map((r) => r.value)
+				expect(token).toBe(source.token)
+				expect(source.cancel).not.toHaveBeenCalled()
+
+				controller.abort()
+				expect(source.cancel).toHaveBeenCalledOnce()
+
+				release()
+				await pending
+			} finally {
+				handler.dispose()
+			}
+		})
+
+		it("removes exactly the abort listener it added once the request settles", async () => {
+			mockLanguageModelChat.sendRequest.mockImplementation(async () => ({
+				stream: (async function* () {
+					yield new vscode.LanguageModelTextPart("done")
+				})(),
+			}))
+			const controller = new AbortController()
+			const addSpy = vi.spyOn(controller.signal, "addEventListener")
 			const removeSpy = vi.spyOn(controller.signal, "removeEventListener")
 			const handler = new GitHubCopilotHandler(defaultOptions)
 			try {
@@ -635,11 +670,47 @@ describe("GitHubCopilotHandler", () => {
 			} finally {
 				handler.dispose()
 			}
+
+			expect(addSpy).toHaveBeenCalledOnce()
+			const [addedType, addedListener] = addSpy.mock.calls[0]
+			expect(addedType).toBe("abort")
+			expect(removeSpy).toHaveBeenCalledOnce()
+			expect(removeSpy.mock.calls[0][0]).toBe("abort")
+			expect(removeSpy.mock.calls[0][1]).toBe(addedListener)
+
+			// An abort after completion must no longer reach the disposed source.
 			const [source] = vi.mocked(vscode.CancellationTokenSource).mock.results.map((r) => r.value)
-			expect(token).toBe(source.token)
-			expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function))
 			controller.abort()
 			expect(source.cancel).not.toHaveBeenCalled()
+		})
+
+		it("arms no timer when the timeout is disabled", async () => {
+			const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout")
+			mockLanguageModelChat.sendRequest.mockImplementation(async () => ({
+				stream: (async function* () {
+					yield new vscode.LanguageModelTextPart("ok")
+				})(),
+			}))
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			try {
+				await expect(handler.completePrompt("x", { timeoutMs: 0 })).resolves.toBe("ok")
+			} finally {
+				handler.dispose()
+				setTimeoutSpy.mockRestore()
+			}
+			expect(setTimeoutSpy).not.toHaveBeenCalled()
+		})
+
+		it("rethrows a non-Error failure unchanged", async () => {
+			mockLanguageModelChat.sendRequest.mockRejectedValueOnce("plain failure")
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			try {
+				await expect(handler.completePrompt("x")).rejects.toBe("plain failure")
+			} finally {
+				handler.dispose()
+			}
+			const [source] = vi.mocked(vscode.CancellationTokenSource).mock.results.map((r) => r.value)
+			expect(source.dispose).toHaveBeenCalledOnce()
 		})
 
 		it("refuses to send when the caller already aborted", async () => {

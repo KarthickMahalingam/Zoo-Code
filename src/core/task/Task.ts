@@ -412,8 +412,14 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// API
 	apiConfiguration: ProviderSettings
 	api: ApiHandler
-	/** Handlers replaced while a stream may still be reading from them; disposed with the task. */
-	private retiredApis: ApiHandler[] = []
+	/**
+	 * Units of in-flight API work: a request from setup through its retries and
+	 * background usage drain, or a manual condense. Work can hold any handler it
+	 * read from `this.api`, so replaced handlers wait for the count to reach zero.
+	 */
+	private activeApiWork = 0
+	/** Handlers replaced during in-flight work; disposed when that work settles, or with the task. */
+	private retiredApis = new Set<ApiHandler>()
 	private rateLimitClock: RateLimitClock
 	private autoApprovalHandler: AutoApprovalHandler
 
@@ -2469,16 +2475,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 */
 	public updateApiConfiguration(newApiConfiguration: ProviderSettings): void {
 		// Update the configuration and rebuild the API handler. Handlers such as
-		// VS Code LM / GitHub Copilot own host listeners, so release the old one;
-		// a stream still reading from it keeps it alive until the task is disposed.
+		// VS Code LM / GitHub Copilot own host listeners, so the old one is
+		// released — immediately when idle, or when the last request, retry,
+		// background drain, or condense that leased it settles.
 		const previousApi = this.api
 		this.apiConfiguration = newApiConfiguration
 		this.api = buildApiHandler(this.apiConfiguration)
-		if (this.isStreaming) {
-			this.retiredApis.push(previousApi)
-		} else {
-			disposeApiHandler(previousApi)
-		}
+		this.retireApi(previousApi)
 
 		// Refresh only the soft tool-repetition limit from the new profile so an
 		// active task immediately enforces it. The task-level
@@ -2492,6 +2495,44 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			this.consecutiveMistakeLimit,
 		)
 		this.toolRepetitionDetector.updateLimits(this.toolRepetitionSoftLimit, this.consecutiveMistakeLimit)
+	}
+
+	/**
+	 * Marks the start of in-flight API work. The returned release is idempotent;
+	 * the last release disposes every handler replaced while work was running.
+	 */
+	private beginApiWork(): () => void {
+		this.activeApiWork++
+		let released = false
+		return () => {
+			if (released) return
+			released = true
+			this.activeApiWork--
+			if (this.activeApiWork > 0) return
+			const retired = [...this.retiredApis]
+			this.retiredApis.clear()
+			for (const api of retired) {
+				this.safeDisposeApi(api)
+			}
+		}
+	}
+
+	/** Disposes a replaced handler now, or once in-flight API work settles. */
+	private retireApi(api: ApiHandler): void {
+		if (api === this.api) return
+		if (this.activeApiWork > 0) {
+			this.retiredApis.add(api)
+		} else {
+			this.safeDisposeApi(api)
+		}
+	}
+
+	private safeDisposeApi(api: ApiHandler): void {
+		try {
+			disposeApiHandler(api)
+		} catch (error) {
+			console.error("Error disposing API handler:", error)
+		}
 	}
 
 	public async submitUserMessage(
@@ -2560,6 +2601,15 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	public async condenseContext(): Promise<void> {
+		const endApiWork = this.beginApiWork()
+		try {
+			await this.condenseContextWithActiveApi()
+		} finally {
+			endApiWork()
+		}
+	}
+
+	private async condenseContextWithActiveApi(): Promise<void> {
 		// CRITICAL: Flush any pending tool results before condensing
 		// to ensure tool_use/tool_result pairs are complete in history
 		await this.flushPendingToolResultsToHistory()
@@ -3533,14 +3583,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		this.cancelAssistantMessagePersistence()
 
 		// Release handler-owned host resources (e.g. VS Code configuration listeners).
-		for (const api of [...this.retiredApis, this.api]) {
-			try {
-				disposeApiHandler(api)
-			} catch (error) {
-				console.error("Error disposing API handler:", error)
-			}
+		// This is the fallback for leases that never settle; later lease releases
+		// find nothing retired and so cannot dispose twice.
+		const apis = new Set([...this.retiredApis, this.api])
+		this.retiredApis.clear()
+		for (const api of apis) {
+			this.safeDisposeApi(api)
 		}
-		this.retiredApis = []
 
 		// Stop the idle telemetry check and report any unflushed activity as a
 		// shutdown installment, so a task torn down mid-work (panel closed, task
@@ -4540,6 +4589,12 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 						console.error("Background usage collection failed:", error)
 					})
 				} catch (error) {
+					// Close the request generator so its `finally` releases the API
+					// work it holds (a replaced handler is disposed once nothing uses
+					// it). Async-generator `return()` queues behind a pending `next()`,
+					// so this settles as soon as the aborted stream does.
+					Promise.resolve(stream.return?.(undefined)).catch(() => {})
+
 					// Abandoned happens when extension is no longer waiting for the
 					// Cline instance to finish aborting (error is thrown here when
 					// any function in the for loop throws due to this.abort).
@@ -5463,6 +5518,21 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	public async *attemptApiRequest(
 		retryAttempt: number = 0,
 		options: { skipProviderRateLimit?: boolean; requestModelInfo?: ModelInfo } = {},
+	): ApiStream {
+		// Hold replaced handlers from request setup until the stream is fully
+		// consumed (including the background usage drain) or closed early.
+		// Retries recurse through this method and nest their own unit of work.
+		const endApiWork = this.beginApiWork()
+		try {
+			yield* this.attemptApiRequestWithActiveApi(retryAttempt, options)
+		} finally {
+			endApiWork()
+		}
+	}
+
+	private async *attemptApiRequestWithActiveApi(
+		retryAttempt: number,
+		options: { skipProviderRateLimit?: boolean; requestModelInfo?: ModelInfo },
 	): ApiStream {
 		const state = await this.providerRef.deref()?.getState()
 

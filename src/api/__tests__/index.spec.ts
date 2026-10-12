@@ -45,7 +45,7 @@ import {
 
 import type { RouterName } from "../../shared/api"
 
-import { buildApiHandler } from "../index"
+import { buildApiHandler, disposeApiHandler, type ApiHandler } from "../index"
 import {
 	AnthropicHandler,
 	AnthropicVertexHandler,
@@ -129,6 +129,25 @@ const expectedHandlers = {
 const expectedHandlerEntries = Object.entries(expectedHandlers) as Array<
 	[Exclude<ProviderName, typeof providerIdentifiers.vertex>, HandlerConstructor]
 >
+
+describe("disposeApiHandler", () => {
+	const baseHandler = () => buildApiHandler({ apiProvider: providerIdentifiers.fakeAi })
+
+	it("calls dispose on a handler that owns resources", () => {
+		const dispose = vi.fn()
+		const handler: ApiHandler = Object.assign(Object.create(baseHandler()), { dispose })
+
+		disposeApiHandler(handler)
+
+		expect(dispose).toHaveBeenCalledOnce()
+	})
+
+	it("ignores handlers without dispose, a non-function dispose, and a missing handler", () => {
+		expect(() => disposeApiHandler(undefined)).not.toThrow()
+		expect(() => disposeApiHandler(Object.create(baseHandler()))).not.toThrow()
+		expect(() => disposeApiHandler(Object.assign(Object.create(baseHandler()), { dispose: true }))).not.toThrow()
+	})
+})
 
 describe("buildApiHandler", () => {
 	it.each(expectedHandlerEntries)("returns the expected handler for %s", (apiProvider, Handler) => {
