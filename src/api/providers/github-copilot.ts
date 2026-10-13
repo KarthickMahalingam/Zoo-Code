@@ -66,7 +66,8 @@ export class GitHubCopilotHandler extends VsCodeLmHandler {
 
 	protected override assertWithinContextWindow(inputTokens: number, info: ModelInfo): void {
 		if (inputTokens > info.contextWindow) {
-			this.ensureCleanState()
+			// No cleanup here: the request that called this releases its own cancellation
+			// source when the error reaches it, without touching any newer request.
 			throw Object.assign(
 				new Error(
 					"The request exceeds the selected Copilot model's input context window. Condense the conversation or start a new task.",

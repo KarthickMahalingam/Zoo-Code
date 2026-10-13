@@ -458,9 +458,10 @@ describe("Copilot model capabilities", () => {
 		])("reads the provider-side tool count as supported=%s for %s tools, never as a limit", (expected, count) => {
 			const info = getVsCodeLmModelInfo(liveModel({ capabilities: { toolCalling: count } }))
 			expect(info.supportsToolCalling).toBe(expected)
-			// The count must not be carried into model info as if it were a per-model tool limit.
+			// The count must change nothing else: the result equals what the plain boolean
+			// report produces, so it is never carried into model info as a per-model tool limit.
 			const withoutCount = getVsCodeLmModelInfo(liveModel({ capabilities: { toolCalling: expected } }))
-			expect(Object.keys(info).sort()).toEqual(Object.keys(withoutCount).sort())
+			expect(info).toStrictEqual(withoutCount)
 		})
 
 		it("accepts the provider-side boolean spelling when the consumer-side one is absent", () => {
@@ -759,6 +760,75 @@ describe("GitHubCopilotHandler", () => {
 			expect(mockLanguageModelChat.sendRequest).not.toHaveBeenCalled()
 		})
 
+		const requireValue = <T>(value: T | null | undefined): T => {
+			if (value == null) throw new Error("Expected a value")
+			return value
+		}
+
+		it("releases only the failing request's source when a newer request has already started", async () => {
+			// Two requests on one handler. The first is held in token counting; the second starts and
+			// replaces the handler's current source; then the first fails its pre-send check.
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			await handler.initializeClient()
+			let releaseFirstCount!: () => void
+			const firstCountHeld = new Promise<void>((resolve) => (releaseFirstCount = resolve))
+			let firstCounting!: () => void
+			const firstCountStarted = new Promise<void>((resolve) => (firstCounting = resolve))
+			let secondCounting!: () => void
+			const secondCountStarted = new Promise<void>((resolve) => (secondCounting = resolve))
+			// The first request's counts are held and come back large, so only it fails the check
+			// below; any later count belongs to the second request and comes back small.
+			const FIRST_REQUEST_TOKENS = 1_000
+			let firstToken: unknown
+			mockLanguageModelChat.countTokens.mockImplementation(async (_text: unknown, token: unknown) => {
+				firstToken ??= token
+				if (token === firstToken) {
+					firstCounting()
+					await firstCountHeld
+					return FIRST_REQUEST_TOKENS
+				}
+				secondCounting()
+				return 10
+			})
+			handler["assertWithinContextWindow"] = (inputTokens: number) => {
+				if (inputTokens >= FIRST_REQUEST_TOKENS) {
+					throw new Error("first rejected before sending")
+				}
+			}
+			const stream = pendingStream()
+			try {
+				vi.mocked(vscode.CancellationTokenSource).mockClear()
+				const first = collectStream(
+					handler.createMessage("system", [{ role: "user", content: "a" }], { taskId: "t" }),
+				)
+				await firstCountStarted
+
+				const second = handler.createMessage("system", [{ role: "user", content: "b" }], { taskId: "t" })
+				const secondFirstChunk = second.next()
+				await secondCountStarted
+				const sources = vi.mocked(vscode.CancellationTokenSource).mock.results.map((r) => r.value)
+				const firstSource = sources.find((source) => source.token === firstToken)
+				const secondSource = requireValue(handler["currentRequestCancellation"])
+				expect(firstSource).toBeDefined()
+				expect(secondSource).not.toBe(firstSource)
+
+				releaseFirstCount()
+				await expect(first).rejects.toThrow("first rejected before sending")
+
+				// The first request released its own source and left the newer one running.
+				expect(firstSource.dispose).toHaveBeenCalled()
+				expect(secondSource.cancel).not.toHaveBeenCalled()
+				expect(handler["currentRequestCancellation"]).toBe(secondSource)
+
+				await secondFirstChunk
+				expect(stream.token()).toBe(secondSource.token)
+				stream.release()
+				await second.return(undefined)
+			} finally {
+				handler.dispose()
+			}
+		})
+
 		it("releases the request's cancellation source when a request is rejected before sending", async () => {
 			// A pre-send check that throws without cleaning up after itself, so only the shared
 			// request path can release the source. (Copilot's own context-window check also releases it.)
@@ -787,7 +857,46 @@ describe("GitHubCopilotHandler", () => {
 			}
 		})
 
-		it("cancels before sending when the task aborts during token counting", async () => {
+		it("ends a token count that is still pending when the task aborts, and never sends", async () => {
+			const source = firingCancellationSource()
+			let countStarted!: () => void
+			const counting = new Promise<void>((resolve) => (countStarted = resolve))
+			// Like the host counter for this request: it never answers, and only cancellation of
+			// its token ends it. Counts made with any other token (client setup) answer normally.
+			mockLanguageModelChat.countTokens.mockImplementation((_text: unknown, token: unknown) => {
+				if (token !== source.token) return Promise.resolve(10)
+				return new Promise((_, reject) => {
+					countStarted()
+					source.token.onCancellationRequested(() => reject(new vscode.CancellationError()))
+				})
+			})
+			const controller = new AbortController()
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			try {
+				const request = collectStream(
+					handler.createMessage("system", [{ role: "user", content: "hi" }], {
+						taskId: "t",
+						abortSignal: controller.signal,
+					}),
+				)
+				await counting
+				// The pending count holds the request's own token, so the abort can reach it.
+				expect(mockLanguageModelChat.countTokens.mock.calls.some(([, token]) => token === source.token)).toBe(
+					true,
+				)
+				expect(source.cancel).not.toHaveBeenCalled()
+
+				controller.abort()
+
+				await expect(request).rejects.toThrow("Request cancelled by user")
+				expect(source.cancel).toHaveBeenCalled()
+				expect(mockLanguageModelChat.sendRequest).not.toHaveBeenCalled()
+			} finally {
+				handler.dispose()
+			}
+		})
+
+		it("does not send when the task aborts while tokens are being counted", async () => {
 			const controller = new AbortController()
 			mockLanguageModelChat.countTokens.mockImplementation(async () => {
 				controller.abort()
@@ -796,33 +905,57 @@ describe("GitHubCopilotHandler", () => {
 			pendingStream()
 			const handler = new GitHubCopilotHandler(defaultOptions)
 			try {
-				const messages = handler.createMessage("system", [{ role: "user", content: "hi" }], {
-					taskId: "t",
-					abortSignal: controller.signal,
-				})
-				await messages.next()
+				await expect(
+					collectStream(
+						handler.createMessage("system", [{ role: "user", content: "hi" }], {
+							taskId: "t",
+							abortSignal: controller.signal,
+						}),
+					),
+				).rejects.toThrow("Request cancelled by user")
 				const source = vi.mocked(vscode.CancellationTokenSource).mock.results.at(-1)?.value
 				expect(source.cancel).toHaveBeenCalled()
-				await messages.return(undefined)
+				expect(mockLanguageModelChat.sendRequest).not.toHaveBeenCalled()
 			} finally {
 				handler.dispose()
 			}
 		})
 
-		it("cancels before sending when the task already aborted", async () => {
+		it("does not count or send when the task already aborted", async () => {
 			pendingStream()
+			const source = firingCancellationSource()
 			const controller = new AbortController()
 			controller.abort()
 			const handler = new GitHubCopilotHandler(defaultOptions)
 			try {
-				const messages = handler.createMessage("system", [{ role: "user", content: "hi" }], {
-					taskId: "t",
-					abortSignal: controller.signal,
-				})
-				await messages.next()
-				const source = vi.mocked(vscode.CancellationTokenSource).mock.results.at(-1)?.value
+				await expect(
+					collectStream(
+						handler.createMessage("system", [{ role: "user", content: "hi" }], {
+							taskId: "t",
+							abortSignal: controller.signal,
+						}),
+					),
+				).rejects.toThrow("Request cancelled by user")
 				expect(source.cancel).toHaveBeenCalled()
-				await messages.return(undefined)
+				// Any count that did start saw an already-cancelled token.
+				for (const [, token] of mockLanguageModelChat.countTokens.mock.calls) {
+					expect((token as vscode.CancellationToken).isCancellationRequested).toBe(true)
+				}
+				expect(mockLanguageModelChat.sendRequest).not.toHaveBeenCalled()
+			} finally {
+				handler.dispose()
+			}
+		})
+
+		it("reports an ordinary pre-send failure as itself, not as a cancellation", async () => {
+			const handler = new GitHubCopilotHandler(defaultOptions)
+			handler["assertWithinContextWindow"] = () => {
+				throw new Error("rejected before sending")
+			}
+			try {
+				await expect(
+					collectStream(handler.createMessage("system", [{ role: "user", content: "hi" }], { taskId: "t" })),
+				).rejects.toThrow("rejected before sending")
 			} finally {
 				handler.dispose()
 			}

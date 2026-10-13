@@ -459,8 +459,10 @@ function getSelectedModel({
 					// The extension enforces the curated input limit, so the UI must not show the larger window.
 					...(knownModel && { contextWindow: knownModel.maxInputTokens }),
 					...reported?.modelInfo,
-					// Vision is the host's word alone, as the extension enforces; the catalog's flag is never shown.
+					// Vision and tool support are the host's word alone, as the extension reads them; the
+					// catalog marks every family as supporting both, which is not a host report.
 					supportsImages: reported?.modelInfo?.supportsImages,
+					supportsToolCalling: reported?.modelInfo?.supportsToolCalling,
 					supportsPromptCache: false,
 				},
 			}

@@ -1428,6 +1428,29 @@ describe("useSelectedModel", () => {
 			).toBeUndefined()
 		})
 
+		it("keeps tool support unknown until the host reports it, even though the catalog marks every family", () => {
+			const [curatedFamily] = Object.entries(vscodeLlmModels).find(([, entry]) => entry.supportsToolCalling) ?? []
+			expect(curatedFamily).toBeDefined()
+
+			expect(
+				selectCopilot({ vendor: githubCopilotLanguageModel.vendor, family: curatedFamily }).info
+					?.supportsToolCalling,
+			).toBeUndefined()
+		})
+
+		it.each([true, false])("shows the host-reported tool support (%s) for the selected model", (reported) => {
+			reportedModels({
+				id: "dynamic-tools",
+				family: "dynamic-tools",
+				modelInfo: { contextWindow: 128000, supportsToolCalling: reported, supportsPromptCache: false },
+			})
+
+			expect(
+				selectCopilot({ vendor: "copilot", id: "dynamic-tools", family: "dynamic-tools" }).info
+					?.supportsToolCalling,
+			).toBe(reported)
+		})
+
 		it("keeps missing Copilot image capability unknown instead of setting it to false", () => {
 			expect(
 				selectCopilot({ vendor: "copilot", id: "unknown-model", family: "unknown-model" }).info?.supportsImages,

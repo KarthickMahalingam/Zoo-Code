@@ -6,7 +6,8 @@ import { mountedStory } from "../../../../playwright/mounted-story"
 const send = (page: Page, data: object) =>
 	page.evaluate((message) => window.dispatchEvent(new MessageEvent("message", { data: message })), data)
 
-// The host reports context but says nothing about vision, which the UI must show as unreported.
+// The host reports context but says nothing about vision or tool support, which the UI must
+// show as unreported.
 const model = { id: "gpt-5.5", vendor: "copilot", family: "gpt-5.5", version: "1", name: "GPT-5.5" }
 const reportedModel = { ...model, modelInfo: { contextWindow: 268_426, supportsPromptCache: false } }
 
@@ -36,6 +37,7 @@ test("renders a signed-in account with host-reported capabilities in the VS Code
 
 	await expect(component.getByRole("status")).toContainText("octocat")
 	await expect(component.getByText("Image support not reported")).toBeVisible()
+	await expect(component.getByText("Tool support not reported")).toBeVisible()
 	await settle(component)
 
 	await expect(component).toHaveScreenshot("github-copilot-signed-in-dark.png")

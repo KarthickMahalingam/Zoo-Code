@@ -1074,6 +1074,18 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 		}
 	}
 
+	/**
+	 * Releases one request's cancellation source. Unlike ensureCleanState(), it leaves a newer
+	 * request alone: a request that fails after another has started must not cancel that one.
+	 */
+	protected releaseRequestCancellation(source: vscode.CancellationTokenSource): void {
+		source.cancel()
+		source.dispose()
+		if (this.currentRequestCancellation === source) {
+			this.currentRequestCancellation = null
+		}
+	}
+
 	protected async getClient(): Promise<vscode.LanguageModelChat> {
 		if (!this.client) {
 			console.debug("Zoo Code <Language Model API>: Getting client with options:", {
@@ -1190,23 +1202,17 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 		]
 
 		// Initialize cancellation token for the request. The caller's abort signal is
-		// connected to it inside the request `try` below, so its `finally` removes the
-		// listener on every exit path.
+		// connected to it at the start of the request `try` below, so its `finally`
+		// removes the listener on every exit path.
 		const requestCancellation = new vscode.CancellationTokenSource()
 		this.currentRequestCancellation = requestCancellation
 		const abortSignal = metadata?.abortSignal
-		const cancelOnAbort = () => requestCancellation.cancel()
-
-		// Calculate input tokens before starting the stream. A failure here ends the request
-		// before it is sent, so release its cancellation source now instead of leaving it
-		// for the next request's ensureCleanState(). The abort listener is not attached yet.
-		let totalInputTokens: number
-		try {
-			totalInputTokens = await this.calculateTotalInputTokens(vsCodeLmMessages)
-			this.assertWithinContextWindow(totalInputTokens, modelInfo)
-		} catch (error) {
-			this.ensureCleanState()
-			throw error
+		// Recorded separately from the token: cleanup also cancels the token, so the
+		// token alone cannot tell a caller's abort apart from an ordinary failure.
+		let abortedByCaller = false
+		const cancelOnAbort = () => {
+			abortedByCaller = true
+			requestCancellation.cancel()
 		}
 
 		// Accumulate the text and count at the end of the stream to reduce token counting overhead.
@@ -1293,15 +1299,24 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 		}
 
 		try {
-			// Let the caller's abort cancel the host request. Without this, a pending
-			// `response.stream` read keeps waiting after the task aborts, so the request
-			// never unwinds. An abort that already happened (including during token
-			// counting above) cancels before the request is sent.
+			// Let the caller's abort cancel the host work before any of it starts. Token
+			// counting and the request both take this token, so an abort during either
+			// ends it instead of leaving it pending; an abort that already happened
+			// cancels at once.
 			if (abortSignal?.aborted) {
 				cancelOnAbort()
 			} else {
 				abortSignal?.addEventListener("abort", cancelOnAbort, { once: true })
 			}
+
+			// Calculate input tokens before starting the stream.
+			const totalInputTokens: number = await this.calculateTotalInputTokens(vsCodeLmMessages)
+			// Token counting reports a cancelled count as zero, so stop here rather than
+			// send a request the caller has already abandoned.
+			if (abortedByCaller) {
+				throw new vscode.CancellationError()
+			}
+			this.assertWithinContextWindow(totalInputTokens, modelInfo)
 
 			// Create the response stream with required options
 			const requestOptions: vscode.LanguageModelChatRequestOptions = {
@@ -1311,7 +1326,7 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 			const response: vscode.LanguageModelChatResponse = await client.sendRequest(
 				vsCodeLmMessages,
 				requestOptions,
-				this.currentRequestCancellation.token,
+				requestCancellation.token,
 			)
 
 			// Consume the stream and handle both text and tool call chunks
@@ -1428,9 +1443,11 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 				outputTokens: totalOutputTokens,
 			}
 		} catch (error: unknown) {
-			this.ensureCleanState()
+			// Releases this request's cancellation source, never a newer request's. That cancels
+			// its token too, which is why a caller's abort is read from `abortedByCaller`.
+			this.releaseRequestCancellation(requestCancellation)
 
-			if (error instanceof vscode.CancellationError || requestCancellation.token.isCancellationRequested) {
+			if (error instanceof vscode.CancellationError || abortedByCaller) {
 				throw new Error("Zoo Code <Language Model API>: Request cancelled by user")
 			}
 
