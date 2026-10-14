@@ -49,8 +49,6 @@ export const generateSystemPrompt = async (provider: ClineProvider, message: Web
 	// info beforehand would build the preview from fallback metadata with different
 	// tool guidance than the runtime path (which fetches before tool construction).
 	let modelInfo: ModelInfo | undefined
-	// Built only to read model metadata. Some handlers (VS Code LM, GitHub Copilot) register
-	// host listeners, so release it however this ends: success, timeout, or error.
 	let tempApiHandler: ReturnType<typeof buildApiHandler> | undefined
 	try {
 		tempApiHandler = buildApiHandler(apiConfiguration)

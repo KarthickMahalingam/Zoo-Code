@@ -1566,10 +1566,6 @@ export const webviewMessageHandler = async (
 			}
 			const viewState = getGitHubCopilotViewState(provider)
 			const changesAtStart = viewState.changes
-			// A refresh is out of date once a sign-in has moved the view on, or once a newer
-			// refresh for the same view has started: two overlapping refreshes see the same
-			// `changes`, so only the per-view refresh sequence can stop the older one, if it
-			// finishes last, from overwriting the newer list (or error).
 			const refreshId = ++viewState.refreshId
 			const isOutOfDate = () => viewState.changes !== changesAtStart || viewState.refreshId !== refreshId
 			try {

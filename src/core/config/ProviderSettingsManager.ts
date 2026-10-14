@@ -595,9 +595,7 @@ export class ProviderSettingsManager {
 						continue
 					}
 
-					// Try to build an API handler to get model information. It is used only for
-					// that, and some handlers (VS Code LM, GitHub Copilot) register host listeners,
-					// so release it whether filtering succeeds or fails.
+					// Try to build an API handler to get model information
 					let apiHandler: ReturnType<typeof buildApiHandler> | undefined
 					try {
 						apiHandler = buildApiHandler(configs[name])
