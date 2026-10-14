@@ -472,6 +472,73 @@ describe("webviewMessageHandler - Copilot authentication", () => {
 			})
 		})
 
+		it("discards an older refresh that finishes after a newer one, even with no sign-in", async () => {
+			const finishers: Array<(models: Array<{ id: string }>) => void> = []
+			vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")
+			vi.spyOn(copilotProvider, "getGitHubCopilotModels").mockImplementation(
+				() => new Promise((resolve) => finishers.push(resolve as (models: Array<{ id: string }>) => void)),
+			)
+
+			const older = passiveRequest()
+			const newer = passiveRequest()
+			await vi.waitFor(() => expect(finishers).toHaveLength(2))
+
+			finishers[1]([{ id: "newer" }])
+			await newer
+			finishers[0]([{ id: "older" }])
+			await older
+
+			const posted = vi.mocked(mockClineProvider.postMessageToWebview).mock.calls.map(([message]) => message)
+			expect(posted).toEqual([
+				{ type: "githubCopilotModels", githubCopilotAccount: "Test User", vsCodeLmModels: [{ id: "newer" }] },
+			])
+		})
+
+		it("discards an older refresh's error that arrives after a newer refresh succeeded", async () => {
+			const settlers: Array<{ resolve: (models: []) => void; reject: (error: Error) => void }> = []
+			vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")
+			vi.spyOn(copilotProvider, "getGitHubCopilotModels").mockImplementation(
+				() => new Promise((resolve, reject) => settlers.push({ resolve, reject })),
+			)
+
+			const older = passiveRequest()
+			const newer = passiveRequest()
+			await vi.waitFor(() => expect(settlers).toHaveLength(2))
+
+			settlers[1].resolve([])
+			await newer
+			settlers[0].reject(new Error("host busy"))
+			await older
+
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledTimes(1)
+			expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith(
+				expect.objectContaining({ error: expect.anything() }),
+			)
+		})
+
+		it("keeps one view's refresh from discarding another view's refresh", async () => {
+			const otherView = { ...mockClineProvider, postMessageToWebview: vi.fn() } as unknown as ClineProvider
+			let finishFirst!: (models: []) => void
+			let calls = 0
+			vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")
+			vi.spyOn(copilotProvider, "getGitHubCopilotModels").mockImplementation(() =>
+				++calls === 1 ? new Promise((resolve) => (finishFirst = resolve)) : Promise.resolve([]),
+			)
+
+			const refresh = passiveRequest()
+			await vi.waitFor(() => expect(calls).toBe(1))
+			await webviewMessageHandler(otherView, {
+				type: "requestVsCodeLmModels",
+				apiConfiguration: { apiProvider: providerIdentifiers.githubCopilot },
+			})
+			finishFirst([])
+			await refresh
+
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ type: "githubCopilotModels", githubCopilotAccount: "Test User" }),
+			)
+		})
+
 		it("keeps one view's sign-in from discarding another view's refresh", async () => {
 			const otherView = { ...mockClineProvider, postMessageToWebview: vi.fn() } as unknown as ClineProvider
 			vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")
