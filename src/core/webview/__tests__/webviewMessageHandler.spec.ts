@@ -82,6 +82,7 @@ import * as vsCodeLmProvider from "../../../api/providers/vscode-lm"
 import * as copilotProvider from "../../../api/providers/github-copilot"
 
 import { webviewMessageHandler } from "../webviewMessageHandler"
+import { registerCopilotModelBroadcast } from "../../../services/language-models/copilotModelBroadcast"
 import type { ClineProvider } from "../ClineProvider"
 import { flushModels, getModels } from "../../../api/providers/fetchers/modelCache"
 import { getLMStudioModels } from "../../../api/providers/fetchers/lmstudio"
@@ -495,34 +496,42 @@ describe("webviewMessageHandler - Copilot authentication", () => {
 		})
 
 		it("discards an older refresh's error that arrives after a newer refresh succeeded", async () => {
-			const settlers: Array<{ resolve: (models: []) => void; reject: (error: Error) => void }> = []
+			const settlers: Array<{
+				resolve: (models: Array<{ id: string }>) => void
+				reject: (error: Error) => void
+			}> = []
 			vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")
 			vi.spyOn(copilotProvider, "getGitHubCopilotModels").mockImplementation(
-				() => new Promise((resolve, reject) => settlers.push({ resolve, reject })),
+				() =>
+					new Promise((resolve, reject) =>
+						settlers.push({ resolve: resolve as (models: Array<{ id: string }>) => void, reject }),
+					),
 			)
 
 			const older = passiveRequest()
 			const newer = passiveRequest()
 			await vi.waitFor(() => expect(settlers).toHaveLength(2))
 
-			settlers[1].resolve([])
+			settlers[1].resolve([{ id: "newer" }])
 			await newer
 			settlers[0].reject(new Error("host busy"))
 			await older
 
-			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledTimes(1)
-			expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith(
-				expect.objectContaining({ error: expect.anything() }),
-			)
+			const posted = vi.mocked(mockClineProvider.postMessageToWebview).mock.calls.map(([message]) => message)
+			expect(posted).toEqual([
+				{ type: "githubCopilotModels", githubCopilotAccount: "Test User", vsCodeLmModels: [{ id: "newer" }] },
+			])
 		})
 
 		it("keeps one view's refresh from discarding another view's refresh", async () => {
 			const otherView = { ...mockClineProvider, postMessageToWebview: vi.fn() } as unknown as ClineProvider
-			let finishFirst!: (models: []) => void
+			let finishFirst!: (models: Array<{ id: string }>) => void
 			let calls = 0
 			vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")
 			vi.spyOn(copilotProvider, "getGitHubCopilotModels").mockImplementation(() =>
-				++calls === 1 ? new Promise((resolve) => (finishFirst = resolve)) : Promise.resolve([]),
+				++calls === 1
+					? new Promise((resolve) => (finishFirst = resolve as (models: Array<{ id: string }>) => void))
+					: Promise.resolve([{ id: "other-view" }] as never),
 			)
 
 			const refresh = passiveRequest()
@@ -531,12 +540,61 @@ describe("webviewMessageHandler - Copilot authentication", () => {
 				type: "requestVsCodeLmModels",
 				apiConfiguration: { apiProvider: providerIdentifiers.githubCopilot },
 			})
-			finishFirst([])
+			finishFirst([{ id: "first-view" }])
 			await refresh
 
-			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
-				expect.objectContaining({ type: "githubCopilotModels", githubCopilotAccount: "Test User" }),
+			const posted = vi.mocked(mockClineProvider.postMessageToWebview).mock.calls.map(([message]) => message)
+			expect(posted).toEqual([
+				{
+					type: "githubCopilotModels",
+					githubCopilotAccount: "Test User",
+					vsCodeLmModels: [{ id: "first-view" }],
+				},
+			])
+		})
+
+		it("discards a manual refresh that a host model-change broadcast overtook", async () => {
+			let finishManual!: (models: Array<{ id: string }>) => void
+			vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")
+			vi.spyOn(copilotProvider, "getGitHubCopilotModels").mockImplementation(
+				() => new Promise((resolve) => (finishManual = resolve as (models: Array<{ id: string }>) => void)),
 			)
+			let notifyHost!: () => void
+			const broadcast = registerCopilotModelBroadcast({
+				getTargets: () => [mockClineProvider],
+				log: vi.fn(),
+				debounceMs: 0,
+				subscribe: (listener: () => void) => {
+					notifyHost = listener
+					return { dispose: () => {} }
+				},
+				fetchModels: async () => [{ id: "new-from-host" }] as never,
+				fetchAccount: async () => "Test User",
+			})
+			try {
+				// A manual refresh starts first and is still waiting on the host.
+				const manual = passiveRequest()
+				await vi.waitFor(() => expect(finishManual).toBeDefined())
+
+				// The host then reports new models, and the broadcast delivers them.
+				notifyHost()
+				await vi.waitFor(() => expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledTimes(1))
+
+				// The manual refresh finishes last, with the older list.
+				finishManual([{ id: "old-from-manual" }])
+				await manual
+
+				const posted = vi.mocked(mockClineProvider.postMessageToWebview).mock.calls.map(([message]) => message)
+				expect(posted).toEqual([
+					{
+						type: "githubCopilotModels",
+						githubCopilotAccount: "Test User",
+						vsCodeLmModels: [{ id: "new-from-host" }],
+					},
+				])
+			} finally {
+				broadcast.dispose()
+			}
 		})
 
 		it("keeps one view's sign-in from discarding another view's refresh", async () => {

@@ -64,8 +64,11 @@ export function registerCopilotModelBroadcast(options: CopilotModelBroadcastOpti
 
 	const refresh = async () => {
 		const request = ++latestRequest
-		const changesAtStart = new Map(
-			getTargets().map((target) => [target, getGitHubCopilotViewState(target).changes]),
+		const started = new Map(
+			getTargets().map((target) => {
+				const state = getGitHubCopilotViewState(target)
+				return [target, { changes: state.changes, refreshId: ++state.refreshId }]
+			}),
 		)
 		try {
 			const [vsCodeLmModels, account] = await Promise.all([fetchModels(), fetchAccount()])
@@ -74,8 +77,9 @@ export function registerCopilotModelBroadcast(options: CopilotModelBroadcastOpti
 			await Promise.all(
 				getTargets()
 					.filter((target) => {
-						const started = changesAtStart.get(target)
-						return started === undefined || getGitHubCopilotViewState(target).changes === started
+						const atStart = started.get(target)
+						const state = getGitHubCopilotViewState(target)
+						return !atStart || (state.changes === atStart.changes && state.refreshId === atStart.refreshId)
 					})
 					.map((target) =>
 						target.postMessageToWebview({

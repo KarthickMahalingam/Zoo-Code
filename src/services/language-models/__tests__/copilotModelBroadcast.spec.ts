@@ -254,6 +254,28 @@ describe("registerCopilotModelBroadcast", () => {
 			expect(bystander.postMessageToWebview).toHaveBeenCalledTimes(1)
 		})
 
+		it("is skipped when a manual refresh of that view started after the lookup began", async () => {
+			let finishModels: (models: Models) => void = () => {}
+			const fetchModels = vi
+				.fn()
+				.mockImplementation(() => new Promise<Models>((resolve) => (finishModels = resolve)))
+			const refreshed = newTarget()
+			const bystander = newTarget()
+			const { notify } = setup({ targets: [refreshed, bystander], fetchModels })
+
+			notify()
+			await vi.advanceTimersByTimeAsync(100)
+			// The manual refresh path claims the view's next refresh, as the message handler does.
+			getGitHubCopilotViewState(refreshed).refreshId++
+			finishModels([model("a")] as Models)
+			await vi.advanceTimersByTimeAsync(0)
+
+			expect(refreshed.postMessageToWebview).not.toHaveBeenCalled()
+			expect(bystander.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ vsCodeLmModels: [model("a")] }),
+			)
+		})
+
 		it("is served normally when the sign-in finished before the lookup began", async () => {
 			const view = newTarget()
 			getGitHubCopilotViewState(view).changes += 3
