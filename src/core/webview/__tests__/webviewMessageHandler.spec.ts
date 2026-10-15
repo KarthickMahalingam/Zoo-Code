@@ -597,6 +597,93 @@ describe("webviewMessageHandler - Copilot authentication", () => {
 			}
 		})
 
+		describe("a broadcast that does not deliver", () => {
+			const pendingManual = () => {
+				let finishManual!: (models: Array<{ id: string }>) => void
+				vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")
+				vi.spyOn(copilotProvider, "getGitHubCopilotModels").mockImplementation(
+					() => new Promise((resolve) => (finishManual = resolve as (models: Array<{ id: string }>) => void)),
+				)
+				return { finish: (models: Array<{ id: string }>) => finishManual(models) }
+			}
+			const broadcastWith = (fetchModels: () => Promise<never>) => {
+				let notifyHost!: () => void
+				const registration = registerCopilotModelBroadcast({
+					getTargets: () => [mockClineProvider],
+					log: vi.fn(),
+					debounceMs: 0,
+					subscribe: (listener: () => void) => {
+						notifyHost = listener
+						return { dispose: () => {} }
+					},
+					fetchModels,
+					fetchAccount: async () => "Test User",
+				})
+				return { notify: () => notifyHost(), registration }
+			}
+			const expectManualReplyDelivered = () =>
+				expect(
+					vi.mocked(mockClineProvider.postMessageToWebview).mock.calls.map(([message]) => message),
+				).toEqual([
+					{
+						type: "githubCopilotModels",
+						githubCopilotAccount: "Test User",
+						vsCodeLmModels: [{ id: "manual" }],
+					},
+				])
+
+			it("still delivers a manual refresh when the broadcast's lookup fails", async () => {
+				const manualLookup = pendingManual()
+				const { notify, registration } = broadcastWith(() => Promise.reject(new Error("host busy")))
+				try {
+					const manual = passiveRequest()
+					await vi.waitFor(() => expect(copilotProvider.getGitHubCopilotModels).toHaveBeenCalled())
+					notify()
+					await new Promise((resolve) => setTimeout(resolve, 0))
+
+					manualLookup.finish([{ id: "manual" }])
+					await manual
+
+					// Otherwise the view's refresh spinner never clears and its buttons stay disabled.
+					expectManualReplyDelivered()
+				} finally {
+					registration.dispose()
+				}
+			})
+
+			it("still delivers a manual refresh when a newer broadcast supersedes the first and both fail", async () => {
+				const manualLookup = pendingManual()
+				const { notify, registration } = broadcastWith(() => Promise.reject(new Error("host busy")))
+				try {
+					const manual = passiveRequest()
+					await vi.waitFor(() => expect(copilotProvider.getGitHubCopilotModels).toHaveBeenCalled())
+					notify()
+					notify()
+					await new Promise((resolve) => setTimeout(resolve, 0))
+
+					manualLookup.finish([{ id: "manual" }])
+					await manual
+
+					expectManualReplyDelivered()
+				} finally {
+					registration.dispose()
+				}
+			})
+		})
+
+		it("reports a thrown account lookup as an error, so the webview keeps its account label", async () => {
+			vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockRejectedValue(new Error("auth unavailable"))
+			vi.spyOn(copilotProvider, "getGitHubCopilotModels").mockResolvedValue([])
+
+			await passiveRequest()
+
+			// No githubCopilotAccount field: the webview leaves its label alone rather than clearing it.
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledExactlyOnceWith({
+				type: "githubCopilotModels",
+				error: "auth unavailable",
+			})
+		})
+
 		it("keeps one view's sign-in from discarding another view's refresh", async () => {
 			const otherView = { ...mockClineProvider, postMessageToWebview: vi.fn() } as unknown as ClineProvider
 			vi.spyOn(copilotProvider, "getGitHubCopilotAccount").mockResolvedValue("Test User")

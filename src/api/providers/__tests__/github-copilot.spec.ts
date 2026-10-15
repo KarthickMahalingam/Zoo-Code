@@ -89,6 +89,7 @@ vi.mock("vscode", () => {
 })
 
 import * as vscode from "vscode"
+import { registerCopilotModelBroadcast } from "../../../services/language-models/copilotModelBroadcast"
 import {
 	GitHubCopilotHandler,
 	connectGitHubCopilot,
@@ -226,9 +227,41 @@ describe("connectGitHubCopilot", () => {
 			expect(vscode.authentication.getSession).toHaveBeenCalledWith("github", ["read:user"], { silent: true })
 		})
 
-		it("reports no account rather than failing when the lookup throws", async () => {
+		it("lets a failed lookup throw instead of reporting it as signed out", async () => {
 			vi.mocked(vscode.authentication.getSession).mockRejectedValue(new Error("auth unavailable"))
-			await expect(getGitHubCopilotAccount()).resolves.toBeUndefined()
+			await expect(getGitHubCopilotAccount()).rejects.toThrow("auth unavailable")
+		})
+
+		it("keeps every view's account label when a broadcast's real account lookup fails", async () => {
+			vi.useFakeTimers()
+			try {
+				vi.mocked(vscode.authentication.getSession).mockRejectedValue(new Error("auth unavailable"))
+				vi.mocked(vscode.lm.selectChatModels).mockResolvedValue([])
+				const view = { postMessageToWebview: vi.fn().mockResolvedValue(undefined) }
+				const log = vi.fn()
+				let notify!: () => void
+				const registration = registerCopilotModelBroadcast({
+					getTargets: () => [view],
+					log,
+					debounceMs: 10,
+					subscribe: (listener) => {
+						notify = listener
+						return { dispose: () => {} }
+					},
+				})
+				try {
+					notify()
+					await vi.advanceTimersByTimeAsync(10)
+				} finally {
+					registration.dispose()
+				}
+
+				// Posting `githubCopilotAccount: null` here would clear the label as if the user signed out.
+				expect(view.postMessageToWebview).not.toHaveBeenCalled()
+				expect(log).toHaveBeenCalledWith("Failed to refresh GitHub Copilot state: auth unavailable")
+			} finally {
+				vi.useRealTimers()
+			}
 		})
 
 		it("opens VS Code's own account management instead of signing out on its behalf", async () => {

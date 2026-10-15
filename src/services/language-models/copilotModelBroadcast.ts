@@ -67,7 +67,7 @@ export function registerCopilotModelBroadcast(options: CopilotModelBroadcastOpti
 		const started = new Map(
 			getTargets().map((target) => {
 				const state = getGitHubCopilotViewState(target)
-				return [target, { changes: state.changes, refreshId: ++state.refreshId }]
+				return [target, { changes: state.changes, refreshId: state.refreshId }]
 			}),
 		)
 		try {
@@ -81,13 +81,15 @@ export function registerCopilotModelBroadcast(options: CopilotModelBroadcastOpti
 						const state = getGitHubCopilotViewState(target)
 						return !atStart || (state.changes === atStart.changes && state.refreshId === atStart.refreshId)
 					})
-					.map((target) =>
-						target.postMessageToWebview({
+					.map((target) => {
+						// Claimed only when posting, so a failed or superseded lookup never strands a manual refresh.
+						getGitHubCopilotViewState(target).refreshId++
+						return target.postMessageToWebview({
 							type: VsCodeLmModelsMessageType.githubCopilotModels,
 							vsCodeLmModels,
 							githubCopilotAccount: account ?? null,
-						}),
-					),
+						})
+					}),
 			)
 		} catch (error) {
 			log(`Failed to refresh GitHub Copilot state: ${error instanceof Error ? error.message : String(error)}`)

@@ -156,13 +156,12 @@ export function connectGitHubCopilot(onAuthenticated?: (account: string) => Prom
 	return attempt
 }
 
-/** The signed-in account, or undefined when there is none or the lookup is not possible. */
+/**
+ * The signed-in account, or undefined when there is none. A failed lookup throws rather than reading
+ * as "signed out", so callers keep the last known account instead of clearing it on a transient error.
+ */
 export async function getGitHubCopilotAccount() {
-	try {
-		return (await getGitHubSession({ silent: true }))?.account.label
-	} catch {
-		return undefined
-	}
+	return (await getGitHubSession({ silent: true }))?.account.label
 }
 
 /**

@@ -276,6 +276,18 @@ describe("registerCopilotModelBroadcast", () => {
 			)
 		})
 
+		it("leaves the view's refresh claim untouched when its lookup fails", async () => {
+			const view = newTarget()
+			const before = getGitHubCopilotViewState(view).refreshId
+			const { notify } = setup({ targets: [view], fetchModels: vi.fn().mockRejectedValue(new Error("busy")) })
+
+			notify()
+			await vi.advanceTimersByTimeAsync(100)
+
+			expect(getGitHubCopilotViewState(view).refreshId).toBe(before)
+			expect(view.postMessageToWebview).not.toHaveBeenCalled()
+		})
+
 		it("is served normally when the sign-in finished before the lookup began", async () => {
 			const view = newTarget()
 			getGitHubCopilotViewState(view).changes += 3
