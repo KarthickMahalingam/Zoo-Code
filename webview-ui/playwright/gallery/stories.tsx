@@ -312,6 +312,11 @@ export const stories: Record<string, Story> = {
 			await import("@/components/settings/providers/__tests__/OpenAICompatible.visual.fixture")
 		return <OpenAICompatibleExtraBodyFixture />
 	},
+	"opencode-go-temperature": async () => {
+		const { OpencodeGoTemperatureFixture } =
+			await import("@/components/settings/__tests__/OpencodeGoTemperature.visual.fixture")
+		return <OpencodeGoTemperatureFixture />
+	},
 	"rendered-content-contrast": async () => {
 		const [{ AppProviders }, { RenderedContentContrastFixture }] = await Promise.all([
 			import("../AppProviders"),
