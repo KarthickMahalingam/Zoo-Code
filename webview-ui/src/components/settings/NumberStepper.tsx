@@ -40,6 +40,11 @@ export const NumberStepper = ({
 			setDraft(String(current))
 			return
 		}
+		// An emptied box means "no entry", not 0: revert instead of clamping to the minimum.
+		if (draft.trim() === "" && next === 0) {
+			setDraft(String(current))
+			return
+		}
 		const clamped = Math.min(max, Math.max(min, Math.round(next)))
 		setDraft(String(clamped))
 		// Committing the default clears the override so VS Code changes still flow through.

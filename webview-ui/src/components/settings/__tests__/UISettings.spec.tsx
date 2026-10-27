@@ -176,4 +176,67 @@ describe("UISettings", () => {
 			})
 		})
 	})
+
+	describe("appearance steppers", () => {
+		const keys = ["interfaceFontScale", "terminalFontSize", "editorFontSize", "spacingScale"] as const
+
+		it("renders all four size controls, in the design order, with defaults", () => {
+			const { getByTestId } = render(<UISettings {...defaultProps} />)
+			const inputs = keys.map((k) => (getByTestId(`appearance-${k}-input`) as HTMLInputElement).value)
+			expect(inputs).toEqual(["100", "12", "13", "100"])
+		})
+
+		it("shows the saved values", () => {
+			const { getByTestId } = render(
+				<UISettings
+					{...defaultProps}
+					interfaceFontScale={120}
+					terminalFontSize={14}
+					editorFontSize={15}
+					spacingScale={80}
+				/>,
+			)
+			expect((getByTestId("appearance-interfaceFontScale-input") as HTMLInputElement).value).toBe("120")
+			expect((getByTestId("appearance-terminalFontSize-input") as HTMLInputElement).value).toBe("14")
+			expect((getByTestId("appearance-editorFontSize-input") as HTMLInputElement).value).toBe("15")
+			expect((getByTestId("appearance-spacingScale-input") as HTMLInputElement).value).toBe("80")
+		})
+
+		it.each([
+			["interfaceFontScale", 105],
+			["terminalFontSize", 13],
+			["editorFontSize", 14],
+			["spacingScale", 105],
+		] as const)("stores %s as %s when incremented from the default", (key, expected) => {
+			const setCachedStateField = vi.fn()
+			const { getByTestId } = render(<UISettings {...defaultProps} setCachedStateField={setCachedStateField} />)
+			fireEvent.click(getByTestId(`appearance-${key}-increment`))
+			expect(setCachedStateField).toHaveBeenCalledWith(key, expected)
+		})
+
+		it("reset clears the stored value (undefined → null on save)", () => {
+			const setCachedStateField = vi.fn()
+			const { getByTestId } = render(
+				<UISettings {...defaultProps} terminalFontSize={20} setCachedStateField={setCachedStateField} />,
+			)
+			fireEvent.click(getByTestId("appearance-terminalFontSize-reset"))
+			expect(setCachedStateField).toHaveBeenCalledWith("terminalFontSize", undefined)
+		})
+
+		it("records telemetry for changes", () => {
+			const { getByTestId } = render(<UISettings {...defaultProps} />)
+			fireEvent.click(getByTestId("appearance-editorFontSize-increment"))
+			expect(telemetryClient.capture).toHaveBeenCalledWith("ui_settings_appearance_changed", {
+				key: "editorFontSize",
+				value: 14,
+			})
+		})
+
+		it("previews the unsaved values live", () => {
+			const { getByTestId } = render(<UISettings {...defaultProps} interfaceFontScale={150} spacingScale={50} />)
+			const preview = getByTestId("appearance-preview")
+			expect(preview.style.getPropertyValue("--zoo-ui-scale")).toBe("1.5")
+			expect(preview.style.getPropertyValue("--zoo-spacing-scale")).toBe("0.5")
+		})
+	})
 })

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("vscode", () => ({ version: "1.0.0", authentication: { getSession: vi.fn() } }))
 
@@ -77,5 +77,107 @@ describe("parseCopilotQuota", () => {
 
 	it.each([null, undefined, "nope", [], {}, { quota_snapshots: {} }])("returns undefined for %j", (payload) => {
 		expect(parseCopilotQuota(payload, NOW)).toBeUndefined()
+	})
+})
+
+// --- getGitHubCopilotQuota (network + auth paths) ----------------------------------------------
+
+import * as vscodeApi from "vscode"
+import { getGitHubCopilotQuota, resetGitHubCopilotQuotaCache } from "../copilotQuota"
+
+const getSession = vscodeApi.authentication.getSession as unknown as ReturnType<typeof vi.fn>
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
+
+describe("getGitHubCopilotQuota", () => {
+	beforeEach(() => {
+		resetGitHubCopilotQuotaCache()
+		getSession.mockReset()
+		getSession.mockResolvedValue({ accessToken: "gho_token" })
+	})
+
+	it("returns the parsed quota using the existing VS Code GitHub session, silently", async () => {
+		const fetchSpy = vi.fn(async () => json(businessPayload))
+		const result = await getGitHubCopilotQuota({}, fetchSpy as never)
+
+		expect(result).toMatchObject({ ok: true, quota: { plan: "business", entitlement: 140000 } })
+		// Silent: must never raise a sign-in prompt from a background usage refresh.
+		expect(getSession).toHaveBeenCalledWith("github", expect.any(Array), { silent: true })
+		expect(fetchSpy).toHaveBeenCalledWith(
+			"https://api.github.com/copilot_internal/user",
+			expect.objectContaining({
+				headers: expect.objectContaining({ Authorization: "token gho_token" }),
+			}),
+		)
+	})
+
+	it("falls back to the second scope set when the first has no session", async () => {
+		getSession.mockResolvedValueOnce(undefined).mockResolvedValueOnce({ accessToken: "second" })
+		const fetchSpy = vi.fn(async () => json(businessPayload))
+		await getGitHubCopilotQuota({}, fetchSpy as never)
+		expect(getSession).toHaveBeenCalledTimes(2)
+		expect(fetchSpy).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({ headers: expect.objectContaining({ Authorization: "token second" }) }),
+		)
+	})
+
+	it("reports signedOut without calling GitHub when there is no session", async () => {
+		getSession.mockResolvedValue(undefined)
+		const fetchSpy = vi.fn()
+		expect(await getGitHubCopilotQuota({}, fetchSpy as never)).toEqual({ ok: false, reason: "signedOut" })
+		expect(fetchSpy).not.toHaveBeenCalled()
+	})
+
+	it.each([
+		[401, "signedOut"],
+		[403, "noCopilot"],
+		[404, "noCopilot"],
+	] as const)("maps HTTP %s to %s", async (status, reason) => {
+		const result = await getGitHubCopilotQuota({}, (async () => json({}, status)) as never)
+		expect(result).toMatchObject({ ok: false, reason })
+	})
+
+	it("reports other HTTP failures as an error with the status", async () => {
+		const result = await getGitHubCopilotQuota({}, (async () => json({}, 500)) as never)
+		expect(result).toEqual({ ok: false, reason: "error", message: "GitHub API error 500" })
+	})
+
+	it("reports noCopilot when the payload has no premium snapshot", async () => {
+		const result = await getGitHubCopilotQuota({}, (async () => json({ quota_snapshots: {} })) as never)
+		expect(result).toMatchObject({ ok: false, reason: "noCopilot" })
+	})
+
+	it("turns network errors into an error result instead of throwing", async () => {
+		const result = await getGitHubCopilotQuota({}, (async () => {
+			throw new Error("offline")
+		}) as never)
+		expect(result).toEqual({ ok: false, reason: "error", message: "offline" })
+	})
+
+	it("caches successful results and bypasses the cache when forced", async () => {
+		const fetchSpy = vi.fn(async () => json(businessPayload))
+		await getGitHubCopilotQuota({}, fetchSpy as never)
+		await getGitHubCopilotQuota({}, fetchSpy as never)
+		expect(fetchSpy).toHaveBeenCalledTimes(1)
+		await getGitHubCopilotQuota({ force: true }, fetchSpy as never)
+		expect(fetchSpy).toHaveBeenCalledTimes(2)
+	})
+
+	it("does not cache failures", async () => {
+		const fail = vi.fn(async () => json({}, 500))
+		await getGitHubCopilotQuota({}, fail as never)
+		await getGitHubCopilotQuota({}, fail as never)
+		expect(fail).toHaveBeenCalledTimes(2)
+	})
+
+	it("shares one in-flight request between concurrent callers", async () => {
+		const fetchSpy = vi.fn(async () => json(businessPayload))
+		const [a, b] = await Promise.all([
+			getGitHubCopilotQuota({}, fetchSpy as never),
+			getGitHubCopilotQuota({}, fetchSpy as never),
+		])
+		expect(fetchSpy).toHaveBeenCalledTimes(1)
+		expect(a).toEqual(b)
 	})
 })

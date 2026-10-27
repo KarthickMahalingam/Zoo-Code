@@ -95,10 +95,10 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 			<SectionHeader description={t("settings:usage.description")}>{t("settings:sections.usage")}</SectionHeader>
 
 			<Section>
-				<div className="flex flex-col gap-6">
+				<div className="flex flex-col gap-5">
 					<ProviderLimits providerLabel={providerLabel} />
 
-					<section className="flex flex-col gap-4">
+					<section className="flex flex-col gap-3">
 						<div className="flex items-center justify-between gap-2">
 							<SectionTitle>{t("settings:usage.history")}</SectionTitle>
 							{!isEmpty && (
@@ -163,30 +163,43 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 							</div>
 						) : (
 							<>
-								{/* Stat strip — cost only when a provider actually reported a price */}
-								<div
-									className="flex rounded-md border border-vscode-panel-border divide-x divide-vscode-panel-border"
-									data-testid="usage-stats">
-									{metric === "cost" && (
+								{/* Three compact stat cards, as in the design mock */}
+								<div className="grid grid-cols-3 gap-2" data-testid="usage-stats">
+									{metric === "cost" ? (
 										<Stat
 											value={formatCost(summary.totalCost)}
 											label={t("settings:usage.stats.cost")}
 										/>
+									) : (
+										<Stat
+											value={formatLargeNumber(summary.totalTokens)}
+											label={t("settings:usage.stats.tokens")}
+											hint={t("settings:usage.stats.inOut", {
+												input: formatLargeNumber(summary.tokensIn),
+												output: formatLargeNumber(summary.tokensOut),
+											})}
+										/>
 									)}
-									<Stat
-										value={formatLargeNumber(summary.totalTokens)}
-										label={t("settings:usage.stats.tokens")}
-										hint={
-											summary.cacheReads > 0
-												? t("settings:usage.stats.cacheHit", {
-														percent: Math.round(summary.cacheHitRate * 100),
-													})
-												: t("settings:usage.stats.inOut", {
-														input: formatLargeNumber(summary.tokensIn),
-														output: formatLargeNumber(summary.tokensOut),
-													})
-										}
-									/>
+									{metric === "cost" ? (
+										<Stat
+											value={formatLargeNumber(summary.totalTokens)}
+											label={t("settings:usage.stats.tokens")}
+											hint={
+												summary.cacheReads > 0
+													? t("settings:usage.stats.cacheHit", {
+															percent: Math.round(summary.cacheHitRate * 100),
+														})
+													: undefined
+											}
+										/>
+									) : (
+										<Stat
+											value={String(
+												summary.byModel.filter((m) => m.key !== UNRECORDED).length || "–",
+											)}
+											label={t("settings:usage.stats.models")}
+										/>
+									)}
 									<Stat value={String(summary.taskCount)} label={t("settings:usage.stats.tasks")} />
 								</div>
 
@@ -265,17 +278,12 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 									total={total}
 									testId="usage-by-model"
 								/>
-								<Breakdown
-									title={t("settings:usage.byMode")}
-									rows={summary.byMode.map((b) => ({
-										key: b.key,
-										name: b.key,
-										value: value(b.cost, b.tokens),
-										label: fmt(b.cost, b.tokens),
-									}))}
-									total={total}
-									testId="usage-by-mode"
-								/>
+								<p
+									className="m-0 text-xs text-vscode-descriptionForeground"
+									data-testid="usage-by-mode">
+									<span className="font-medium">{t("settings:usage.byMode")}:</span>{" "}
+									{summary.byMode.map((m) => `${m.key} ${fmt(m.cost, m.tokens)}`).join(" · ")}
+								</p>
 
 								<Block
 									title={
@@ -348,10 +356,10 @@ const Block = ({ title, children, testId }: { title: string; children: React.Rea
 )
 
 const Stat = ({ value, label, hint }: { value: string; label: string; hint?: string }) => (
-	<div className="flex-1 min-w-0 px-3 py-2">
-		<div className="text-base font-semibold text-vscode-foreground tabular-nums truncate">{value}</div>
-		<div className="text-[11px] text-vscode-descriptionForeground truncate">{hint ?? label}</div>
-		{hint && <div className="sr-only">{label}</div>}
+	<div className="min-w-0 rounded-md border border-vscode-panel-border bg-vscode-input-background px-2.5 py-2">
+		<div className="text-lg font-semibold leading-tight text-vscode-foreground tabular-nums truncate">{value}</div>
+		<div className="text-[11px] text-vscode-descriptionForeground">{label}</div>
+		{hint && <div className="mt-0.5 text-[11px] text-vscode-descriptionForeground truncate">{hint}</div>}
 	</div>
 )
 
@@ -367,30 +375,30 @@ const Breakdown = ({
 	testId: string
 }) => (
 	<Block title={title} testId={testId}>
-		<div className="flex flex-col gap-2">
-			{rows.slice(0, 6).map((row, i) => {
+		<div className="flex flex-col gap-1.5">
+			{rows.slice(0, 5).map((row, i) => {
 				const pct = total > 0 ? Math.round((row.value / total) * 100) : 0
 				const color = PALETTE[i % PALETTE.length]
 				return (
-					<div key={row.key} className="flex flex-col gap-1">
-						<div className="flex items-baseline justify-between gap-2 text-sm">
-							<span className="flex items-center gap-2 min-w-0">
-								<span className="size-2 rounded-full shrink-0" style={{ background: color }} />
-								<span className="truncate">{row.name}</span>
-								{row.subtitle && (
-									<span className="truncate text-xs text-vscode-descriptionForeground">
-										{row.subtitle}
-									</span>
-								)}
-							</span>
-							<span className="shrink-0 flex items-baseline gap-2 tabular-nums">
-								<span>{row.label}</span>
-								<span className="w-8 text-right text-xs text-vscode-descriptionForeground">{pct}%</span>
-							</span>
-						</div>
-						<div className="h-1 rounded-full bg-vscode-input-background overflow-hidden">
-							<div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-						</div>
+					<div
+						key={row.key}
+						className="grid grid-cols-[8px_minmax(0,1fr)_auto_minmax(40px,25%)_30px] items-center gap-2 text-xs"
+						title={row.subtitle ? `${row.name} · ${row.subtitle}` : row.name}>
+						<span className="size-2 rounded-full" style={{ background: color }} />
+						<span className="truncate text-sm">
+							{row.name}
+							{row.subtitle && (
+								<span className="ml-1.5 text-vscode-descriptionForeground text-xs">{row.subtitle}</span>
+							)}
+						</span>
+						<span className="tabular-nums text-sm">{row.label}</span>
+						<span className="h-1 rounded-full bg-vscode-input-background overflow-hidden">
+							<span
+								className="block h-full rounded-full"
+								style={{ width: `${pct}%`, background: color }}
+							/>
+						</span>
+						<span className="text-right tabular-nums text-vscode-descriptionForeground">{pct}%</span>
 					</div>
 				)
 			})}

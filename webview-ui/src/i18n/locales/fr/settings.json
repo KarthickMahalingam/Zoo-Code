@@ -1293,7 +1293,8 @@
 			"tokens": "tokens",
 			"tasks": "tasks",
 			"cacheHit": "{{percent}}% from cache",
-			"inOut": "{{input}} in · {{output}} out"
+			"inOut": "{{input}} in · {{output}} out",
+			"models": "models"
 		},
 		"dailyCost": "Daily cost",
 		"byMode": "By mode",
