@@ -16,7 +16,7 @@ interface NumberStepperProps {
 }
 
 /**
- * `[ − ] [ value ] [ + ] unit ↺`
+ * `[ − ] [ value ] [ + ] unit ↺`.
  * Typing is allowed; the value commits (clamped) on blur/Enter so partial
  * input like "1" on the way to "120" is never saved or applied.
  */

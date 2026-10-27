@@ -20,7 +20,7 @@ import {
  * Live limits/balances for every connected provider that exposes a usage API,
  * for the Usage tab's "Provider limits" section.
  *
- * Endpoints are each provider own usage API. Credentials come from the
+ * Endpoints are each provider's own usage API. Credentials come from the
  * user's saved Zoo profiles and are sent only to that provider's own host.
  * Providers without a usage API are simply not listed.
  */
