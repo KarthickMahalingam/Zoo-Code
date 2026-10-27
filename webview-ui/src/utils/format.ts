@@ -128,3 +128,60 @@ export const formatTimeAgo = (timestamp: number) => {
 
 	return i18next.t("common:time_ago.just_now")
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+const startOfDay = (ts: number) => {
+	const d = new Date(ts)
+	d.setHours(0, 0, 0, 0)
+	return d.getTime()
+}
+
+/**
+ * Compact timestamp for a chat message, in the user's time/date formats:
+ *
+ *   same day            "Today 2:41 PM"
+ *   previous day        "Yesterday 11:43 AM"
+ *   within the last week "Mon 11:43 AM"
+ *   same year            "Oct 7, 11:43 AM"       (order follows dateFormat when set)
+ *   other year           "Oct 7, 2025, 11:43 AM"
+ *
+ * "Today"/"Yesterday" come from `Intl.RelativeTimeFormat`, so they are
+ * localised with no extra translation keys. Day boundaries are local midnight,
+ * not 24h windows, so 00:05 vs 23:55 the day before reads correctly.
+ */
+export const formatMessageTime = (
+	timestamp: number,
+	{
+		now = Date.now(),
+		timeFormat = "auto",
+		dateFormat = "auto",
+	}: { now?: number; timeFormat?: TimeFormat; dateFormat?: DateFormat } = {},
+): string => {
+	const locale = i18next.language || "en"
+	const time = formatTimeOnly(timestamp, timeFormat)
+	const daysAgo = Math.round((startOfDay(now) - startOfDay(timestamp)) / DAY_MS)
+
+	if (daysAgo === 0 || daysAgo === 1) {
+		const label = new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(-daysAgo, "day")
+		// Sentence case: "today" -> "Today" (a no-op for scripts without case).
+		return `${label.charAt(0).toLocaleUpperCase(locale)}${label.slice(1)} ${time}`
+	}
+
+	if (daysAgo > 1 && daysAgo < 7) {
+		return `${new Date(timestamp).toLocaleDateString(locale, { weekday: "short" })} ${time}`
+	}
+
+	const sameYear = new Date(timestamp).getFullYear() === new Date(now).getFullYear()
+
+	if (dateFormat !== "auto") {
+		// Explicit numeric orders are always written in full so they stay unambiguous.
+		return `${formatDateOnly(timestamp, dateFormat)}, ${time}`
+	}
+
+	const date = new Date(timestamp).toLocaleDateString(
+		locale,
+		sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" },
+	)
+	return `${date}, ${time}`
+}

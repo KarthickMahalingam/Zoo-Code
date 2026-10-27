@@ -3,6 +3,7 @@ import {
 	formatDate,
 	formatDateOnly,
 	formatDateTime,
+	formatMessageTime,
 	formatTimeAgo,
 	formatTimeOnly,
 	hourCycleOptions,
@@ -222,5 +223,64 @@ describe("formatTimeAgo", () => {
 	it("should format years ago", () => {
 		const timestamp = new Date("2021-01-15T12:00:00").getTime() // 3 years ago
 		expect(formatTimeAgo(timestamp)).toBe("3 years ago")
+	})
+})
+
+describe("formatMessageTime", () => {
+	// Wed 14 Oct 2026, 15:00 local.
+	const NOW = new Date(2026, 9, 14, 15, 0).getTime()
+	const at = (y: number, m: number, d: number, h: number, min = 0) => new Date(y, m, d, h, min).getTime()
+	const fmt = (ts: number, opts: Parameters<typeof formatMessageTime>[1] = {}) =>
+		formatMessageTime(ts, { now: NOW, timeFormat: "12h", ...opts })
+
+	it("says Today for the same calendar day", () => {
+		expect(fmt(at(2026, 9, 14, 9, 5))).toMatch(/^Today 9:05\s?AM$/)
+	})
+
+	it("says Yesterday for the previous calendar day", () => {
+		expect(fmt(at(2026, 9, 13, 11, 43))).toMatch(/^Yesterday 11:43\s?AM$/)
+	})
+
+	it("uses calendar-day boundaries, not 24-hour windows", () => {
+		// 23:55 yesterday is only ~15h before NOW but is still "Yesterday"; 00:05 today is "Today".
+		expect(fmt(at(2026, 9, 13, 23, 55))).toMatch(/^Yesterday/)
+		expect(fmt(at(2026, 9, 14, 0, 5))).toMatch(/^Today/)
+	})
+
+	it("uses a weekday for the rest of the last week", () => {
+		expect(fmt(at(2026, 9, 12, 8, 0))).toMatch(/^Mon 8:00\s?AM$/) // 12 Oct 2026 is a Monday
+		expect(fmt(at(2026, 9, 8, 8, 0))).toMatch(/^Thu 8:00\s?AM$/) // 6 days ago
+	})
+
+	it("switches to a date at 7 days", () => {
+		expect(fmt(at(2026, 9, 7, 8, 0))).toMatch(/^Oct 7, 8:00\s?AM$/)
+	})
+
+	it("omits the year within the current year and includes it otherwise", () => {
+		expect(fmt(at(2026, 0, 2, 10, 0))).toMatch(/^Jan 2, 10:00\s?AM$/)
+		expect(fmt(at(2025, 11, 31, 10, 0))).toMatch(/^Dec 31, 2025, 10:00\s?AM$/)
+	})
+
+	it("treats a message from earlier in a different year as older even when under 7 days away", () => {
+		const newYear = new Date(2027, 0, 2, 12, 0).getTime()
+		// 30 Dec 2026 is 3 days before → weekday, no year needed.
+		expect(formatMessageTime(at(2026, 11, 30, 9, 0), { now: newYear, timeFormat: "24h" })).toMatch(/^Wed 09:00$/)
+	})
+
+	it("honours the 24-hour setting", () => {
+		expect(fmt(at(2026, 9, 14, 14, 41), { timeFormat: "24h" })).toBe("Today 14:41")
+	})
+
+	it("honours an explicit date order for older messages", () => {
+		expect(fmt(at(2026, 0, 2, 10, 0), { timeFormat: "24h", dateFormat: "dmy" })).toBe("02/01/2026, 10:00")
+		expect(fmt(at(2026, 0, 2, 10, 0), { timeFormat: "24h", dateFormat: "ymd" })).toBe("2026-01-02, 10:00")
+	})
+
+	it("keeps Today/Yesterday/weekday regardless of date order", () => {
+		expect(fmt(at(2026, 9, 14, 9, 0), { dateFormat: "ymd" })).toMatch(/^Today/)
+	})
+
+	it("treats a future timestamp (clock skew) as today rather than a bogus label", () => {
+		expect(fmt(at(2026, 9, 14, 23, 59))).toMatch(/^Today/)
 	})
 })
