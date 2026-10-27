@@ -277,8 +277,6 @@ html {
 	 */
 	--zoo-ui-scale: 1;
 	--zoo-spacing-scale: 1;
-	--zoo-terminal-font-size: var(--vscode-editor-font-size, 13px);
-	--zoo-editor-font-size: var(--vscode-editor-font-size, 13px);
 	--zoo-row-py: calc(10px * var(--zoo-spacing-scale));
 	--zoo-row-px: calc(15px * var(--zoo-spacing-scale));
 }
@@ -565,7 +563,7 @@ input[cmdk-input]:focus {
 .diff-view pre,
 .diff-view code,
 .diff-view .hljs {
-	font-size: var(--zoo-editor-font-size);
+	font-size: var(--zoo-editor-font-size, inherit);
 	font-family:
 		var(--vscode-editor-font-family), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 		"Courier New", monospace;

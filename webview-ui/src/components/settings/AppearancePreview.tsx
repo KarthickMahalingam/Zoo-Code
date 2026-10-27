@@ -69,7 +69,7 @@ export const AppearancePreview = ({ values, chatFontSize }: AppearancePreviewPro
 				</div>
 				<pre
 					className="bg-vscode-textCodeBlock-background mb-2"
-					style={{ ...mono, fontSize: "var(--zoo-editor-font-size)" }}>
+					style={{ ...mono, fontSize: "var(--zoo-editor-font-size, var(--vscode-editor-font-size, 13px))" }}>
 					{'const isLoading = status === "saving"'}
 				</pre>
 
@@ -79,7 +79,7 @@ export const AppearancePreview = ({ values, chatFontSize }: AppearancePreviewPro
 				<pre
 					style={{
 						...mono,
-						fontSize: "var(--zoo-terminal-font-size)",
+						fontSize: "var(--zoo-terminal-font-size, var(--vscode-editor-font-size, 13px))",
 						background: "var(--vscode-terminal-background, var(--vscode-textCodeBlock-background))",
 						color: "var(--vscode-terminal-foreground, inherit)",
 					}}>
