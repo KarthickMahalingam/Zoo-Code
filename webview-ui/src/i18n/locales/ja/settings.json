@@ -1198,6 +1198,13 @@
 			"spacingScale": {
 				"label": "Spacing density",
 				"description": "Padding between chat messages. Lower is more compact."
+			},
+			"preview": "Preview",
+			"sample": {
+				"you": "You",
+				"zoo": "Zoo",
+				"user": "Make the selected edge thicker",
+				"assistant": "Updated Edge.tsx to use a 2px stroke when selected."
 			}
 		}
 	},
@@ -1286,7 +1293,6 @@
 			"tokens": "tokens",
 			"tasks": "tasks",
 			"cacheHit": "{{percent}}% from cache",
-			"noPricing": "no per-token price",
 			"inOut": "{{input}} in · {{output}} out"
 		},
 		"dailyCost": "Daily cost",
@@ -1295,24 +1301,23 @@
 		"topTasks": "Most expensive tasks",
 		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
 		"exportCsv": "Export CSV",
-		"noPricingNote": "This provider doesn't report a per-token price (for example, GitHub Copilot is billed by subscription), so charts below show tokens instead of cost.",
+		"noPricingNote": "Some providers (e.g. GitHub Copilot) bill by subscription and don't report a per-task price, so this history is shown in tokens. See Provider limits above for credits.",
 		"dailyTokens": "Daily tokens",
 		"topTasksTokens": "Largest tasks",
 		"byProvider": "By provider",
 		"unknownProvider": "Unknown provider",
-		"copilot": {
-			"title": "GitHub Copilot",
-			"credits": "Premium credits",
-			"usedOf": "{{used}} / {{total}} used",
-			"percentUsed": "{{percent}}% used",
-			"resets": "Resets {{date}}",
-			"updated": "Updated {{time}}",
+		"history": "Usage history",
+		"limits": {
+			"title": "Provider limits",
 			"refresh": "Refresh",
-			"loading": "Loading Copilot usage…",
-			"unlimited": "Unlimited premium requests on this plan.",
-			"signedOut": "Sign in to GitHub Copilot in the Providers tab to see credits.",
-			"noCopilot": "This GitHub account has no Copilot quota to show.",
-			"error": "Couldn't load Copilot usage."
+			"updated": "Updated {{time}}",
+			"loading": "Checking connected providers…",
+			"resets": "Resets {{date}}",
+			"signedOut": "Not signed in",
+			"noCopilot": "No Copilot quota",
+			"noKey": "API key missing or invalid",
+			"unsupported": "Custom base URL — not checked",
+			"error": "Couldn't load"
 		}
 	}
 }

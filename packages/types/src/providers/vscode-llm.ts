@@ -11,9 +11,40 @@ export const vsCodeLmModelsMessageTypes = [
 	"githubCopilotManageAccount",
 	"githubCopilotSignInResult",
 	"githubCopilotModels",
-	"requestGithubCopilotQuota",
-	"githubCopilotQuota",
+	"requestProviderQuotas",
+	"providerQuotas",
 ] as const
+
+/**
+ * One limit/balance a provider reports (e.g. Copilot premium credits for the
+ * month, an OpenRouter key limit, a DeepSeek prepaid balance).
+ */
+export interface ProviderQuotaWindow {
+	/** Stable key, e.g. "premium", "key_limit", "balance". */
+	id: string
+	/** Pre-formatted primary figure, e.g. "39,389.3 / 140,000 used", "$12.40 left". */
+	valueLabel: string
+	/** 0–100 when the provider reports a bounded allowance. */
+	usedPercent?: number
+	/** Epoch ms. */
+	resetAt?: number
+}
+
+export type ProviderQuota =
+	| {
+			providerId: string
+			ok: true
+			plan?: string
+			windows: ProviderQuotaWindow[]
+			fetchedAt: number
+	  }
+	| {
+			providerId: string
+			ok: false
+			reason: "signedOut" | "noCopilot" | "noKey" | "unsupported" | "error"
+			message?: string
+			fetchedAt: number
+	  }
 
 /**
  * The signed-in account's GitHub Copilot premium-request allowance, as reported by

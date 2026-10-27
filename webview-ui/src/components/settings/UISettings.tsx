@@ -16,6 +16,7 @@ import { Slider, Button } from "../ui"
 import { ExtensionStateContextType } from "@/context/ExtensionStateContext"
 import { APPEARANCE_SETTINGS, type AppearanceKey } from "@/utils/appearance"
 import { NumberStepper } from "./NumberStepper"
+import { AppearancePreview } from "./AppearancePreview"
 
 const APPEARANCE_KEYS = Object.keys(APPEARANCE_SETTINGS) as AppearanceKey[]
 
@@ -203,6 +204,9 @@ export const UISettings = ({
 							/>
 						</SearchableSetting>
 					))}
+
+					{/* Live preview of the (unsaved) size settings above */}
+					<AppearancePreview values={appearance} chatFontSize={chatFontSize} />
 
 					{/* Auto-close Zoo opened files */}
 					<SearchableSetting

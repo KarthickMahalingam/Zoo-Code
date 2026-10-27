@@ -1,4 +1,5 @@
 import { HTMLAttributes, useMemo, useState } from "react"
+import { Download } from "lucide-react"
 
 import { useAppTranslation } from "@/i18n/TranslationContext"
 import { useExtensionState } from "@/context/ExtensionStateContext"
@@ -13,15 +14,13 @@ import {
 	summarizeUsage,
 	usageToCsv,
 } from "@src/utils/usage"
-import { Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@src/components/ui"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@src/components/ui"
 
 import { SectionHeader } from "./SectionHeader"
 import { Section } from "./Section"
 import { SearchableSetting } from "./SearchableSetting"
-import { providerIdentifiers } from "@roo-code/types"
-
 import { PROVIDERS } from "./constants"
-import { CopilotQuotaCard } from "./CopilotQuotaCard"
+import { ProviderLimits } from "./ProviderLimits"
 
 const PROVIDER_LABELS = new Map(PROVIDERS.map((p) => [p.value, p.label]))
 const providerLabel = (id: string) => PROVIDER_LABELS.get(id) ?? id
@@ -41,12 +40,15 @@ const WEEKDAY_FMT = new Intl.DateTimeFormat(undefined, { weekday: "narrow" })
 const DAY_FMT = new Intl.DateTimeFormat(undefined, { day: "numeric" })
 
 /**
- * Usage tab: read-only rollup of locally persisted task history. No network
- * calls and no new persisted state.
+ * Usage tab.
  *
- * Subscription providers (GitHub Copilot / VS Code LM) report $0 per task, so
- * when the selected range has tokens but no cost the tab switches its charts
- * and breakdowns to tokens and explains why.
+ * 1. Provider limits: live credits/balances from each connected provider.
+ * 2. Usage history: rollup of local task history (tokens, cost when the
+ *    provider reports a price, breakdowns, top tasks).
+ *
+ * Subscription providers (e.g. GitHub Copilot) record no per-task price, so
+ * when a range has tokens but no cost the history switches to tokens and the
+ * cost stat is hidden rather than shown as a misleading "$0.00".
  */
 export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivElement>) => {
 	const { t } = useAppTranslation()
@@ -70,10 +72,6 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 			}),
 		[taskHistory, range, workspace, profileMeta],
 	)
-
-	// Show the live credits card only for users who actually use Copilot, so
-	// nobody else triggers a GitHub request just by opening the tab.
-	const hasCopilotProfile = (listApiConfigMeta ?? []).some((p) => p.apiProvider === providerIdentifiers.githubCopilot)
 
 	const profileSubtitle = (name: string) => {
 		const meta = profileMeta.get(name)
@@ -101,223 +99,256 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 	}
 
 	return (
-		<div className={cn("flex flex-col gap-2", className)} {...props}>
+		<div className={cn("flex flex-col", className)} {...props}>
 			<SectionHeader description={t("settings:usage.description")}>{t("settings:sections.usage")}</SectionHeader>
 
 			<Section>
-				{hasCopilotProfile && <CopilotQuotaCard />}
+				<div className="flex flex-col gap-6">
+					<ProviderLimits providerLabel={providerLabel} />
 
-				<SearchableSetting settingId="usage-filters" section="usage" label={t("settings:usage.range.label")}>
-					{/* Segmented range control */}
-					<div
-						className="inline-flex rounded-md border border-vscode-input-border overflow-hidden"
-						role="radiogroup"
-						aria-label={t("settings:usage.range.label")}>
-						{USAGE_RANGES.map((r) => (
-							<button
-								key={r}
-								type="button"
-								role="radio"
-								aria-checked={r === range}
-								onClick={() => setRange(r)}
-								data-testid={`usage-range-${r}`}
-								className={cn(
-									"px-3 py-1 text-sm border-r border-vscode-input-border last:border-r-0 cursor-pointer",
-									r === range
-										? "bg-vscode-button-background text-vscode-button-foreground"
-										: "bg-vscode-input-background text-vscode-foreground hover:bg-vscode-list-hoverBackground",
-								)}>
-								{t(`settings:usage.range.${r}`)}
-							</button>
-						))}
-					</div>
-					<div className="flex items-center gap-2 mt-3">
-						<span className="text-vscode-descriptionForeground text-sm">
-							{t("settings:usage.scope.label")}
-						</span>
-						<Select value={scope} onValueChange={(v) => setScope(v as "workspace" | "all")}>
-							<SelectTrigger className="w-48" data-testid="usage-scope-select">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="workspace">{t("settings:usage.scope.workspace")}</SelectItem>
-								<SelectItem value="all">{t("settings:usage.scope.all")}</SelectItem>
-							</SelectContent>
-						</Select>
-					</div>
-				</SearchableSetting>
-
-				{isEmpty ? (
-					<div className="text-vscode-descriptionForeground py-6" data-testid="usage-empty">
-						{t("settings:usage.empty")}
-					</div>
-				) : (
-					<>
-						{/* Stat cards */}
-						<div className="grid grid-cols-3 gap-2" data-testid="usage-stats">
-							<StatCard
-								value={formatCost(summary.totalCost)}
-								label={t("settings:usage.stats.cost")}
-								hint={metric === "tokens" ? t("settings:usage.stats.noPricing") : undefined}
-							/>
-							<StatCard
-								value={formatLargeNumber(summary.totalTokens)}
-								label={t("settings:usage.stats.tokens")}
-								hint={
-									summary.cacheReads > 0
-										? t("settings:usage.stats.cacheHit", {
-												percent: Math.round(summary.cacheHitRate * 100),
-											})
-										: t("settings:usage.stats.inOut", {
-												input: formatLargeNumber(summary.tokensIn),
-												output: formatLargeNumber(summary.tokensOut),
-											})
-								}
-							/>
-							<StatCard value={String(summary.taskCount)} label={t("settings:usage.stats.tasks")} />
+					<section className="flex flex-col gap-4">
+						<div className="flex items-center justify-between gap-2">
+							<SectionTitle>{t("settings:usage.history")}</SectionTitle>
+							{!isEmpty && (
+								<button
+									type="button"
+									className="flex items-center gap-1 text-xs text-vscode-descriptionForeground hover:text-vscode-foreground bg-transparent cursor-pointer"
+									onClick={handleExport}
+									data-testid="usage-export-csv">
+									<Download className="size-3.5" />
+									{t("settings:usage.exportCsv")}
+								</button>
+							)}
 						</div>
 
-						{metric === "tokens" && (
-							<div
-								className="mt-3 text-xs text-vscode-descriptionForeground border-l-2 border-vscode-focusBorder pl-2"
-								data-testid="usage-no-pricing-note">
-								{t("settings:usage.noPricingNote")}
-							</div>
-						)}
-
-						{/* Daily chart */}
-						{summary.daily.length > 1 && (
-							<div className="mt-5">
-								<SubHeading>
-									{metric === "cost"
-										? t("settings:usage.dailyCost")
-										: t("settings:usage.dailyTokens")}
-								</SubHeading>
-								<div className="flex items-end gap-1 h-20" data-testid="usage-daily-chart">
-									{summary.daily.map((d) => {
-										const v = value(d.cost, d.tokens)
-										return (
-											<div
-												key={d.day}
-												className={cn(
-													"flex-1 rounded-t-sm",
-													v > 0 ? "bg-vscode-charts-blue" : "bg-vscode-input-background",
-												)}
-												style={{
-													height:
-														maxDaily > 0 && v > 0
-															? `${Math.max(4, (v / maxDaily) * 100)}%`
-															: "3px",
-												}}
-												title={`${new Date(d.day).toLocaleDateString()} · ${fmt(d.cost, d.tokens)}`}
-											/>
-										)
-									})}
+						{/* Filters */}
+						<SearchableSetting
+							settingId="usage-filters"
+							section="usage"
+							label={t("settings:usage.range.label")}>
+							<div className="flex flex-wrap items-center gap-2">
+								<div
+									className="inline-flex rounded-md border border-vscode-input-border overflow-hidden"
+									role="radiogroup"
+									aria-label={t("settings:usage.range.label")}>
+									{USAGE_RANGES.map((r) => (
+										<button
+											key={r}
+											type="button"
+											role="radio"
+											aria-checked={r === range}
+											onClick={() => setRange(r)}
+											data-testid={`usage-range-${r}`}
+											className={cn(
+												"px-2.5 py-1 text-xs border-r border-vscode-input-border last:border-r-0 cursor-pointer",
+												r === range
+													? "bg-vscode-button-background text-vscode-button-foreground"
+													: "bg-vscode-input-background text-vscode-foreground hover:bg-vscode-list-hoverBackground",
+											)}>
+											{t(`settings:usage.range.${r}`)}
+										</button>
+									))}
 								</div>
-								{showDayLabels && (
-									<div className="flex gap-1 mt-1 text-[10px] text-vscode-descriptionForeground">
-										{summary.daily.map((d) => (
-											<span key={d.day} className="flex-1 text-center">
-												{summary.daily.length <= 7
-													? WEEKDAY_FMT.format(d.day)
-													: DAY_FMT.format(d.day)}
-											</span>
+								<Select value={scope} onValueChange={(v) => setScope(v as "workspace" | "all")}>
+									<SelectTrigger
+										className="h-7 w-auto min-w-36 text-xs"
+										data-testid="usage-scope-select">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="workspace">{t("settings:usage.scope.workspace")}</SelectItem>
+										<SelectItem value="all">{t("settings:usage.scope.all")}</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+						</SearchableSetting>
+
+						{isEmpty ? (
+							<div
+								className="rounded-md border border-dashed border-vscode-panel-border px-3 py-6 text-center text-sm text-vscode-descriptionForeground"
+								data-testid="usage-empty">
+								{t("settings:usage.empty")}
+							</div>
+						) : (
+							<>
+								{/* Stat strip — cost only when a provider actually reported a price */}
+								<div
+									className="flex rounded-md border border-vscode-panel-border divide-x divide-vscode-panel-border"
+									data-testid="usage-stats">
+									{metric === "cost" && (
+										<Stat
+											value={formatCost(summary.totalCost)}
+											label={t("settings:usage.stats.cost")}
+										/>
+									)}
+									<Stat
+										value={formatLargeNumber(summary.totalTokens)}
+										label={t("settings:usage.stats.tokens")}
+										hint={
+											summary.cacheReads > 0
+												? t("settings:usage.stats.cacheHit", {
+														percent: Math.round(summary.cacheHitRate * 100),
+													})
+												: t("settings:usage.stats.inOut", {
+														input: formatLargeNumber(summary.tokensIn),
+														output: formatLargeNumber(summary.tokensOut),
+													})
+										}
+									/>
+									<Stat value={String(summary.taskCount)} label={t("settings:usage.stats.tasks")} />
+								</div>
+
+								{metric === "tokens" && (
+									<p
+										className="m-0 text-xs text-vscode-descriptionForeground"
+										data-testid="usage-no-pricing-note">
+										{t("settings:usage.noPricingNote")}
+									</p>
+								)}
+
+								{summary.daily.length > 1 && (
+									<Block
+										title={
+											metric === "cost"
+												? t("settings:usage.dailyCost")
+												: t("settings:usage.dailyTokens")
+										}>
+										<div className="flex items-end gap-1 h-16" data-testid="usage-daily-chart">
+											{summary.daily.map((d) => {
+												const v = value(d.cost, d.tokens)
+												return (
+													<div
+														key={d.day}
+														className={cn(
+															"flex-1 rounded-sm",
+															v > 0
+																? "bg-vscode-charts-blue"
+																: "bg-vscode-input-background",
+														)}
+														style={{
+															height:
+																maxDaily > 0 && v > 0
+																	? `${Math.max(6, (v / maxDaily) * 100)}%`
+																	: "2px",
+														}}
+														title={`${new Date(d.day).toLocaleDateString()} · ${fmt(d.cost, d.tokens)}`}
+													/>
+												)
+											})}
+										</div>
+										{showDayLabels && (
+											<div className="flex gap-1 mt-1 text-[10px] text-vscode-descriptionForeground">
+												{summary.daily.map((d) => (
+													<span key={d.day} className="flex-1 text-center">
+														{summary.daily.length <= 7
+															? WEEKDAY_FMT.format(d.day)
+															: DAY_FMT.format(d.day)}
+													</span>
+												))}
+											</div>
+										)}
+									</Block>
+								)}
+
+								<Breakdown
+									title={t("settings:usage.byProvider")}
+									rows={summary.byProvider.map((b) => ({
+										key: b.key,
+										name:
+											b.key === "unknown"
+												? t("settings:usage.unknownProvider")
+												: providerLabel(b.key),
+										value: value(b.cost, b.tokens),
+										label: fmt(b.cost, b.tokens),
+									}))}
+									total={total}
+									testId="usage-by-provider"
+								/>
+								<Breakdown
+									title={t("settings:usage.byProfile")}
+									rows={summary.byProfile.map((b) => ({
+										key: b.key,
+										name: b.key,
+										subtitle: profileSubtitle(b.key),
+										value: value(b.cost, b.tokens),
+										label: fmt(b.cost, b.tokens),
+									}))}
+									total={total}
+									testId="usage-by-profile"
+								/>
+								<Breakdown
+									title={t("settings:usage.byMode")}
+									rows={summary.byMode.map((b) => ({
+										key: b.key,
+										name: b.key,
+										value: value(b.cost, b.tokens),
+										label: fmt(b.cost, b.tokens),
+									}))}
+									total={total}
+									testId="usage-by-mode"
+								/>
+
+								<Block
+									title={
+										metric === "cost"
+											? t("settings:usage.topTasks")
+											: t("settings:usage.topTasksTokens")
+									}
+									testId="usage-top-tasks">
+									<div className="rounded-md border border-vscode-panel-border divide-y divide-vscode-panel-border overflow-hidden">
+										{summary.topTasks.map((task) => (
+											<button
+												key={task.id}
+												type="button"
+												className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left text-sm bg-transparent hover:bg-vscode-list-hoverBackground cursor-pointer"
+												onClick={() =>
+													vscode.postMessage({ type: "showTaskWithId", text: task.id })
+												}>
+												<span className="min-w-0 truncate">{task.task}</span>
+												<span className="shrink-0 flex items-baseline gap-1.5 whitespace-nowrap">
+													<span className="font-medium tabular-nums">
+														{fmt(
+															task.totalCost || 0,
+															(task.tokensIn || 0) + (task.tokensOut || 0),
+														)}
+													</span>
+													<span className="text-xs text-vscode-descriptionForeground">
+														{formatTimeAgo(task.ts)}
+													</span>
+												</span>
+											</button>
 										))}
 									</div>
-								)}
-							</div>
+								</Block>
+
+								<p className="m-0 text-[11px] text-vscode-descriptionForeground">
+									{t("settings:usage.disclaimer")}
+								</p>
+							</>
 						)}
-
-						<Breakdown
-							title={t("settings:usage.byProvider")}
-							rows={summary.byProvider.map((b) => ({
-								key: b.key,
-								name: b.key === "unknown" ? t("settings:usage.unknownProvider") : providerLabel(b.key),
-								value: value(b.cost, b.tokens),
-								label: fmt(b.cost, b.tokens),
-							}))}
-							total={total}
-							testId="usage-by-provider"
-						/>
-						<Breakdown
-							title={t("settings:usage.byProfile")}
-							rows={summary.byProfile.map((b) => ({
-								key: b.key,
-								name: b.key,
-								subtitle: profileSubtitle(b.key),
-								value: value(b.cost, b.tokens),
-								label: fmt(b.cost, b.tokens),
-							}))}
-							total={total}
-							testId="usage-by-profile"
-						/>
-						<Breakdown
-							title={t("settings:usage.byMode")}
-							rows={summary.byMode.map((b) => ({
-								key: b.key,
-								name: b.key,
-								value: value(b.cost, b.tokens),
-								label: fmt(b.cost, b.tokens),
-							}))}
-							total={total}
-							testId="usage-by-mode"
-						/>
-
-						{/* Top tasks */}
-						<div className="mt-5" data-testid="usage-top-tasks">
-							<SubHeading>
-								{metric === "cost" ? t("settings:usage.topTasks") : t("settings:usage.topTasksTokens")}
-							</SubHeading>
-							{summary.topTasks.map((task) => (
-								<button
-									key={task.id}
-									type="button"
-									className="w-full flex items-center justify-between gap-3 py-1.5 border-b border-vscode-panel-border text-left bg-transparent hover:bg-vscode-list-hoverBackground cursor-pointer"
-									onClick={() => vscode.postMessage({ type: "showTaskWithId", text: task.id })}>
-									<span className="min-w-0 truncate">{task.task}</span>
-									<span className="shrink-0 whitespace-nowrap text-vscode-descriptionForeground text-xs">
-										<span className="text-vscode-foreground font-medium text-sm">
-											{fmt(task.totalCost || 0, (task.tokensIn || 0) + (task.tokensOut || 0))}
-										</span>
-										{" · "}
-										{formatTimeAgo(task.ts)}
-										{" ›"}
-									</span>
-								</button>
-							))}
-						</div>
-
-						<div className="mt-5 flex flex-col gap-2">
-							<Button
-								className="self-start"
-								variant="secondary"
-								size="sm"
-								onClick={handleExport}
-								data-testid="usage-export-csv">
-								{t("settings:usage.exportCsv")}
-							</Button>
-							<span className="text-vscode-descriptionForeground text-xs">
-								{t("settings:usage.disclaimer")}
-							</span>
-						</div>
-					</>
-				)}
+					</section>
+				</div>
 			</Section>
 		</div>
 	)
 }
 
-const SubHeading = ({ children }: { children: React.ReactNode }) => (
-	<h4 className="text-xs font-semibold uppercase tracking-wide text-vscode-descriptionForeground mt-0 mb-2 pt-4 border-t border-vscode-panel-border">
-		{children}
-	</h4>
+const SectionTitle = ({ children }: { children: React.ReactNode }) => (
+	<h4 className="m-0 text-xs font-semibold uppercase tracking-wide text-vscode-descriptionForeground">{children}</h4>
 )
 
-const StatCard = ({ value, label, hint }: { value: string; label: string; hint?: string }) => (
-	<div className="min-w-0 rounded-md border border-vscode-panel-border bg-vscode-input-background p-2">
-		<div className="text-lg font-semibold text-vscode-foreground truncate">{value}</div>
-		<div className="text-xs text-vscode-descriptionForeground">{label}</div>
-		{hint && <div className="text-[11px] text-vscode-descriptionForeground mt-1 truncate">{hint}</div>}
+const Block = ({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }) => (
+	<div className="flex flex-col gap-2" data-testid={testId}>
+		<div className="text-xs font-medium text-vscode-descriptionForeground">{title}</div>
+		{children}
+	</div>
+)
+
+const Stat = ({ value, label, hint }: { value: string; label: string; hint?: string }) => (
+	<div className="flex-1 min-w-0 px-3 py-2">
+		<div className="text-base font-semibold text-vscode-foreground tabular-nums truncate">{value}</div>
+		<div className="text-[11px] text-vscode-descriptionForeground truncate">{hint ?? label}</div>
+		{hint && <div className="sr-only">{label}</div>}
 	</div>
 )
 
@@ -332,31 +363,34 @@ const Breakdown = ({
 	total: number
 	testId: string
 }) => (
-	<div className="mt-5" data-testid={testId}>
-		<SubHeading>{title}</SubHeading>
-		{rows.slice(0, 6).map((row, i) => {
-			const pct = total > 0 ? Math.round((row.value / total) * 100) : 0
-			const color = PALETTE[i % PALETTE.length]
-			return (
-				<div
-					key={row.key}
-					className="grid grid-cols-[10px_minmax(0,1fr)_auto_minmax(48px,72px)_32px] items-center gap-2 mb-1.5 text-sm">
-					<span className="size-2 rounded-full" style={{ background: color }} />
-					<span className="min-w-0">
-						<span className="block truncate">{row.name}</span>
-						{row.subtitle && (
-							<span className="block truncate text-xs text-vscode-descriptionForeground">
-								{row.subtitle}
+	<Block title={title} testId={testId}>
+		<div className="flex flex-col gap-2">
+			{rows.slice(0, 6).map((row, i) => {
+				const pct = total > 0 ? Math.round((row.value / total) * 100) : 0
+				const color = PALETTE[i % PALETTE.length]
+				return (
+					<div key={row.key} className="flex flex-col gap-1">
+						<div className="flex items-baseline justify-between gap-2 text-sm">
+							<span className="flex items-center gap-2 min-w-0">
+								<span className="size-2 rounded-full shrink-0" style={{ background: color }} />
+								<span className="truncate">{row.name}</span>
+								{row.subtitle && (
+									<span className="truncate text-xs text-vscode-descriptionForeground">
+										{row.subtitle}
+									</span>
+								)}
 							</span>
-						)}
-					</span>
-					<span className="text-right tabular-nums">{row.label}</span>
-					<span className="h-1.5 rounded bg-vscode-input-background overflow-hidden">
-						<span className="block h-full" style={{ width: `${pct}%`, background: color }} />
-					</span>
-					<span className="text-right text-xs text-vscode-descriptionForeground tabular-nums">{pct}%</span>
-				</div>
-			)
-		})}
-	</div>
+							<span className="shrink-0 flex items-baseline gap-2 tabular-nums">
+								<span>{row.label}</span>
+								<span className="w-8 text-right text-xs text-vscode-descriptionForeground">{pct}%</span>
+							</span>
+						</div>
+						<div className="h-1 rounded-full bg-vscode-input-background overflow-hidden">
+							<div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+						</div>
+					</div>
+				)
+			})}
+		</div>
+	</Block>
 )

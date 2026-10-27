@@ -1570,13 +1570,20 @@ export const webviewMessageHandler = async (
 			}
 			break
 		}
-		case VsCodeLmModelsMessageType.requestGithubCopilotQuota: {
-			const { getGitHubCopilotQuota } = await import("../../services/language-models/copilotQuota")
-			const githubCopilotQuota = await getGitHubCopilotQuota({ force: message.bool === true })
-			await provider.postMessageToWebview({
-				type: VsCodeLmModelsMessageType.githubCopilotQuota,
-				githubCopilotQuota,
-			})
+		case VsCodeLmModelsMessageType.requestProviderQuotas: {
+			const { getProviderQuotas } = await import("../../services/language-models/providerQuotas")
+			// Load full settings (incl. API keys) host-side; keys never leave the extension host.
+			const entries = await provider.providerSettingsManager.listConfig()
+			const profiles = await Promise.all(
+				entries.map((entry) =>
+					provider.providerSettingsManager.getProfile({ id: entry.id }).catch(() => undefined),
+				),
+			)
+			const providerQuotas = await getProviderQuotas(
+				profiles.filter((p): p is NonNullable<typeof p> => !!p),
+				{ force: message.bool === true },
+			)
+			await provider.postMessageToWebview({ type: VsCodeLmModelsMessageType.providerQuotas, providerQuotas })
 			break
 		}
 		case VsCodeLmModelsMessageType.githubCopilotManageAccount:
