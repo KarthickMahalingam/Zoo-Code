@@ -49,6 +49,13 @@ describe("applyAppearanceVariables", () => {
 		expect(root.style.getPropertyValue("--zoo-terminal-font-size")).toBe("")
 	})
 
+	it("marks the root only while an editor font size is set", () => {
+		applyAppearanceVariables(root, { editorFontSize: 15 })
+		expect(root.classList.contains("zoo-editor-font-set")).toBe(true)
+		applyAppearanceVariables(root, { editorFontSize: undefined })
+		expect(root.classList.contains("zoo-editor-font-set")).toBe(false)
+	})
+
 	it("clamps out-of-range values before writing", () => {
 		applyAppearanceVariables(root, { spacingScale: 1000 })
 		expect(root.style.getPropertyValue("--zoo-spacing-scale")).toBe("2")

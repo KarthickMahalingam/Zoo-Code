@@ -563,7 +563,6 @@ input[cmdk-input]:focus {
 .diff-view pre,
 .diff-view code,
 .diff-view .hljs {
-	font-size: var(--zoo-editor-font-size, inherit);
 	font-family:
 		var(--vscode-editor-font-family), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 		"Courier New", monospace;
@@ -571,6 +570,17 @@ input[cmdk-input]:focus {
 	font-feature-settings:
 		"calt" 1,
 		"liga" 1;
+}
+
+/*
+ * Editor font size from the UI tab. Scoped to a class that is only present while
+ * the user has set a value, so the diff view keeps its original sizing otherwise.
+ */
+html.zoo-editor-font-set .diff-view,
+html.zoo-editor-font-set .diff-view pre,
+html.zoo-editor-font-set .diff-view code,
+html.zoo-editor-font-set .diff-view .hljs {
+	font-size: var(--zoo-editor-font-size);
 }
 
 /* DiffView background tints via CSS classes instead of inline styles */

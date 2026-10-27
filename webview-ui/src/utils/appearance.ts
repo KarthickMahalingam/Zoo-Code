@@ -67,6 +67,9 @@ export function clampAppearance(key: AppearanceKey, value: number | null | undef
 	return Math.min(max, Math.max(min, Math.round(value)))
 }
 
+/** Present on <html> while the user has set an editor font size. */
+export const EDITOR_FONT_SET_CLASS = "zoo-editor-font-set"
+
 /** Writes (or clears) every appearance CSS variable on `root`. */
 export function applyAppearanceVariables(root: HTMLElement, values: AppearanceValues): void {
 	for (const key of Object.keys(APPEARANCE_SETTINGS) as AppearanceKey[]) {
@@ -77,5 +80,7 @@ export function applyAppearanceVariables(root: HTMLElement, values: AppearanceVa
 		} else {
 			root.style.setProperty(setting.cssVar, setting.toCss(value))
 		}
+		// Lets index.css apply the editor size to the diff view only while it is set.
+		if (key === "editorFontSize") root.classList.toggle(EDITOR_FONT_SET_CLASS, value !== undefined)
 	}
 }
