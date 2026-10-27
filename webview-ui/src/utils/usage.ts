@@ -50,6 +50,7 @@ export interface UsageSummary {
 	/** Share of input-side tokens served from cache, 0–1. */
 	cacheHitRate: number
 	taskCount: number
+	byProvider: UsageBucket[]
 	byProfile: UsageBucket[]
 	byMode: UsageBucket[]
 	daily: DailyUsage[]
@@ -62,6 +63,12 @@ export interface UsageOptions {
 	workspace?: string
 	now?: number
 	topTaskLimit?: number
+	/**
+	 * Resolves a profile name (`HistoryItem.apiConfigName`) to its provider id.
+	 * History doesn't store the provider, so the caller supplies this from the
+	 * current profile list. Unknown/deleted profiles bucket as "unknown".
+	 */
+	providerForProfile?: (profile: string) => string | undefined
 }
 
 function startOfLocalDay(ts: number): number {
@@ -108,6 +115,7 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 			(!options.workspace || item.workspace === options.workspace),
 	)
 
+	const providers = new Map<string, UsageBucket>()
 	const profiles = new Map<string, UsageBucket>()
 	const modes = new Map<string, UsageBucket>()
 	const daily = new Map<number, { cost: number; tokens: number }>()
@@ -130,7 +138,9 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 		cacheReads += item.cacheReads || 0
 		cacheWrites += item.cacheWrites || 0
 
-		addTo(profiles, item.apiConfigName || "default", cost, tokens)
+		const profile = item.apiConfigName || "default"
+		addTo(providers, options.providerForProfile?.(profile) || "unknown", cost, tokens)
+		addTo(profiles, profile, cost, tokens)
 		addTo(modes, item.mode || "unknown", cost, tokens)
 
 		const day = startOfLocalDay(item.ts)
@@ -167,6 +177,7 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 		totalTokens: tokensIn + tokensOut,
 		cacheHitRate: inputSide > 0 ? cacheReads / inputSide : 0,
 		taskCount: items.length,
+		byProvider: [...providers.values()].sort(byCostDesc),
 		byProfile: [...profiles.values()].sort(byCostDesc),
 		byMode: [...modes.values()].sort(byCostDesc),
 		daily: dailySeries,

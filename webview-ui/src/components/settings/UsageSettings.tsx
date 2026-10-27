@@ -18,6 +18,10 @@ import { Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue }
 import { SectionHeader } from "./SectionHeader"
 import { Section } from "./Section"
 import { SearchableSetting } from "./SearchableSetting"
+import { PROVIDERS } from "./constants"
+
+const PROVIDER_LABELS = new Map(PROVIDERS.map((p) => [p.value, p.label]))
+const providerLabel = (id: string) => PROVIDER_LABELS.get(id) ?? id
 
 const formatCost = (cost: number) => `$${cost.toFixed(2)}`
 
@@ -43,16 +47,32 @@ const DAY_FMT = new Intl.DateTimeFormat(undefined, { day: "numeric" })
  */
 export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivElement>) => {
 	const { t } = useAppTranslation()
-	const { taskHistory, cwd } = useExtensionState()
+	const { taskHistory, cwd, listApiConfigMeta } = useExtensionState()
 
 	const [range, setRange] = useState<UsageRange>("7d")
 	const [scope, setScope] = useState<"workspace" | "all">("workspace")
 
 	const workspace = scope === "workspace" ? cwd : undefined
+
+	// History stores the profile name only; resolve provider/model from the
+	// current profile list. Renamed or deleted profiles fall back to "unknown".
+	const profileMeta = useMemo(() => new Map((listApiConfigMeta ?? []).map((p) => [p.name, p])), [listApiConfigMeta])
+
 	const summary = useMemo(
-		() => summarizeUsage(taskHistory ?? [], { range, workspace }),
-		[taskHistory, range, workspace],
+		() =>
+			summarizeUsage(taskHistory ?? [], {
+				range,
+				workspace,
+				providerForProfile: (name) => profileMeta.get(name)?.apiProvider,
+			}),
+		[taskHistory, range, workspace, profileMeta],
 	)
+
+	const profileSubtitle = (name: string) => {
+		const meta = profileMeta.get(name)
+		if (!meta?.apiProvider) return t("settings:usage.unknownProvider")
+		return [providerLabel(meta.apiProvider), meta.modelId].filter(Boolean).join(" · ")
+	}
 
 	const metric: UsageMetric = pickMetric(summary)
 	const value = (cost: number, tokens: number) => (metric === "cost" ? cost : tokens)
@@ -200,9 +220,22 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 						)}
 
 						<Breakdown
+							title={t("settings:usage.byProvider")}
+							rows={summary.byProvider.map((b) => ({
+								key: b.key,
+								name: b.key === "unknown" ? t("settings:usage.unknownProvider") : providerLabel(b.key),
+								value: value(b.cost, b.tokens),
+								label: fmt(b.cost, b.tokens),
+							}))}
+							total={total}
+							testId="usage-by-provider"
+						/>
+						<Breakdown
 							title={t("settings:usage.byProfile")}
 							rows={summary.byProfile.map((b) => ({
 								key: b.key,
+								name: b.key,
+								subtitle: profileSubtitle(b.key),
 								value: value(b.cost, b.tokens),
 								label: fmt(b.cost, b.tokens),
 							}))}
@@ -213,6 +246,7 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 							title={t("settings:usage.byMode")}
 							rows={summary.byMode.map((b) => ({
 								key: b.key,
+								name: b.key,
 								value: value(b.cost, b.tokens),
 								label: fmt(b.cost, b.tokens),
 							}))}
@@ -285,7 +319,7 @@ const Breakdown = ({
 	testId,
 }: {
 	title: string
-	rows: { key: string; value: number; label: string }[]
+	rows: { key: string; name: string; subtitle?: string; value: number; label: string }[]
 	total: number
 	testId: string
 }) => (
@@ -299,7 +333,14 @@ const Breakdown = ({
 					key={row.key}
 					className="grid grid-cols-[10px_minmax(0,1fr)_auto_minmax(48px,72px)_32px] items-center gap-2 mb-1.5 text-sm">
 					<span className="size-2 rounded-full" style={{ background: color }} />
-					<span className="truncate">{row.key}</span>
+					<span className="min-w-0">
+						<span className="block truncate">{row.name}</span>
+						{row.subtitle && (
+							<span className="block truncate text-xs text-vscode-descriptionForeground">
+								{row.subtitle}
+							</span>
+						)}
+					</span>
 					<span className="text-right tabular-nums">{row.label}</span>
 					<span className="h-1.5 rounded bg-vscode-input-background overflow-hidden">
 						<span className="block h-full" style={{ width: `${pct}%`, background: color }} />

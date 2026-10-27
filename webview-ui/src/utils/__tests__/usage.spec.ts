@@ -111,6 +111,23 @@ describe("summarizeUsage", () => {
 		expect(s.topTasks.map((t) => t.id)).toEqual(["big", "small"])
 	})
 
+	it("groups by provider using the profile resolver, bucketing unknown profiles", () => {
+		const providers: Record<string, string> = { opus: "anthropic", gpt: "github-copilot" }
+		const s = summarizeUsage([...history, item({ apiConfigName: "deleted-profile", tokensIn: 1 })], {
+			range: "7d",
+			now: NOW,
+			providerForProfile: (p) => providers[p],
+		})
+		expect(s.byProvider.map((b) => b.key)).toEqual(["anthropic", "github-copilot", "unknown"])
+		expect(s.byProvider[0].tasks).toBe(2)
+	})
+
+	it("buckets everything as unknown provider when no resolver is given", () => {
+		const s = summarizeUsage(history, { range: "7d", now: NOW })
+		expect(s.byProvider).toHaveLength(1)
+		expect(s.byProvider[0].key).toBe("unknown")
+	})
+
 	it("ignores non-finite costs", () => {
 		const s = summarizeUsage([item({ totalCost: NaN })], { range: "all", now: NOW })
 		expect(s.totalCost).toBe(0)
