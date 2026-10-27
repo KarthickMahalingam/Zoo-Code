@@ -138,6 +138,8 @@ export interface ExtensionStateContextType extends ExtensionState {
 	editorFontSize?: number
 	spacingScale?: number
 	timeFormat?: "auto" | "12h" | "24h"
+	dateFormat?: "auto" | "mdy" | "dmy" | "ymd"
+	showRelativeTimes?: boolean
 	enterBehavior?: "send" | "newline"
 	setEnterBehavior: (value: "send" | "newline") => void
 	autoCondenseContext: boolean
@@ -560,6 +562,8 @@ export const ExtensionStateContextProvider: React.FC<{
 		editorFontSize: state.editorFontSize ?? undefined,
 		spacingScale: state.spacingScale ?? undefined,
 		timeFormat: state.timeFormat ?? "auto",
+		dateFormat: state.dateFormat ?? "auto",
+		showRelativeTimes: state.showRelativeTimes ?? true,
 		reasoningBlockCollapsed: state.reasoningBlockCollapsed ?? true,
 		didHydrateState,
 		showWelcome,

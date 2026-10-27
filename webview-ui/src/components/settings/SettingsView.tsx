@@ -222,6 +222,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		editorFontSize,
 		spacingScale,
 		timeFormat,
+		dateFormat,
+		showRelativeTimes,
 		enterBehavior,
 		includeCurrentTime,
 		includeCurrentCost,
@@ -456,6 +458,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					editorFontSize: editorFontSize ?? null,
 					spacingScale: spacingScale ?? null,
 					timeFormat: timeFormat ?? "auto",
+					dateFormat: dateFormat ?? "auto",
+					showRelativeTimes: showRelativeTimes ?? true,
 					enterBehavior: enterBehavior ?? "send",
 					includeCurrentTime: includeCurrentTime ?? true,
 					includeCurrentCost: includeCurrentCost ?? true,
@@ -996,6 +1000,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 							<LanguageSettings
 								language={language || "en"}
 								timeFormat={timeFormat}
+								dateFormat={dateFormat}
+								showRelativeTimes={showRelativeTimes}
 								setCachedStateField={setCachedStateField}
 							/>
 						)}

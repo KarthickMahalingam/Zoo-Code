@@ -1,4 +1,6 @@
 import { HTMLAttributes, useMemo } from "react"
+import { VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
+
 import { useAppTranslation } from "@/i18n/TranslationContext"
 
 import type { Language } from "@roo-code/types"
@@ -6,7 +8,7 @@ import type { Language } from "@roo-code/types"
 import { LANGUAGES } from "@roo/language"
 
 import { cn } from "@src/lib/utils"
-import { formatDateTime, type TimeFormat } from "@src/utils/format"
+import { formatDateOnly, formatDateTime, formatTimeOnly, type DateFormat, type TimeFormat } from "@src/utils/format"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@src/components/ui"
 
 import { SetCachedStateField } from "./types"
@@ -15,89 +17,195 @@ import { Section } from "./Section"
 import { SearchableSetting } from "./SearchableSetting"
 
 const TIME_FORMATS: TimeFormat[] = ["auto", "12h", "24h"]
+const DATE_FORMATS: DateFormat[] = ["auto", "mdy", "dmy", "ymd"]
 
-// Fixed sample (14:41 local) so the preview clearly shows 12h vs 24h.
-const PREVIEW_TS = (() => {
-	const d = new Date()
-	d.setHours(14, 41, 0, 0)
-	return d.getTime()
-})()
+// Fixed sample (Oct 27, 2026, 14:41 local) so the preview clearly shows 12h vs 24h and date order.
+const SAMPLE_TS = new Date(2026, 9, 27, 14, 41, 0).getTime()
 
 type LanguageSettingsProps = HTMLAttributes<HTMLDivElement> & {
 	language: string
 	timeFormat?: TimeFormat
-	setCachedStateField: SetCachedStateField<"language" | "timeFormat">
+	dateFormat?: DateFormat
+	showRelativeTimes?: boolean
+	setCachedStateField: SetCachedStateField<"language" | "timeFormat" | "dateFormat" | "showRelativeTimes">
 }
 
 export const LanguageSettings = ({
 	language,
 	timeFormat = "auto",
+	dateFormat = "auto",
+	showRelativeTimes = true,
 	setCachedStateField,
 	className,
 	...props
 }: LanguageSettingsProps) => {
 	const { t } = useAppTranslation()
 
-	// Recompute when language changes too, since "auto" is locale-driven.
-	const preview = useMemo(() => formatDateTime(PREVIEW_TS, timeFormat), [timeFormat, language]) // eslint-disable-line react-hooks/exhaustive-deps
+	// Recompute when the language changes too, since "auto" is locale-driven.
+	/* eslint-disable react-hooks/exhaustive-deps */
+	const preview = useMemo(
+		() => ({
+			chatTime: formatTimeOnly(SAMPLE_TS, timeFormat),
+			dateExample: formatDateOnly(SAMPLE_TS, dateFormat),
+			hover: formatDateTime(SAMPLE_TS, timeFormat, dateFormat),
+		}),
+		[timeFormat, dateFormat, language],
+	)
+	/* eslint-enable react-hooks/exhaustive-deps */
 
 	return (
 		<div className={cn("flex flex-col gap-2", className)} {...props}>
-			<SectionHeader>{t("settings:sections.language")}</SectionHeader>
+			<SectionHeader description={t("settings:language.description")}>
+				{t("settings:sections.language")}
+			</SectionHeader>
 
 			<Section>
-				<SearchableSetting
-					settingId="language-select"
-					section="language"
-					label={t("settings:sections.language")}>
-					<Select
-						value={language}
-						onValueChange={(value) => setCachedStateField("language", value as Language)}>
-						<SelectTrigger className="w-full">
-							<SelectValue placeholder={t("settings:common.select")} />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectGroup>
-								{Object.entries(LANGUAGES).map(([code, name]) => (
-									<SelectItem key={code} value={code}>
-										{name}
-										<span className="text-muted-foreground">({code})</span>
-									</SelectItem>
-								))}
-							</SelectGroup>
-						</SelectContent>
-					</Select>
-				</SearchableSetting>
+				<div className="flex flex-col gap-6">
+					<div className="flex flex-col gap-3">
+						<SubTitle>{t("settings:language.languageTitle")}</SubTitle>
+						<SearchableSetting
+							settingId="language-select"
+							section="language"
+							label={t("settings:sections.language")}>
+							<div className="flex flex-col gap-1">
+								<label className="font-medium">{t("settings:language.displayLanguage")}</label>
+								<Select
+									value={language}
+									onValueChange={(value) => setCachedStateField("language", value as Language)}>
+									<SelectTrigger className="w-full">
+										<SelectValue placeholder={t("settings:common.select")} />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectGroup>
+											{Object.entries(LANGUAGES).map(([code, name]) => (
+												<SelectItem key={code} value={code}>
+													{name}
+													<span className="text-muted-foreground">({code})</span>
+												</SelectItem>
+											))}
+										</SelectGroup>
+									</SelectContent>
+								</Select>
+								<div className="text-vscode-descriptionForeground text-sm">
+									{t("settings:language.displayLanguageDescription")}
+								</div>
+							</div>
+						</SearchableSetting>
+					</div>
 
-				<SearchableSetting
-					settingId="language-time-format"
-					section="language"
-					label={t("settings:language.timeFormat.label")}>
-					<div className="flex flex-col gap-1">
-						<label className="block font-medium mb-1">{t("settings:language.timeFormat.label")}</label>
-						<Select
-							value={timeFormat}
-							onValueChange={(value) => setCachedStateField("timeFormat", value as TimeFormat)}>
-							<SelectTrigger className="w-full" data-testid="time-format-select">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{TIME_FORMATS.map((format) => (
-									<SelectItem key={format} value={format}>
-										{t(`settings:language.timeFormat.options.${format}`)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-						<div className="text-vscode-descriptionForeground text-sm mt-1">
-							{t("settings:language.timeFormat.description")}
-						</div>
-						<div className="text-sm mt-1" data-testid="time-format-preview">
-							{t("settings:language.timeFormat.preview", { example: preview })}
+					<div className="flex flex-col gap-4">
+						<SubTitle>{t("settings:language.dateTimeTitle")}</SubTitle>
+
+						{/* Time format: segmented control, as in the design */}
+						<SearchableSetting
+							settingId="language-time-format"
+							section="language"
+							label={t("settings:language.timeFormat.label")}>
+							<div className="flex flex-col gap-1.5">
+								<label className="font-medium">{t("settings:language.timeFormat.label")}</label>
+								<div
+									className="inline-flex self-start rounded-md border border-vscode-input-border overflow-hidden"
+									role="radiogroup"
+									aria-label={t("settings:language.timeFormat.label")}
+									data-testid="time-format-select">
+									{TIME_FORMATS.map((format) => (
+										<button
+											key={format}
+											type="button"
+											role="radio"
+											aria-checked={format === timeFormat}
+											onClick={() => setCachedStateField("timeFormat", format)}
+											data-testid={`time-format-${format}`}
+											className={cn(
+												"px-3 py-1 text-sm border-r border-vscode-input-border last:border-r-0 cursor-pointer",
+												format === timeFormat
+													? "bg-vscode-button-background text-vscode-button-foreground"
+													: "bg-vscode-input-background text-vscode-foreground hover:bg-vscode-list-hoverBackground",
+											)}>
+											{t(`settings:language.timeFormat.options.${format}`)}
+										</button>
+									))}
+								</div>
+								<div className="text-vscode-descriptionForeground text-sm">
+									{t("settings:language.timeFormat.description")}
+								</div>
+							</div>
+						</SearchableSetting>
+
+						{/* Date format: select + live example */}
+						<SearchableSetting
+							settingId="language-date-format"
+							section="language"
+							label={t("settings:language.dateFormat.label")}>
+							<div className="flex flex-col gap-1.5">
+								<label className="font-medium">{t("settings:language.dateFormat.label")}</label>
+								<div className="flex items-center gap-3">
+									<Select
+										value={dateFormat}
+										onValueChange={(value) =>
+											setCachedStateField("dateFormat", value as DateFormat)
+										}>
+										<SelectTrigger className="w-40" data-testid="date-format-select">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											{DATE_FORMATS.map((format) => (
+												<SelectItem key={format} value={format}>
+													{t(`settings:language.dateFormat.options.${format}`)}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+									<span
+										className="text-vscode-descriptionForeground text-sm"
+										data-testid="date-format-example">
+										{t("settings:language.dateFormat.example", { example: preview.dateExample })}
+									</span>
+								</div>
+							</div>
+						</SearchableSetting>
+
+						<SearchableSetting
+							settingId="language-relative-times"
+							section="language"
+							label={t("settings:language.relativeTimes.label")}>
+							<VSCodeCheckbox
+								checked={showRelativeTimes}
+								onChange={(e: any) => setCachedStateField("showRelativeTimes", e.target.checked)}
+								data-testid="relative-times-checkbox">
+								<span className="font-medium">{t("settings:language.relativeTimes.label")}</span>
+							</VSCodeCheckbox>
+						</SearchableSetting>
+
+						{/* Preview card: chat message time, task history (relative or absolute), hover text */}
+						<div
+							className="rounded-md border border-dashed border-vscode-panel-border bg-vscode-editor-background px-3 py-2.5 text-sm flex flex-col gap-1.5"
+							data-testid="time-format-preview">
+							<div className="text-xs text-vscode-descriptionForeground">
+								{t("settings:language.preview.title")}
+							</div>
+							<div data-testid="preview-chat">
+								{t("settings:language.preview.chat")} · <strong>{preview.chatTime}</strong>
+							</div>
+							<div data-testid="preview-history">
+								{t("settings:language.preview.history")} ·{" "}
+								<strong>
+									{showRelativeTimes ? t("settings:language.preview.relative") : preview.hover}
+								</strong>
+								{showRelativeTimes && (
+									<span className="ml-1.5 text-xs text-vscode-descriptionForeground">
+										{t("settings:language.preview.hover", { value: preview.hover })}
+									</span>
+								)}
+							</div>
 						</div>
 					</div>
-				</SearchableSetting>
+				</div>
 			</Section>
 		</div>
 	)
 }
+
+const SubTitle = ({ children }: { children: React.ReactNode }) => (
+	<h4 className="m-0 text-xs font-semibold uppercase tracking-wide text-vscode-descriptionForeground">{children}</h4>
+)

@@ -30,7 +30,10 @@ const TaskItemFooter: React.FC<TaskItemFooterProps> = ({
 }) => {
 	const { t } = useAppTranslation()
 	// Optional read: this leaf renders standalone (tests, previews) without a provider.
-	const timeFormat = useContext(ExtensionStateContext)?.timeFormat
+	const ext = useContext(ExtensionStateContext)
+	const timeFormat = ext?.timeFormat
+	const dateFormat = ext?.dateFormat
+	const showRelativeTimes = ext?.showRelativeTimes ?? true
 
 	return (
 		<div className="text-xs text-vscode-descriptionForeground flex justify-between items-center">
@@ -51,8 +54,10 @@ const TaskItemFooter: React.FC<TaskItemFooterProps> = ({
 					</>
 				)}
 				{/* Datetime with time-ago format */}
-				<StandardTooltip content={formatDateTime(item.ts, timeFormat)}>
-					<span className="first-letter:uppercase">{formatTimeAgo(item.ts)}</span>
+				<StandardTooltip content={formatDateTime(item.ts, timeFormat, dateFormat)}>
+					<span className="first-letter:uppercase">
+						{showRelativeTimes ? formatTimeAgo(item.ts) : formatDateTime(item.ts, timeFormat, dateFormat)}
+					</span>
 				</StandardTooltip>
 
 				{/* Cost */}

@@ -28,6 +28,12 @@ export interface UsageBucket {
 	tasks: number
 	/** For model buckets: the provider that served it (undefined when unrecorded). */
 	apiProvider?: string
+	/**
+	 * True when this bucket has any cost > 0. When the tab is showing cost, a bucket
+	 * with `priced: false` (e.g. GitHub Copilot, billed by subscription) must not be
+	 * shown as "$0.00 · 0%": it has no price, not zero spend.
+	 */
+	priced: boolean
 }
 
 export interface DailyUsage {
@@ -114,9 +120,10 @@ function addTo(
 	countedForTask: Set<string>,
 	extra?: Partial<UsageBucket>,
 ) {
-	const bucket = map.get(key) ?? { key, cost: 0, tokens: 0, tasks: 0, ...extra }
+	const bucket = map.get(key) ?? { key, cost: 0, tokens: 0, tasks: 0, priced: false, ...extra }
 	bucket.cost += cost
 	bucket.tokens += tokens
+	if (cost > 0) bucket.priced = true
 	// Count the task once per bucket even if several of its requests land here.
 	if (!countedForTask.has(key)) {
 		countedForTask.add(key)

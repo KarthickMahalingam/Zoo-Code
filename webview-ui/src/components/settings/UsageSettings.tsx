@@ -76,6 +76,19 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 	const fmt = (cost: number, tokens: number) => (metric === "cost" ? formatCost(cost) : formatLargeNumber(tokens))
 	const total = value(summary.totalCost, summary.totalTokens)
 
+	// While showing cost, a bucket with no priced usage shows its tokens and a
+	// "no price" tag instead of a misleading "$0.00 · 0%".
+	const bucketRow = (b: { cost: number; tokens: number; priced: boolean }) => {
+		const unpriced = metric === "cost" && !b.priced
+		return {
+			value: value(b.cost, b.tokens),
+			unpriced,
+			label: unpriced
+				? `${formatLargeNumber(b.tokens)} ${t("settings:usage.tokensShort")} · ${t("settings:usage.noPrice")}`
+				: fmt(b.cost, b.tokens),
+		}
+	}
+
 	const maxDaily = Math.max(0, ...summary.daily.map((d) => value(d.cost, d.tokens)))
 	const showDayLabels = summary.daily.length <= 14
 	const isEmpty = summary.taskCount === 0
@@ -260,8 +273,7 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 									rows={summary.byProvider.map((b) => ({
 										key: b.key,
 										name: providerName(b.key),
-										value: value(b.cost, b.tokens),
-										label: fmt(b.cost, b.tokens),
+										...bucketRow(b),
 									}))}
 									total={total}
 									testId="usage-by-provider"
@@ -272,8 +284,7 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 										key: b.key,
 										name: modelIdFromKey(b.key) ?? t("settings:usage.notRecorded"),
 										subtitle: b.apiProvider ? providerLabel(b.apiProvider) : undefined,
-										value: value(b.cost, b.tokens),
-										label: fmt(b.cost, b.tokens),
+										...bucketRow(b),
 									}))}
 									total={total}
 									testId="usage-by-model"
@@ -282,7 +293,9 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 									className="m-0 text-xs text-vscode-descriptionForeground"
 									data-testid="usage-by-mode">
 									<span className="font-medium">{t("settings:usage.byMode")}:</span>{" "}
-									{summary.byMode.map((m) => `${m.key} ${fmt(m.cost, m.tokens)}`).join(" · ")}
+									{summary.byMode
+										.map((m) => `${m.key} ${bucketRow(m).label.split(" · ")[0]}`)
+										.join(" · ")}
 								</p>
 
 								<Block
@@ -318,10 +331,12 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 												</span>
 												<span className="shrink-0 flex items-baseline gap-1.5 whitespace-nowrap">
 													<span className="font-medium tabular-nums">
-														{fmt(
-															task.totalCost || 0,
-															(task.tokensIn || 0) + (task.tokensOut || 0),
-														)}
+														{metric === "cost" && !(task.totalCost > 0)
+															? `${formatLargeNumber((task.tokensIn || 0) + (task.tokensOut || 0))} ${t("settings:usage.tokensShort")}`
+															: fmt(
+																	task.totalCost || 0,
+																	(task.tokensIn || 0) + (task.tokensOut || 0),
+																)}
 													</span>
 													<span className="text-xs text-vscode-descriptionForeground">
 														{formatTimeAgo(task.ts)}
@@ -370,15 +385,15 @@ const Breakdown = ({
 	testId,
 }: {
 	title: string
-	rows: { key: string; name: string; subtitle?: string; value: number; label: string }[]
+	rows: { key: string; name: string; subtitle?: string; value: number; label: string; unpriced?: boolean }[]
 	total: number
 	testId: string
 }) => (
 	<Block title={title} testId={testId}>
 		<div className="flex flex-col gap-1.5">
 			{rows.slice(0, 5).map((row, i) => {
-				const pct = total > 0 ? Math.round((row.value / total) * 100) : 0
-				const color = PALETTE[i % PALETTE.length]
+				const pct = row.unpriced ? 0 : total > 0 ? Math.round((row.value / total) * 100) : 0
+				const color = row.unpriced ? "var(--vscode-descriptionForeground)" : PALETTE[i % PALETTE.length]
 				return (
 					<div
 						key={row.key}
@@ -391,14 +406,20 @@ const Breakdown = ({
 								<span className="ml-1.5 text-vscode-descriptionForeground text-xs">{row.subtitle}</span>
 							)}
 						</span>
-						<span className="tabular-nums text-sm">{row.label}</span>
+						<span
+							className={cn("tabular-nums text-sm", row.unpriced && "text-vscode-descriptionForeground")}
+							data-testid={row.unpriced ? "usage-unpriced" : undefined}>
+							{row.label}
+						</span>
 						<span className="h-1 rounded-full bg-vscode-input-background overflow-hidden">
 							<span
 								className="block h-full rounded-full"
 								style={{ width: `${pct}%`, background: color }}
 							/>
 						</span>
-						<span className="text-right tabular-nums text-vscode-descriptionForeground">{pct}%</span>
+						<span className="text-right tabular-nums text-vscode-descriptionForeground">
+							{row.unpriced ? "–" : `${pct}%`}
+						</span>
 					</div>
 				)
 			})}

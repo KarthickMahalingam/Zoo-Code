@@ -1,4 +1,12 @@
-import { formatLargeNumber, formatDate, formatDateTime, formatTimeAgo, hourCycleOptions } from "../format"
+import {
+	formatLargeNumber,
+	formatDate,
+	formatDateOnly,
+	formatDateTime,
+	formatTimeAgo,
+	formatTimeOnly,
+	hourCycleOptions,
+} from "../format"
 
 // Mock i18next
 vi.mock("i18next", () => ({
@@ -91,12 +99,44 @@ describe("hourCycleOptions", () => {
 	})
 })
 
+describe("formatDateOnly", () => {
+	const ts = new Date(2026, 9, 7, 14, 41).getTime() // 7 Oct 2026
+
+	it.each([
+		["mdy", "10/07/2026"],
+		["dmy", "07/10/2026"],
+		["ymd", "2026-10-07"],
+	] as const)("writes %s as %s, zero-padded and locale-independent", (format, expected) => {
+		expect(formatDateOnly(ts, format)).toBe(expected)
+	})
+
+	it("follows the display language for auto", () => {
+		expect(formatDateOnly(ts, "auto")).toMatch(/2026/)
+		expect(formatDateOnly(ts)).toBe(formatDateOnly(ts, "auto"))
+	})
+})
+
+describe("formatTimeOnly", () => {
+	const ts = new Date(2026, 9, 27, 14, 41).getTime()
+
+	it("honours 24h and 12h", () => {
+		expect(formatTimeOnly(ts, "24h")).toBe("14:41")
+		expect(formatTimeOnly(ts, "12h")).toMatch(/^2:41\s?PM$/i)
+	})
+})
+
 describe("formatDateTime", () => {
-	it("includes date and time honouring the format", () => {
+	it("includes date and time honouring the formats", () => {
 		const timestamp = new Date("2024-01-15T00:05:00").getTime()
 		const result = formatDateTime(timestamp, "24h")
 		expect(result).toMatch(/2024/)
 		expect(result).toMatch(/00:05/)
+	})
+
+	it("combines the chosen date order with the chosen clock", () => {
+		const ts = new Date(2026, 9, 27, 14, 41).getTime()
+		expect(formatDateTime(ts, "24h", "dmy")).toBe("27/10/2026, 14:41")
+		expect(formatDateTime(ts, "24h", "ymd")).toBe("2026-10-27, 14:41")
 	})
 })
 

@@ -302,6 +302,16 @@ export const globalSettingsSchema = z.object({
 	 */
 	timeFormat: z.enum(["auto", "12h", "24h"]).optional(),
 	/**
+	 * How dates are written. "auto" follows the display language's locale.
+	 * @default "auto"
+	 */
+	dateFormat: z.enum(["auto", "mdy", "dmy", "ymd"]).optional(),
+	/**
+	 * Show relative times ("5 min ago") in task history; when off, show the absolute date/time.
+	 * @default true
+	 */
+	showRelativeTimes: z.boolean().optional(),
+	/**
 	 * Controls the keyboard behavior for sending messages in the chat input.
 	 * - "send": Enter sends message, Shift+Enter creates newline (default)
 	 * - "newline": Enter creates newline, Shift+Enter/Ctrl+Enter sends message

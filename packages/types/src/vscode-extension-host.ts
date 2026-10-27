@@ -346,6 +346,8 @@ export type ExtensionState = Pick<
 	| "editorFontSize"
 	| "spacingScale"
 	| "timeFormat"
+	| "dateFormat"
+	| "showRelativeTimes"
 	| "enterBehavior"
 	| "includeCurrentTime"
 	| "includeCurrentCost"

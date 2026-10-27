@@ -120,6 +120,44 @@ describe("UsageSettings", () => {
 		})
 	})
 
+	describe("mixed priced and unpriced providers", () => {
+		beforeEach(() => {
+			state.taskHistory = [priced(1.5), copilot({ tokensIn: 16_000_000 })]
+		})
+
+		it("prioritises cost over tokens when any provider reports a price", () => {
+			render(<UsageSettings />)
+			const stats = screen.getByTestId("usage-stats").textContent!
+			expect(stats).toContain("$1.50")
+			expect(screen.queryByTestId("usage-no-pricing-note")).toBeNull()
+		})
+
+		it("shows subscription providers as tokens with a no-price tag, not $0.00 · 0%", () => {
+			render(<UsageSettings />)
+			const providers = screen.getByTestId("usage-by-provider")
+			const unpriced = within(providers).getByTestId("usage-unpriced")
+			expect(unpriced.textContent).toContain("noPrice")
+			expect(unpriced.textContent).not.toContain("$0.00")
+			// The unpriced row has no share: it shows "–", never "0%".
+			const row = unpriced.parentElement!
+			expect(row.textContent).toContain("–")
+			expect(row.textContent).not.toMatch(/(^|\D)0%/)
+			expect(row.querySelector("span[style*='width: 0%']")).not.toBeNull()
+		})
+
+		it("gives priced providers their cost and share", () => {
+			render(<UsageSettings />)
+			const providers = screen.getByTestId("usage-by-provider")
+			expect(providers.textContent).toContain("$1.50")
+			expect(providers.textContent).toContain("100%")
+		})
+
+		it("shows an unpriced top task by tokens rather than $0.00", () => {
+			render(<UsageSettings />)
+			expect(screen.getByTestId("usage-top-tasks").textContent).not.toContain("$0.00")
+		})
+	})
+
 	describe("attribution", () => {
 		it("lists the provider and model that were recorded", () => {
 			state.taskHistory = [copilot()]

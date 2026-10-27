@@ -208,6 +208,44 @@ describe("summarizeUsage", () => {
 	})
 })
 
+describe("mixed priced and unpriced providers", () => {
+	const mixed = () => {
+		const mk = (provider: string, model: string, tokens: number, cost: number) =>
+			item({
+				tokensIn: tokens,
+				tokensOut: 0,
+				totalCost: cost,
+				usageByModel: [
+					{ apiProvider: provider, modelId: model, requests: 1, tokensIn: tokens, tokensOut: 0, cost },
+				],
+			})
+		return summarizeUsage(
+			[
+				mk(providerIdentifiers.githubCopilot, "claude-opus-5.5", 16_000_000, 0),
+				mk(providerIdentifiers.anthropic, "claude-sonnet-5", 200_000, 1.2),
+			],
+			{ range: "all", now: NOW },
+		)
+	}
+
+	it("prioritises cost as soon as any usage in the range is priced", () => {
+		expect(pickMetric(mixed())).toBe("cost")
+	})
+
+	it("flags each bucket as priced or not so subscription usage isn't shown as $0.00", () => {
+		const s = mixed()
+		const byKey = Object.fromEntries(s.byProvider.map((b) => [b.key, b]))
+		expect(byKey[providerIdentifiers.anthropic].priced).toBe(true)
+		expect(byKey[providerIdentifiers.githubCopilot].priced).toBe(false)
+		expect(s.byModel.find((b) => modelIdFromKey(b.key) === "claude-opus-5.5")!.priced).toBe(false)
+	})
+
+	it("keeps all-unpriced ranges on tokens and all-priced ranges on cost", () => {
+		const unpriced = summarizeUsage([item({ tokensIn: 5, usageByModel: [] })], { range: "all", now: NOW })
+		expect(pickMetric(unpriced)).toBe("tokens")
+	})
+})
+
 describe("primaryUsage", () => {
 	it("returns the provider+model that used the most tokens", () => {
 		const task = item({
