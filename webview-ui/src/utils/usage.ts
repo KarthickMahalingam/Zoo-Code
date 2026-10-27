@@ -26,6 +26,18 @@ export interface DailyUsage {
 	/** Local-midnight timestamp of the day. */
 	day: number
 	cost: number
+	tokens: number
+}
+
+/**
+ * Which metric the Usage tab should chart. Subscription-backed providers
+ * (e.g. GitHub Copilot via the VS Code LM API) report no per-token price, so
+ * their tasks persist `totalCost: 0`. Charting cost would show flat zeros.
+ */
+export type UsageMetric = "cost" | "tokens"
+
+export function pickMetric(summary: Pick<UsageSummary, "totalCost" | "totalTokens">): UsageMetric {
+	return summary.totalCost > 0 || summary.totalTokens === 0 ? "cost" : "tokens"
 }
 
 export interface UsageSummary {
@@ -98,7 +110,7 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 
 	const profiles = new Map<string, UsageBucket>()
 	const modes = new Map<string, UsageBucket>()
-	const daily = new Map<number, number>()
+	const daily = new Map<number, { cost: number; tokens: number }>()
 
 	let totalCost = 0
 	let tokensIn = 0
@@ -122,7 +134,10 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 		addTo(modes, item.mode || "unknown", cost, tokens)
 
 		const day = startOfLocalDay(item.ts)
-		daily.set(day, (daily.get(day) ?? 0) + cost)
+		const entry = daily.get(day) ?? { cost: 0, tokens: 0 }
+		entry.cost += cost
+		entry.tokens += tokens
+		daily.set(day, entry)
 	}
 
 	// Densify the daily series for bounded ranges so the chart has a bar per day
@@ -132,11 +147,12 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 		for (let day = start; day <= startOfLocalDay(now); day += DAY_MS) {
 			// Re-normalise each step to survive DST transitions.
 			const normalised = startOfLocalDay(day + DAY_MS / 2)
-			dailySeries.push({ day: normalised, cost: daily.get(normalised) ?? 0 })
+			const entry = daily.get(normalised)
+			dailySeries.push({ day: normalised, cost: entry?.cost ?? 0, tokens: entry?.tokens ?? 0 })
 		}
 	} else {
-		for (const [day, cost] of [...daily.entries()].sort(([a], [b]) => a - b)) {
-			dailySeries.push({ day, cost })
+		for (const [day, entry] of [...daily.entries()].sort(([a], [b]) => a - b)) {
+			dailySeries.push({ day, ...entry })
 		}
 	}
 
@@ -154,7 +170,14 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 		byProfile: [...profiles.values()].sort(byCostDesc),
 		byMode: [...modes.values()].sort(byCostDesc),
 		daily: dailySeries,
-		topTasks: [...items].sort((a, b) => (b.totalCost || 0) - (a.totalCost || 0)).slice(0, topTaskLimit),
+		// Cost first, tokens as tie-breaker so zero-cost (subscription) usage still ranks meaningfully.
+		topTasks: [...items]
+			.sort(
+				(a, b) =>
+					(b.totalCost || 0) - (a.totalCost || 0) ||
+					(b.tokensIn || 0) + (b.tokensOut || 0) - ((a.tokensIn || 0) + (a.tokensOut || 0)),
+			)
+			.slice(0, topTaskLimit),
 	}
 }
 

@@ -1287,13 +1287,18 @@
 			"cost": "cost",
 			"tokens": "tokens",
 			"tasks": "tasks",
-			"cacheHit": "{{percent}}% from cache"
+			"cacheHit": "{{percent}}% from cache",
+			"noPricing": "no per-token price",
+			"inOut": "{{input}} in · {{output}} out"
 		},
 		"dailyCost": "Daily cost",
 		"byProfile": "By API profile",
 		"byMode": "By mode",
 		"topTasks": "Most expensive tasks",
 		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
-		"exportCsv": "Export CSV"
+		"exportCsv": "Export CSV",
+		"noPricingNote": "This provider doesn't report a per-token price (for example, GitHub Copilot is billed by subscription), so charts below show tokens instead of cost.",
+		"dailyTokens": "Daily tokens",
+		"topTasksTokens": "Largest tasks"
 	}
 }

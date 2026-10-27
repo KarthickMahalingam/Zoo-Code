@@ -1,6 +1,6 @@
 import type { HistoryItem } from "@roo-code/types"
 
-import { rangeStart, summarizeUsage, usageToCsv } from "../usage"
+import { pickMetric, rangeStart, summarizeUsage, usageToCsv } from "../usage"
 
 // Fixed "now": Wed 2026-10-14 15:00 local time.
 const NOW = new Date(2026, 9, 14, 15, 0, 0).getTime()
@@ -98,9 +98,36 @@ describe("summarizeUsage", () => {
 		expect(s.cacheHitRate).toBe(0)
 	})
 
+	it("tracks tokens per day alongside cost", () => {
+		const s = summarizeUsage(history, { range: "7d", now: NOW })
+		expect(s.daily.at(-1)!.tokens).toBe(1000 + 200 + 20)
+	})
+
+	it("ranks zero-cost tasks by tokens (subscription providers)", () => {
+		const s = summarizeUsage([item({ id: "small", tokensIn: 10 }), item({ id: "big", tokensIn: 5_000_000 })], {
+			range: "all",
+			now: NOW,
+		})
+		expect(s.topTasks.map((t) => t.id)).toEqual(["big", "small"])
+	})
+
 	it("ignores non-finite costs", () => {
 		const s = summarizeUsage([item({ totalCost: NaN })], { range: "all", now: NOW })
 		expect(s.totalCost).toBe(0)
+	})
+})
+
+describe("pickMetric", () => {
+	it("uses cost when any cost was recorded", () => {
+		expect(pickMetric({ totalCost: 0.01, totalTokens: 10 })).toBe("cost")
+	})
+
+	it("falls back to tokens when tokens exist but cost is zero (e.g. GitHub Copilot)", () => {
+		expect(pickMetric({ totalCost: 0, totalTokens: 6_200_000 })).toBe("tokens")
+	})
+
+	it("stays on cost when there is no usage at all", () => {
+		expect(pickMetric({ totalCost: 0, totalTokens: 0 })).toBe("cost")
 	})
 })
 
