@@ -107,6 +107,15 @@ describe("NumberStepper", () => {
 		expect(onChange).toHaveBeenCalledWith(undefined)
 	})
 
+	it("reverts when the typed number is too large to be finite", () => {
+		const { onChange, input } = setup({ value: 16 })
+		// 400 digits parse to Infinity.
+		fireEvent.change(input, { target: { value: "9".repeat(400) } })
+		fireEvent.blur(input)
+		expect(onChange).not.toHaveBeenCalled()
+		expect(input.value).toBe("16")
+	})
+
 	it("re-syncs the draft when the value changes from outside", () => {
 		const { rerender } = (() => {
 			const r = render(

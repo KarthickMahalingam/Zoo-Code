@@ -331,7 +331,118 @@ describe("pickMetric", () => {
 	})
 })
 
+describe("modelIdFromKey", () => {
+	it("returns undefined for the unrecorded bucket, the id after the provider separator, or a bare key", () => {
+		expect(modelIdFromKey(UNRECORDED)).toBeUndefined()
+		expect(modelIdFromKey("anthropic\u0000claude-sonnet-5")).toBe("claude-sonnet-5")
+		expect(modelIdFromKey("plain-model")).toBe("plain-model")
+	})
+})
+
+describe("usage attribution edge cases", () => {
+	const entry = (overrides: Record<string, unknown>) => ({
+		requests: 1,
+		tokensIn: 10,
+		tokensOut: 0,
+		cost: 0,
+		...overrides,
+	})
+
+	it("keeps the first entry when two entries used the same number of tokens", () => {
+		const task = item({
+			usageByModel: [
+				entry({ apiProvider: "a", modelId: "first", tokensIn: 50 }),
+				entry({ apiProvider: "b", modelId: "second", tokensIn: 50 }),
+			],
+		})
+		expect(primaryUsage(task)).toEqual({ apiProvider: "a", modelId: "first" })
+	})
+
+	it("buckets a model with no provider under an empty provider key, and a provider with no model as unrecorded", () => {
+		const s = summarizeUsage(
+			[
+				item({
+					totalCost: 1,
+					usageByModel: [entry({ modelId: "orphan", cost: 1 }), entry({ apiProvider: "p", cost: 0 })],
+				}),
+			],
+			{ range: "all", now: NOW },
+		)
+		expect(new Set(s.byModel.map((b) => modelIdFromKey(b.key)))).toEqual(new Set([undefined, "orphan"]))
+		expect(new Set(s.byProvider.map((b) => b.key))).toEqual(new Set([UNRECORDED, "p"]))
+	})
+
+	it("counts a task once per bucket even when several of its requests land in it", () => {
+		const s = summarizeUsage(
+			[
+				item({
+					usageByModel: [
+						entry({ apiProvider: "p", modelId: "m", tokensIn: 1 }),
+						entry({ apiProvider: "p", modelId: "m", tokensIn: 2 }),
+					],
+				}),
+			],
+			{ range: "all", now: NOW },
+		)
+		expect(s.byProvider[0].tasks).toBe(1)
+		expect(s.byModel[0].tasks).toBe(1)
+		expect(s.byProvider[0].tokens).toBe(3)
+	})
+
+	it("orders top tasks by cost, then by tokens, and treats missing numbers as zero", () => {
+		const cheapBig = item({ id: "cheap-big", totalCost: 1, tokensIn: 900, tokensOut: 100 })
+		const cheapSmall = item({ id: "cheap-small", totalCost: 1, tokensIn: 10, tokensOut: 0 })
+		const pricey = item({ id: "pricey", totalCost: 5, tokensIn: 1, tokensOut: 0 })
+		const bare = (id: string) =>
+			item({ id, totalCost: undefined as never, tokensIn: undefined as never, tokensOut: undefined as never })
+		const s = summarizeUsage([cheapSmall, bare("bare-1"), cheapBig, pricey, bare("bare-2")], {
+			range: "all",
+			now: NOW,
+		})
+		expect(s.topTasks.map((t) => t.id).slice(0, 3)).toEqual(["pricey", "cheap-big", "cheap-small"])
+		expect(
+			s.topTasks
+				.map((t) => t.id)
+				.slice(3)
+				.sort(),
+		).toEqual(["bare-1", "bare-2"])
+	})
+})
+
 describe("usageToCsv", () => {
+	it("sorts oldest first and leaves provider, model and counters blank or zero when nothing was recorded", () => {
+		const csv = usageToCsv(
+			[
+				item({ task: "later", ts: NOW }),
+				item({
+					task: "earlier",
+					title: undefined,
+					ts: NOW - DAY,
+					tokensIn: undefined as never,
+					tokensOut: undefined as never,
+					totalCost: undefined as never,
+					mode: undefined,
+				}),
+			],
+			{ range: "all", now: NOW },
+		)
+		const lines = csv.split("\n")
+		expect(lines[1]).toContain("earlier")
+		expect(lines[1].endsWith(',"","","",0,0,0,0,0.0000')).toBe(true)
+		expect(lines[2]).toContain("later")
+	})
+
+	it("exports a row for a task with neither a title nor a task text", () => {
+		const csv = usageToCsv([item({ task: undefined as never, title: undefined })], { range: "all", now: NOW })
+		expect(csv.split("\n")[1]).toContain(',"",')
+	})
+
+	it("filters to a workspace and ignores one that is not set", () => {
+		const history = [item({ task: "in", workspace: "/ws/a" }), item({ task: "out", workspace: "/ws/b" })]
+		expect(usageToCsv(history, { range: "all", now: NOW, workspace: "/ws/a" }).split("\n")).toHaveLength(2)
+		expect(usageToCsv(history, { range: "all", now: NOW }).split("\n")).toHaveLength(3)
+	})
+
 	it("escapes quotes and newlines and respects the range", () => {
 		const csv = usageToCsv(
 			[

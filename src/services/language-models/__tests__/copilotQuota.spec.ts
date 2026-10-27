@@ -52,6 +52,12 @@ describe("parseCopilotQuota", () => {
 		expect(q.usedPercent).toBe(60)
 	})
 
+	it("leaves usage unset when neither counts nor percent_remaining are reported", () => {
+		const q = parseCopilotQuota({ quota_snapshots: { premium_interactions: { unlimited: false } } }, NOW)!
+		expect(q.used).toBeUndefined()
+		expect(q.usedPercent).toBeUndefined()
+	})
+
 	it("reports unlimited plans without numbers", () => {
 		const q = parseCopilotQuota(
 			{ copilot_plan: "enterprise", quota_snapshots: { premium_interactions: { unlimited: true } } },

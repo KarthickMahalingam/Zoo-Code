@@ -254,6 +254,188 @@ describe("parseOpenCodeGoUsage", () => {
 	})
 })
 
+describe("balance parser edge cases", () => {
+	it("DeepSeek: rejects non-object and empty payloads, and a row without a balance", () => {
+		expect(parseDeepSeekBalance(null)).toBeUndefined()
+		expect(parseDeepSeekBalance({ balance_infos: [] })).toBeUndefined()
+		expect(parseDeepSeekBalance({ balance_infos: [{ currency: "USD" }] })).toBeUndefined()
+		expect(parseDeepSeekBalance({ balance_infos: ["x", null] })).toBeUndefined()
+	})
+
+	it("DeepSeek: prefers a positive CNY balance over a zero USD one, then any USD row, then the first row", () => {
+		expect(
+			parseDeepSeekBalance({
+				balance_infos: [
+					{ currency: "USD", total_balance: "0" },
+					{ currency: "CNY", total_balance: "12" },
+				],
+			}),
+		).toEqual([{ id: "balance", valueLabel: "¥12.00 left" }])
+		expect(
+			parseDeepSeekBalance({
+				balance_infos: [
+					{ currency: "EUR", total_balance: "0" },
+					{ currency: "USD", total_balance: "0" },
+				],
+			}),
+		).toEqual([{ id: "balance", valueLabel: "$0.00 left" }])
+		expect(parseDeepSeekBalance({ balance_infos: [{ currency: "EUR", total_balance: "3" }] })).toEqual([
+			{ id: "balance", valueLabel: "$3.00 left" },
+		])
+	})
+
+	it("Moonshot: returns undefined without an available_balance", () => {
+		expect(parseMoonshotBalance({ data: {} })).toBeUndefined()
+		expect(parseMoonshotBalance(null)).toBeUndefined()
+	})
+})
+
+describe("parser edge cases", () => {
+	it("Kimi Code: skips a legacy usage block with no limit, and derives used from `used`", () => {
+		expect(parseKimiCodeUsage({ usage: { used: 5 } })).toBeUndefined()
+		expect(parseKimiCodeUsage({ usage: { limit: 100, used: 40, resetTime: 1_800_000_000 } })).toEqual([
+			{ id: "weekly", valueLabel: "Weekly", usedPercent: 40, resetAt: 1_800_000_000_000 },
+		])
+		expect(parseKimiCodeUsage({ usage: { limit: 100 } })).toBeUndefined()
+	})
+
+	it("z.ai: ignores non-object, wrong-type and unit-less limits; falls back to counts for percent", () => {
+		expect(parseZaiQuota("nope")).toBeUndefined()
+		expect(parseZaiQuota({ data: {} })).toBeUndefined()
+		expect(parseZaiQuota({ data: { limits: [null, { type: "TIME_LIMIT" }] } })).toBeUndefined()
+		expect(
+			parseZaiQuota({
+				data: { limits: [{ type: "TOKENS_LIMIT", unit: 9, number: 5, usage: 200, currentValue: 50 }] },
+			}),
+		).toEqual([{ id: "limit_0", valueLabel: "Tokens", usedPercent: 25, resetAt: undefined }])
+		expect(parseZaiQuota({ data: { limits: [{ type: "CREDIT_LIMIT", usage: 0, currentValue: 0 }] } })).toEqual([
+			{ id: "limit_0", valueLabel: "Credits: 0 / 0 credits", usedPercent: undefined, resetAt: undefined },
+		])
+	})
+
+	it("MiniMax: picks a chat-named or percent-bearing model when no minimax-m model exists", () => {
+		expect(parseMiniMaxRemains(null)).toBeUndefined()
+		expect(parseMiniMaxRemains({ model_remains: ["x", null] })).toBeUndefined()
+
+		const byName = parseMiniMaxRemains({
+			model_remains: [
+				{ model_name: "other", current_interval_remaining_percent: 10 },
+				{ model_name: "Chat", current_interval_remaining_percent: 60 },
+			],
+		})
+		expect(byName?.[0].usedPercent).toBe(40)
+
+		const byPercent = parseMiniMaxRemains({
+			model_remains: [{ model_name: "a" }, { model_name: "b", current_interval_remaining_percent: 75 }],
+		})
+		expect(byPercent?.[0].usedPercent).toBe(25)
+
+		const first = parseMiniMaxRemains({ model_remains: [{ model_name: "only" }] })
+		expect(first).toEqual([{ id: "5h", valueLabel: "5-hour", usedPercent: undefined, resetAt: undefined }])
+		expect(
+			parseMiniMaxRemains({ model_remains: [{ current_interval_remaining_percent: 5 }] })?.[0].usedPercent,
+		).toBe(95)
+	})
+
+	it("MiniMax: skips a weekly window with no data and clamps an out-of-range percent", () => {
+		const [interval, weekly] = parseMiniMaxRemains({
+			model_remains: [{ model_name: "MiniMax-M2", current_interval_remaining_percent: 150 }],
+		})!
+		expect(interval.usedPercent).toBe(0)
+		expect(weekly).toBeUndefined()
+	})
+
+	it("NanoGPT: handles non-object input, legacy `daily`, nested limits and unusable windows", () => {
+		expect(parseNanoGptUsage(null)).toBeUndefined()
+		expect(parseNanoGptUsage({})).toBeUndefined()
+		expect(
+			parseNanoGptUsage({
+				daily: { used: 30, limit: 120, resetAt: "2026-05-01T00:00:00Z" },
+				monthly: { used: 10, limits: { monthly: 100 } },
+				period: { currentPeriodEnd: 1_800_000_000 },
+			}),
+		).toEqual([
+			{ id: "daily", valueLabel: "Daily", usedPercent: 25, resetAt: Date.parse("2026-05-01T00:00:00Z") },
+			{ id: "monthly", valueLabel: "Monthly", usedPercent: 10, resetAt: 1_800_000_000_000 },
+		])
+		expect(parseNanoGptUsage({ daily: { used: 30, limits: { daily: 60 } } })?.[0].usedPercent).toBe(50)
+		expect(parseNanoGptUsage({ monthly: { used: 5, limit: 0 } })?.[0].usedPercent).toBeUndefined()
+		expect(parseNanoGptUsage({ monthly: {} })?.[0].usedPercent).toBeUndefined()
+	})
+
+	it("OpenCode Go: returns undefined without a usage block or with no usable window", () => {
+		expect(parseOpenCodeGoUsage(null)).toBeUndefined()
+		expect(parseOpenCodeGoUsage({})).toBeUndefined()
+		expect(parseOpenCodeGoUsage({ usage: { rolling: { percent: 10 } } })).toBeUndefined()
+	})
+})
+
+describe("getProviderQuotas – Copilot window and misc", () => {
+	beforeEach(() => resetProviderQuotaCache())
+
+	it("shows a percent-only Copilot window, and 'Unlimited' for unlimited plans", async () => {
+		const { getGitHubCopilotQuota } = await import("../copilotQuota")
+		const mocked = vi.mocked(getGitHubCopilotQuota)
+
+		mocked.mockResolvedValueOnce({ ok: true, quota: { unlimited: false, usedPercent: 41.6, fetchedAt: 1 } })
+		const [pct] = await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never])
+		expect(pct).toMatchObject({ ok: true, windows: [{ valueLabel: "42% used", usedPercent: 41.6 }] })
+
+		resetProviderQuotaCache()
+		mocked.mockResolvedValueOnce({ ok: true, quota: { unlimited: false, fetchedAt: 1 } })
+		const [none] = await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never])
+		expect(none).toMatchObject({ ok: true, windows: [{ valueLabel: "0% used" }] })
+
+		resetProviderQuotaCache()
+		mocked.mockResolvedValueOnce({ ok: true, quota: { unlimited: true, resetAt: 7, fetchedAt: 1 } })
+		const [unl] = await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never])
+		expect(unl).toMatchObject({ ok: true, windows: [{ valueLabel: "Unlimited", resetAt: 7 }] })
+	})
+
+	it("passes Copilot failures through with their reason and message", async () => {
+		const { getGitHubCopilotQuota } = await import("../copilotQuota")
+		vi.mocked(getGitHubCopilotQuota).mockResolvedValueOnce({ ok: false, reason: "error", message: "boom" })
+		const [q] = await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never])
+		expect(q).toMatchObject({ ok: false, reason: "error", message: "boom" })
+	})
+
+	it("uses the default z.ai line when the profile sets none", async () => {
+		const fetchSpy = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response("{}"))
+		await getProviderQuotas([{ apiProvider: providerIdentifiers.zai, zaiApiKey: "k" } as never], {}, fetchSpy)
+		expect(fetchSpy.mock.calls[0][0]).toBe("https://api.z.ai/api/monitor/usage/quota/limit")
+	})
+
+	it("reports an error when a keyed provider answers with no usable data, and surfaces the last failure", async () => {
+		const [empty] = await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.nanogpt, nanoGptApiKey: "k" } as never],
+			{},
+			vi.fn(async () => new Response("{}")),
+		)
+		expect(empty).toMatchObject({ ok: false, reason: "error", message: "No usage data" })
+
+		resetProviderQuotaCache()
+		const [failed] = await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.minimax, minimaxApiKey: "k" } as never],
+			{},
+			vi.fn(async () => new Response("", { status: 500 })),
+		)
+		expect(failed).toMatchObject({ ok: false, reason: "error", message: "HTTP 500" })
+	})
+
+	it("treats an auth failure on the first MiniMax URL as a missing/invalid key without trying the fallback", async () => {
+		const fetchSpy = vi.fn(
+			async (_url: RequestInfo | URL, _init?: RequestInit) => new Response("", { status: 401 }),
+		)
+		const [q] = await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.minimax, minimaxApiKey: "k" } as never],
+			{},
+			fetchSpy,
+		)
+		expect(q).toMatchObject({ ok: false, reason: "noKey" })
+		expect(fetchSpy).toHaveBeenCalledTimes(1)
+	})
+})
+
 describe("getProviderQuotas – coding-plan providers", () => {
 	beforeEach(() => resetProviderQuotaCache())
 

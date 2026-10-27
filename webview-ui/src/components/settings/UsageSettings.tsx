@@ -63,10 +63,8 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 
 	// Provider and model come from what each request recorded, never from the
 	// currently selected profile, so switching providers doesn't relabel history.
-	const summary = useMemo(
-		() => summarizeUsage(taskHistory ?? [], { range, workspace }),
-		[taskHistory, range, workspace],
-	)
+	const history = useMemo(() => taskHistory ?? [], [taskHistory])
+	const summary = useMemo(() => summarizeUsage(history, { range, workspace }), [history, range, workspace])
 
 	const providerName = (key: string) => (key === UNRECORDED ? t("settings:usage.notRecorded") : providerLabel(key))
 
@@ -91,7 +89,7 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 	const isEmpty = summary.taskCount === 0
 
 	const handleExport = () => {
-		const csv = usageToCsv(taskHistory ?? [], { range, workspace })
+		const csv = usageToCsv(history, { range, workspace })
 		const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }))
 		const a = document.createElement("a")
 		a.href = url

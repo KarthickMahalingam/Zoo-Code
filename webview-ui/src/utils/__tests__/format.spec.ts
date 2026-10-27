@@ -117,6 +117,19 @@ describe("formatDateOnly", () => {
 	})
 })
 
+describe("formatDate", () => {
+	it("falls back to English when the display language is empty", async () => {
+		const i18next = (await import("i18next")).default as unknown as { language: string }
+		const original = i18next.language
+		i18next.language = ""
+		try {
+			expect(formatDate(new Date(2026, 9, 27, 14, 41).getTime())).toMatch(/October 27/)
+		} finally {
+			i18next.language = original
+		}
+	})
+})
+
 describe("formatTimeOnly", () => {
 	const ts = new Date(2026, 9, 27, 14, 41).getTime()
 

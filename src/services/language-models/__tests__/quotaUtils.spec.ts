@@ -8,8 +8,31 @@ import {
 	formatMoney,
 	roundToTenth,
 	safeErrorMessage,
+	toEpochMs,
 	toNumber,
 } from "../quotaUtils"
+
+describe("toEpochMs", () => {
+	it("treats numbers below 1e12 as epoch seconds and larger ones as milliseconds", () => {
+		expect(toEpochMs(1_800_000_000)).toBe(1_800_000_000_000)
+		expect(toEpochMs(1_800_000_000_000)).toBe(1_800_000_000_000)
+	})
+
+	it("parses date strings", () => {
+		expect(toEpochMs("2026-01-02T03:04:05Z")).toBe(Date.parse("2026-01-02T03:04:05Z"))
+	})
+
+	it("rejects zero, negatives, non-finite numbers, blank and unparseable strings, and other types", () => {
+		expect(toEpochMs(0)).toBeUndefined()
+		expect(toEpochMs(-5)).toBeUndefined()
+		expect(toEpochMs(Number.NaN)).toBeUndefined()
+		expect(toEpochMs(Number.POSITIVE_INFINITY)).toBeUndefined()
+		expect(toEpochMs("   ")).toBeUndefined()
+		expect(toEpochMs("not a date")).toBeUndefined()
+		expect(toEpochMs(null)).toBeUndefined()
+		expect(toEpochMs({})).toBeUndefined()
+	})
+})
 
 describe("toNumber", () => {
 	it.each([

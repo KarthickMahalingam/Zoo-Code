@@ -79,6 +79,34 @@ describe("ProviderLimits", () => {
 		expect(row.querySelector("[role=progressbar]")).toBeNull()
 	})
 
+	it.each([
+		[50, "bg-vscode-charts-green"],
+		[80, "bg-vscode-charts-yellow"],
+		[95, "bg-vscode-charts-red"],
+	])("colours the bar by how much of the allowance is used (%i%%)", (usedPercent, expected) => {
+		render(<ProviderLimits />)
+		respond([
+			{
+				providerId: providerIdentifiers.openrouter,
+				ok: true,
+				fetchedAt: 1,
+				windows: [{ id: "key_limit", valueLabel: "x", usedPercent }],
+			},
+		])
+		const bar = screen
+			.getByTestId(`provider-limit-${providerIdentifiers.openrouter}`)
+			.querySelector("[role=progressbar] > div")!
+		expect(bar.className).toContain(expected)
+	})
+
+	it("treats a response without a providerQuotas list as empty", () => {
+		render(<ProviderLimits />)
+		act(() => {
+			window.dispatchEvent(new MessageEvent("message", { data: { type: "providerQuotas" } }))
+		})
+		expect(screen.queryByTestId("provider-limits")).toBeNull()
+	})
+
 	it("hides the whole section when nothing connected has a usage API", () => {
 		render(<ProviderLimits />)
 		respond([])
