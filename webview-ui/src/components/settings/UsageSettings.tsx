@@ -7,10 +7,13 @@ import { cn } from "@src/lib/utils"
 import { vscode } from "@src/utils/vscode"
 import { formatLargeNumber, formatTimeAgo } from "@src/utils/format"
 import {
+	UNRECORDED,
 	USAGE_RANGES,
 	type UsageMetric,
 	type UsageRange,
+	modelIdFromKey,
 	pickMetric,
+	primaryUsage,
 	summarizeUsage,
 	usageToCsv,
 } from "@src/utils/usage"
@@ -52,32 +55,21 @@ const DAY_FMT = new Intl.DateTimeFormat(undefined, { day: "numeric" })
  */
 export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivElement>) => {
 	const { t } = useAppTranslation()
-	const { taskHistory, cwd, listApiConfigMeta } = useExtensionState()
+	const { taskHistory, cwd } = useExtensionState()
 
 	const [range, setRange] = useState<UsageRange>("7d")
 	const [scope, setScope] = useState<"workspace" | "all">("workspace")
 
 	const workspace = scope === "workspace" ? cwd : undefined
 
-	// History stores the profile name only; resolve provider/model from the
-	// current profile list. Renamed or deleted profiles fall back to "unknown".
-	const profileMeta = useMemo(() => new Map((listApiConfigMeta ?? []).map((p) => [p.name, p])), [listApiConfigMeta])
-
+	// Provider and model come from what each request recorded, never from the
+	// currently selected profile, so switching providers doesn't relabel history.
 	const summary = useMemo(
-		() =>
-			summarizeUsage(taskHistory ?? [], {
-				range,
-				workspace,
-				providerForProfile: (name) => profileMeta.get(name)?.apiProvider,
-			}),
-		[taskHistory, range, workspace, profileMeta],
+		() => summarizeUsage(taskHistory ?? [], { range, workspace }),
+		[taskHistory, range, workspace],
 	)
 
-	const profileSubtitle = (name: string) => {
-		const meta = profileMeta.get(name)
-		if (!meta?.apiProvider) return t("settings:usage.unknownProvider")
-		return [providerLabel(meta.apiProvider), meta.modelId].filter(Boolean).join(" · ")
-	}
+	const providerName = (key: string) => (key === UNRECORDED ? t("settings:usage.notRecorded") : providerLabel(key))
 
 	const metric: UsageMetric = pickMetric(summary)
 	const value = (cost: number, tokens: number) => (metric === "cost" ? cost : tokens)
@@ -254,10 +246,7 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 									title={t("settings:usage.byProvider")}
 									rows={summary.byProvider.map((b) => ({
 										key: b.key,
-										name:
-											b.key === "unknown"
-												? t("settings:usage.unknownProvider")
-												: providerLabel(b.key),
+										name: providerName(b.key),
 										value: value(b.cost, b.tokens),
 										label: fmt(b.cost, b.tokens),
 									}))}
@@ -265,16 +254,16 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 									testId="usage-by-provider"
 								/>
 								<Breakdown
-									title={t("settings:usage.byProfile")}
-									rows={summary.byProfile.map((b) => ({
+									title={t("settings:usage.byModel")}
+									rows={summary.byModel.map((b) => ({
 										key: b.key,
-										name: b.key,
-										subtitle: profileSubtitle(b.key),
+										name: modelIdFromKey(b.key) ?? t("settings:usage.notRecorded"),
+										subtitle: b.apiProvider ? providerLabel(b.apiProvider) : undefined,
 										value: value(b.cost, b.tokens),
 										label: fmt(b.cost, b.tokens),
 									}))}
 									total={total}
-									testId="usage-by-profile"
+									testId="usage-by-model"
 								/>
 								<Breakdown
 									title={t("settings:usage.byMode")}
@@ -304,7 +293,21 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 												onClick={() =>
 													vscode.postMessage({ type: "showTaskWithId", text: task.id })
 												}>
-												<span className="min-w-0 truncate">{task.task}</span>
+												<span className="min-w-0">
+													<span className="block truncate">{task.task}</span>
+													{primaryUsage(task) && (
+														<span className="block truncate text-xs text-vscode-descriptionForeground">
+															{[
+																primaryUsage(task)?.apiProvider
+																	? providerLabel(primaryUsage(task)!.apiProvider!)
+																	: undefined,
+																primaryUsage(task)?.modelId,
+															]
+																.filter(Boolean)
+																.join(" · ")}
+														</span>
+													)}
+												</span>
 												<span className="shrink-0 flex items-baseline gap-1.5 whitespace-nowrap">
 													<span className="font-medium tabular-nums">
 														{fmt(

@@ -959,6 +959,13 @@ export interface ClineApiReqInfo {
 	cancelReason?: ClineApiReqCancelReason
 	streamingFailedMessage?: string
 	apiProtocol?: "anthropic" | "openai"
+	/**
+	 * The provider and model that actually served this request, recorded at the
+	 * time of the call. Usage reporting reads these instead of the *current*
+	 * profile, so switching providers later doesn't relabel past requests.
+	 */
+	apiProvider?: string
+	modelId?: string
 }
 
 export type ClineApiReqCancelReason = "streaming_failed" | "user_cancelled"

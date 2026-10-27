@@ -1,6 +1,6 @@
-import type { HistoryItem } from "@roo-code/types"
+import { providerIdentifiers, type HistoryItem } from "@roo-code/types"
 
-import { pickMetric, rangeStart, summarizeUsage, usageToCsv } from "../usage"
+import { UNRECORDED, modelIdFromKey, pickMetric, primaryUsage, rangeStart, summarizeUsage, usageToCsv } from "../usage"
 
 // Fixed "now": Wed 2026-10-14 15:00 local time.
 const NOW = new Date(2026, 9, 14, 15, 0, 0).getTime()
@@ -35,12 +35,41 @@ describe("rangeStart", () => {
 })
 
 describe("summarizeUsage", () => {
+	const used = (apiProvider: string, modelId: string, tokensIn: number, tokensOut: number, cost: number) => [
+		{ apiProvider, modelId, requests: 1, tokensIn, tokensOut, cost },
+	]
 	const history = [
-		item({ totalCost: 1.5, tokensIn: 1000, tokensOut: 200, cacheReads: 3000, apiConfigName: "opus", mode: "code" }),
-		item({ totalCost: 0.5, tokensIn: 500, tokensOut: 100, apiConfigName: "gpt", mode: "architect", ts: NOW - DAY }),
-		item({ totalCost: 2, tokensIn: 10, tokensOut: 10, apiConfigName: "opus", mode: "code", workspace: "/ws/b" }),
+		item({
+			totalCost: 1.5,
+			tokensIn: 1000,
+			tokensOut: 200,
+			cacheReads: 3000,
+			mode: "code",
+			usageByModel: used(providerIdentifiers.anthropic, "opus", 1000, 200, 1.5),
+		}),
+		item({
+			totalCost: 0.5,
+			tokensIn: 500,
+			tokensOut: 100,
+			mode: "architect",
+			ts: NOW - DAY,
+			usageByModel: used(providerIdentifiers.githubCopilot, "gpt-5", 500, 100, 0.5),
+		}),
+		item({
+			totalCost: 2,
+			tokensIn: 10,
+			tokensOut: 10,
+			mode: "code",
+			workspace: "/ws/b",
+			usageByModel: used(providerIdentifiers.anthropic, "opus", 10, 10, 2),
+		}),
 		// Outside 7d window
-		item({ totalCost: 99, apiConfigName: "opus", mode: "code", ts: NOW - 10 * DAY }),
+		item({
+			totalCost: 99,
+			mode: "code",
+			ts: NOW - 10 * DAY,
+			usageByModel: used(providerIdentifiers.anthropic, "opus", 0, 0, 99),
+		}),
 	]
 
 	it("totals only items inside the range", () => {
@@ -56,19 +85,81 @@ describe("summarizeUsage", () => {
 		expect(s.totalCost).toBeCloseTo(2)
 	})
 
-	it("groups by profile and mode sorted by cost desc", () => {
+	it("groups by recorded provider and by model, sorted by cost desc", () => {
 		const s = summarizeUsage(history, { range: "7d", now: NOW })
-		expect(s.byProfile.map((b) => [b.key, b.tasks])).toEqual([
-			["opus", 2],
-			["gpt", 1],
+		expect(s.byProvider.map((b) => [b.key, b.tasks])).toEqual([
+			[providerIdentifiers.anthropic, 2],
+			[providerIdentifiers.githubCopilot, 1],
 		])
-		expect(s.byProfile[0].cost).toBeCloseTo(3.5)
+		expect(s.byProvider[0].cost).toBeCloseTo(3.5)
+		expect(s.byModel.map((b) => [modelIdFromKey(b.key), b.apiProvider])).toEqual([
+			["opus", providerIdentifiers.anthropic],
+			["gpt-5", providerIdentifiers.githubCopilot],
+		])
 		expect(s.byMode.map((b) => b.key)).toEqual(["code", "architect"])
 	})
 
-	it("buckets missing profile/mode under fallbacks", () => {
-		const s = summarizeUsage([item({ totalCost: 1 })], { range: "all", now: NOW })
-		expect(s.byProfile[0].key).toBe("default")
+	it("REGRESSION: provider/model come from what was recorded, not from any current profile", () => {
+		// The bug: usage was attributed via the *currently selected* profile, so
+		// switching providers relabelled past Copilot work as the new provider.
+		// Aggregation now takes no profile information at all.
+		const copilotTask = item({
+			tokensIn: 16_700_000,
+			tokensOut: 83_400,
+			usageByModel: used(providerIdentifiers.githubCopilot, "claude-opus-5.5", 16_700_000, 83_400, 0),
+			apiConfigName: "default", // the profile name is irrelevant to attribution
+		})
+		const before = summarizeUsage([copilotTask], { range: "all", now: NOW })
+
+		// "Switch provider": same history, but the user's profile now points at Gemini.
+		const after = summarizeUsage([{ ...copilotTask, apiConfigName: "gemini-profile" }], { range: "all", now: NOW })
+
+		for (const s of [before, after]) {
+			expect(s.byProvider.map((b) => b.key)).toEqual([providerIdentifiers.githubCopilot])
+			expect(modelIdFromKey(s.byModel[0].key)).toBe("claude-opus-5.5")
+		}
+	})
+
+	it("attributes a task that switched providers mid-way to each provider by its own tokens", () => {
+		const s = summarizeUsage(
+			[
+				item({
+					tokensIn: 400,
+					tokensOut: 0,
+					usageByModel: [
+						{
+							apiProvider: providerIdentifiers.githubCopilot,
+							modelId: "claude-opus-5.5",
+							requests: 1,
+							tokensIn: 100,
+							tokensOut: 0,
+							cost: 0,
+						},
+						{
+							apiProvider: providerIdentifiers.gemini,
+							modelId: "gemini-pro",
+							requests: 1,
+							tokensIn: 300,
+							tokensOut: 0,
+							cost: 0,
+						},
+					],
+				}),
+			],
+			{ range: "all", now: NOW },
+		)
+		expect(s.byProvider.map((b) => [b.key, b.tokens])).toEqual([
+			[providerIdentifiers.gemini, 300],
+			[providerIdentifiers.githubCopilot, 100],
+		])
+		expect(s.byProvider.every((b) => b.tasks === 1)).toBe(true)
+	})
+
+	it("buckets tasks with no recorded provider/model as unrecorded instead of guessing", () => {
+		const s = summarizeUsage([item({ totalCost: 1, tokensIn: 10, tokensOut: 5 })], { range: "all", now: NOW })
+		expect(s.byProvider.map((b) => b.key)).toEqual([UNRECORDED])
+		expect(s.byModel.map((b) => b.key)).toEqual([UNRECORDED])
+		expect(modelIdFromKey(UNRECORDED)).toBeUndefined()
 		expect(s.byMode[0].key).toBe("unknown")
 	})
 
@@ -111,26 +202,28 @@ describe("summarizeUsage", () => {
 		expect(s.topTasks.map((t) => t.id)).toEqual(["big", "small"])
 	})
 
-	it("groups by provider using the profile resolver, bucketing unknown profiles", () => {
-		const providers: Record<string, string> = { opus: "anthropic", gpt: "github-copilot" }
-		const s = summarizeUsage([...history, item({ apiConfigName: "deleted-profile", tokensIn: 1 })], {
-			range: "7d",
-			now: NOW,
-			providerForProfile: (p) => providers[p],
-		})
-		expect(s.byProvider.map((b) => b.key)).toEqual(["anthropic", "github-copilot", "unknown"])
-		expect(s.byProvider[0].tasks).toBe(2)
-	})
-
-	it("buckets everything as unknown provider when no resolver is given", () => {
-		const s = summarizeUsage(history, { range: "7d", now: NOW })
-		expect(s.byProvider).toHaveLength(1)
-		expect(s.byProvider[0].key).toBe("unknown")
-	})
-
 	it("ignores non-finite costs", () => {
 		const s = summarizeUsage([item({ totalCost: NaN })], { range: "all", now: NOW })
 		expect(s.totalCost).toBe(0)
+	})
+})
+
+describe("primaryUsage", () => {
+	it("returns the provider+model that used the most tokens", () => {
+		const task = item({
+			usageByModel: [
+				{ apiProvider: "a", modelId: "small", requests: 1, tokensIn: 10, tokensOut: 0, cost: 0 },
+				{ apiProvider: "b", modelId: "big", requests: 1, tokensIn: 900, tokensOut: 0, cost: 0 },
+			],
+		})
+		expect(primaryUsage(task)).toEqual({ apiProvider: "b", modelId: "big" })
+	})
+
+	it("is undefined when nothing was recorded", () => {
+		expect(primaryUsage(item({}))).toBeUndefined()
+		expect(
+			primaryUsage(item({ usageByModel: [{ requests: 1, tokensIn: 1, tokensOut: 1, cost: 0 }] })),
+		).toBeUndefined()
 	})
 })
 
@@ -158,7 +251,7 @@ describe("usageToCsv", () => {
 			{ range: "30d", now: NOW },
 		)
 		const lines = csv.split("\n")
-		expect(lines[0]).toBe("date,task,mode,profile,tokensIn,tokensOut,cacheReads,cacheWrites,cost")
+		expect(lines[0]).toBe("date,task,mode,provider,model,tokensIn,tokensOut,cacheReads,cacheWrites,cost")
 		expect(lines).toHaveLength(2)
 		expect(lines[1]).toContain('"say ""hi"" then go"')
 		expect(lines[1].endsWith(",0.1235")).toBe(true)

@@ -6,9 +6,14 @@ import type { HistoryItem } from "@roo-code/types"
  * Notes on correctness:
  * - `HistoryItem.totalCost` is a task's *own* spend; subtasks are separate
  *   history items. Summing every item therefore counts each dollar once.
- * - History stores the provider profile (`apiConfigName`), not the model id,
- *   so the breakdown is by profile.
+ * - Provider and model come from `HistoryItem.usageByModel`, recorded when each
+ *   request was made. They are never derived from the *current* profile, so
+ *   switching providers does not relabel past usage. Tasks created before this
+ *   was recorded have no such data and are bucketed as `UNRECORDED`.
  */
+
+/** Bucket key for usage whose provider/model was not recorded (older tasks). */
+export const UNRECORDED = "__unrecorded__"
 
 export const USAGE_RANGES = ["today", "7d", "30d", "all"] as const
 export type UsageRange = (typeof USAGE_RANGES)[number]
@@ -19,7 +24,10 @@ export interface UsageBucket {
 	key: string
 	cost: number
 	tokens: number
+	/** Tasks that contributed to this bucket (a task using two models counts once in each). */
 	tasks: number
+	/** For model buckets: the provider that served it (undefined when unrecorded). */
+	apiProvider?: string
 }
 
 export interface DailyUsage {
@@ -51,7 +59,7 @@ export interface UsageSummary {
 	cacheHitRate: number
 	taskCount: number
 	byProvider: UsageBucket[]
-	byProfile: UsageBucket[]
+	byModel: UsageBucket[]
 	byMode: UsageBucket[]
 	daily: DailyUsage[]
 	topTasks: HistoryItem[]
@@ -63,12 +71,17 @@ export interface UsageOptions {
 	workspace?: string
 	now?: number
 	topTaskLimit?: number
-	/**
-	 * Resolves a profile name (`HistoryItem.apiConfigName`) to its provider id.
-	 * History doesn't store the provider, so the caller supplies this from the
-	 * current profile list. Unknown/deleted profiles bucket as "unknown".
-	 */
-	providerForProfile?: (profile: string) => string | undefined
+}
+
+/**
+ * The provider+model that did most of a task's work (by tokens), for labelling
+ * a task row. Undefined when nothing was recorded.
+ */
+export function primaryUsage(item: HistoryItem): { apiProvider?: string; modelId?: string } | undefined {
+	const entries = item.usageByModel?.filter((e) => e.apiProvider || e.modelId)
+	if (!entries?.length) return undefined
+	const top = entries.reduce((a, b) => (b.tokensIn + b.tokensOut > a.tokensIn + a.tokensOut ? b : a))
+	return { apiProvider: top.apiProvider, modelId: top.modelId }
 }
 
 function startOfLocalDay(ts: number): number {
@@ -93,11 +106,22 @@ export function rangeStart(range: UsageRange, now: number): number | undefined {
 	}
 }
 
-function addTo(map: Map<string, UsageBucket>, key: string, cost: number, tokens: number) {
-	const bucket = map.get(key) ?? { key, cost: 0, tokens: 0, tasks: 0 }
+function addTo(
+	map: Map<string, UsageBucket>,
+	key: string,
+	cost: number,
+	tokens: number,
+	countedForTask: Set<string>,
+	extra?: Partial<UsageBucket>,
+) {
+	const bucket = map.get(key) ?? { key, cost: 0, tokens: 0, tasks: 0, ...extra }
 	bucket.cost += cost
 	bucket.tokens += tokens
-	bucket.tasks += 1
+	// Count the task once per bucket even if several of its requests land here.
+	if (!countedForTask.has(key)) {
+		countedForTask.add(key)
+		bucket.tasks += 1
+	}
 	map.set(key, bucket)
 }
 
@@ -116,7 +140,7 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 	)
 
 	const providers = new Map<string, UsageBucket>()
-	const profiles = new Map<string, UsageBucket>()
+	const models = new Map<string, UsageBucket>()
 	const modes = new Map<string, UsageBucket>()
 	const daily = new Map<number, { cost: number; tokens: number }>()
 
@@ -138,10 +162,28 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 		cacheReads += item.cacheReads || 0
 		cacheWrites += item.cacheWrites || 0
 
-		const profile = item.apiConfigName || "default"
-		addTo(providers, options.providerForProfile?.(profile) || "unknown", cost, tokens)
-		addTo(profiles, profile, cost, tokens)
-		addTo(modes, item.mode || "unknown", cost, tokens)
+		// Provider/model from what was recorded per request. A task with no record
+		// (created before this was tracked) goes to a single "unrecorded" bucket.
+		const seenProviders = new Set<string>()
+		const seenModels = new Set<string>()
+		const entries = item.usageByModel?.length
+			? item.usageByModel
+			: [
+					{ requests: 0, tokensIn: tIn, tokensOut: tOut, cost } as NonNullable<
+						HistoryItem["usageByModel"]
+					>[number],
+				]
+
+		for (const e of entries) {
+			const entryTokens = e.tokensIn + e.tokensOut
+			const providerKey = e.apiProvider || UNRECORDED
+			const modelKey = e.modelId ? `${e.apiProvider ?? ""}\u0000${e.modelId}` : UNRECORDED
+			addTo(providers, providerKey, e.cost, entryTokens, seenProviders)
+			addTo(models, modelKey, e.cost, entryTokens, seenModels, { apiProvider: e.apiProvider })
+		}
+
+		const modeSeen = new Set<string>()
+		addTo(modes, item.mode || "unknown", cost, tokens, modeSeen)
 
 		const day = startOfLocalDay(item.ts)
 		const entry = daily.get(day) ?? { cost: 0, tokens: 0 }
@@ -178,7 +220,7 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 		cacheHitRate: inputSide > 0 ? cacheReads / inputSide : 0,
 		taskCount: items.length,
 		byProvider: [...providers.values()].sort(byCostDesc),
-		byProfile: [...profiles.values()].sort(byCostDesc),
+		byModel: [...models.values()].sort(byCostDesc),
 		byMode: [...modes.values()].sort(byCostDesc),
 		daily: dailySeries,
 		// Cost first, tokens as tie-breaker so zero-cost (subscription) usage still ranks meaningfully.
@@ -192,10 +234,28 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 	}
 }
 
+/** The model id from a `byModel` bucket key (or undefined for the unrecorded bucket). */
+export function modelIdFromKey(key: string): string | undefined {
+	if (key === UNRECORDED) return undefined
+	const i = key.indexOf("\u0000")
+	return i === -1 ? key : key.slice(i + 1)
+}
+
 /** Serialises the filtered usage rows as CSV (one row per task). */
 export function usageToCsv(history: HistoryItem[], options: UsageOptions): string {
 	const start = rangeStart(options.range, options.now ?? Date.now())
-	const header = ["date", "task", "mode", "profile", "tokensIn", "tokensOut", "cacheReads", "cacheWrites", "cost"]
+	const header = [
+		"date",
+		"task",
+		"mode",
+		"provider",
+		"model",
+		"tokensIn",
+		"tokensOut",
+		"cacheReads",
+		"cacheWrites",
+		"cost",
+	]
 
 	const escape = (value: string) => `"${value.replace(/"/g, '""').replace(/\r?\n/g, " ")}"`
 
@@ -211,7 +271,8 @@ export function usageToCsv(history: HistoryItem[], options: UsageOptions): strin
 				new Date(item.ts).toISOString(),
 				escape(item.title || item.task || ""),
 				escape(item.mode || ""),
-				escape(item.apiConfigName || ""),
+				escape(primaryUsage(item)?.apiProvider ?? ""),
+				escape(primaryUsage(item)?.modelId ?? ""),
 				item.tokensIn || 0,
 				item.tokensOut || 0,
 				item.cacheReads || 0,
