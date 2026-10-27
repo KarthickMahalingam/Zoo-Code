@@ -213,8 +213,8 @@
 			"sample": {
 				"you": "You",
 				"zoo": "Zoo",
-				"user": "Make the selected edge thicker",
-				"assistant": "Updated Edge.tsx to use a 2px stroke when selected."
+				"user": "Add a loading spinner to the Save button",
+				"assistant": "Done. I added a spinner that shows while the request is in flight."
 			}
 		}
 	},

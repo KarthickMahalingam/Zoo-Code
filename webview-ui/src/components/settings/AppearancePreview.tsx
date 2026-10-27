@@ -70,7 +70,7 @@ export const AppearancePreview = ({ values, chatFontSize }: AppearancePreviewPro
 				<pre
 					className="bg-vscode-textCodeBlock-background mb-2"
 					style={{ ...mono, fontSize: "var(--zoo-editor-font-size)" }}>
-					{"const stroke = selected ? 2 : 1"}
+					{'const isLoading = status === "saving"'}
 				</pre>
 
 				<div className="text-[11px] text-vscode-descriptionForeground mb-1">
