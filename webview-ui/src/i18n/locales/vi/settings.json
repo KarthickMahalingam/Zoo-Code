@@ -43,7 +43,7 @@
 		"about": "Giới thiệu",
 		"skills": "Skills",
 		"rules": "Quy tắc",
-		"usage": "Usage"
+		"usage": "Mức sử dụng"
 	},
 	"about": {
 		"bugReport": {
@@ -1182,29 +1182,29 @@
 			"description": "Khi bật, các tab của các tệp mà Zoo đã tạo (thay vì chỉnh sửa) cũng sẽ tự động đóng sau khi chấp nhận thay đổi."
 		},
 		"appearance": {
-			"reset": "Reset to default",
+			"reset": "Đặt lại về mặc định",
 			"interfaceFontScale": {
-				"label": "Interface font size",
-				"description": "Scales all Zoo Code text. 100% matches VS Code."
+				"label": "Cỡ chữ giao diện",
+				"description": "Thu phóng toàn bộ văn bản của Zoo Code. 100% khớp với VS Code."
 			},
 			"terminalFontSize": {
-				"label": "Terminal font size",
-				"description": "Font size for command output shown in chat."
+				"label": "Cỡ chữ terminal",
+				"description": "Cỡ chữ cho kết quả lệnh hiển thị trong chat."
 			},
 			"editorFontSize": {
-				"label": "Editor font size",
-				"description": "Font size for code blocks and diffs shown in chat."
+				"label": "Cỡ chữ trình soạn thảo",
+				"description": "Cỡ chữ cho khối mã và diff hiển thị trong chat."
 			},
 			"spacingScale": {
-				"label": "Spacing density",
-				"description": "Padding between chat messages. Lower is more compact."
+				"label": "Mật độ khoảng cách",
+				"description": "Khoảng đệm giữa các tin nhắn chat. Giá trị thấp hơn sẽ gọn hơn."
 			},
-			"preview": "Preview",
+			"preview": "Xem trước",
 			"sample": {
-				"you": "You",
+				"you": "Bạn",
 				"zoo": "Zoo",
-				"user": "Add a loading spinner to the Save button",
-				"assistant": "Done. I added a spinner that shows while the request is in flight."
+				"user": "Thêm biểu tượng đang tải vào nút Lưu",
+				"assistant": "Xong. Tôi đã thêm một biểu tượng hiển thị khi yêu cầu đang được xử lý."
 			}
 		}
 	},
@@ -1262,90 +1262,90 @@
 		"footer": "Tạo các skill của riêng bạn với chế độ Skill Writer, có sẵn tại <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
 	},
 	"language": {
-		"description": "Language and date/time display.",
-		"languageTitle": "Language",
-		"displayLanguage": "Display language",
-		"displayLanguageDescription": "Language for Zoo Code's interface.",
-		"dateTimeTitle": "Date & time",
+		"description": "Ngôn ngữ và cách hiển thị ngày/giờ.",
+		"languageTitle": "Ngôn ngữ",
+		"displayLanguage": "Ngôn ngữ hiển thị",
+		"displayLanguageDescription": "Ngôn ngữ của giao diện Zoo Code.",
+		"dateTimeTitle": "Ngày và giờ",
 		"timeFormat": {
-			"label": "Time format",
-			"description": "Auto follows your system locale.",
+			"label": "Định dạng giờ",
+			"description": "Tự động sẽ theo ngôn ngữ hiển thị của bạn.",
 			"options": {
-				"auto": "Auto",
-				"12h": "12-hour",
-				"24h": "24-hour"
+				"auto": "Tự động",
+				"12h": "12 giờ",
+				"24h": "24 giờ"
 			}
 		},
 		"dateFormat": {
-			"label": "Date format",
-			"example": "e.g. {{example}}",
+			"label": "Định dạng ngày",
+			"example": "ví dụ: {{example}}",
 			"options": {
-				"auto": "Auto",
+				"auto": "Tự động",
 				"mdy": "MM/DD/YYYY",
 				"dmy": "DD/MM/YYYY",
 				"ymd": "YYYY-MM-DD"
 			}
 		},
 		"relativeTimes": {
-			"label": "Show relative times (\"5 min ago\") in task history"
+			"label": "Hiển thị thời gian tương đối (\"5 phút trước\") trong lịch sử nhiệm vụ"
 		},
 		"preview": {
-			"title": "Preview",
-			"chat": "Chat message",
-			"history": "Task history",
-			"relative": "5 min ago",
-			"hover": "(hover: {{value}})"
+			"title": "Xem trước",
+			"chat": "Tin nhắn chat",
+			"history": "Lịch sử nhiệm vụ",
+			"relative": "5 phút trước",
+			"hover": "(di chuột: {{value}})"
 		}
 	},
 	"usage": {
-		"description": "Tokens and cost from your Zoo Code task history on this machine.",
+		"description": "Token và chi phí từ lịch sử nhiệm vụ Zoo Code của bạn trên máy này.",
 		"range": {
-			"label": "Time range",
-			"today": "Today",
-			"7d": "7 days",
-			"30d": "30 days",
-			"all": "All time"
+			"label": "Khoảng thời gian",
+			"today": "Hôm nay",
+			"7d": "7 ngày",
+			"30d": "30 ngày",
+			"all": "Mọi lúc"
 		},
 		"scope": {
-			"label": "Show",
-			"workspace": "This workspace",
-			"all": "All workspaces"
+			"label": "Hiển thị",
+			"workspace": "Không gian làm việc này",
+			"all": "Tất cả không gian làm việc"
 		},
-		"empty": "No tasks in this time range.",
+		"empty": "Không có nhiệm vụ nào trong khoảng thời gian này.",
 		"stats": {
-			"cost": "cost",
-			"tokens": "tokens",
-			"tasks": "tasks",
-			"cacheHit": "{{percent}}% from cache",
-			"inOut": "{{input}} in · {{output}} out",
-			"models": "models"
+			"cost": "chi phí",
+			"tokens": "token",
+			"tasks": "nhiệm vụ",
+			"cacheHit": "{{percent}}% từ bộ nhớ đệm",
+			"inOut": "{{input}} vào · {{output}} ra",
+			"models": "mô hình"
 		},
-		"dailyCost": "Daily cost",
-		"byMode": "By mode",
-		"topTasks": "Most expensive tasks",
-		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
-		"exportCsv": "Export CSV",
-		"noPricingNote": "Some providers (e.g. GitHub Copilot) bill by subscription and don't report a per-task price, so this history is shown in tokens. See Provider limits above for credits.",
-		"dailyTokens": "Daily tokens",
-		"topTasksTokens": "Largest tasks",
-		"byProvider": "By provider",
-		"history": "Usage history",
+		"dailyCost": "Chi phí hằng ngày",
+		"byMode": "Theo chế độ",
+		"topTasks": "Nhiệm vụ tốn kém nhất",
+		"disclaimer": "Chi phí là ước tính từ lịch sử nhiệm vụ và có thể khác với hóa đơn của nhà cung cấp.",
+		"exportCsv": "Xuất CSV",
+		"noPricingNote": "Một số nhà cung cấp (ví dụ GitHub Copilot) tính phí theo gói đăng ký và không báo cáo giá cho từng nhiệm vụ, nên lịch sử này được hiển thị bằng token. Xem Giới hạn nhà cung cấp ở trên để biết tín dụng.",
+		"dailyTokens": "Token hằng ngày",
+		"topTasksTokens": "Nhiệm vụ lớn nhất",
+		"byProvider": "Theo nhà cung cấp",
+		"history": "Lịch sử sử dụng",
 		"limits": {
-			"title": "Provider limits",
-			"refresh": "Refresh",
-			"updated": "Updated {{time}}",
-			"loading": "Checking connected providers…",
-			"resets": "Resets {{date}}",
-			"signedOut": "Not signed in",
-			"noCopilot": "No Copilot quota",
-			"noKey": "API key missing or invalid",
-			"unsupported": "Custom base URL — not checked",
-			"error": "Couldn't load"
+			"title": "Giới hạn nhà cung cấp",
+			"refresh": "Làm mới",
+			"updated": "Cập nhật {{time}}",
+			"loading": "Đang kiểm tra các nhà cung cấp đã kết nối…",
+			"resets": "Đặt lại {{date}}",
+			"signedOut": "Chưa đăng nhập",
+			"noCopilot": "Không có hạn mức Copilot",
+			"noKey": "Thiếu khóa API hoặc không hợp lệ",
+			"unsupported": "URL cơ sở tùy chỉnh — không kiểm tra",
+			"error": "Không thể tải"
 		},
-		"byModel": "By model",
-		"notRecorded": "Not recorded",
-		"noPrice": "no price",
+		"byModel": "Theo mô hình",
+		"notRecorded": "Chưa ghi nhận",
+		"noPrice": "không có giá",
 		"tokensShort": "tok",
-		"chartLabel": "{{metric}}, total {{total}}"
+		"chartLabel": "{{metric}}, tổng {{total}}"
 	}
 }

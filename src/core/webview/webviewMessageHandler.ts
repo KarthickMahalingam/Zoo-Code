@@ -30,6 +30,7 @@ import {
 	RouterModelsMessageType,
 	VsCodeLmModelsMessageType,
 	isTelemetryOptedIn,
+	type ProviderQuota,
 } from "@roo-code/types"
 import { customToolRegistry } from "@roo-code/core"
 import { CloudService } from "@roo-code/cloud"
@@ -1571,9 +1572,19 @@ export const webviewMessageHandler = async (
 			break
 		}
 		case VsCodeLmModelsMessageType.requestProviderQuotas: {
-			const { getProviderQuotas, loadProfiles } = await import("../../services/language-models/providerQuotas")
-			const profiles = await loadProfiles(provider.providerSettingsManager)
-			const providerQuotas = await getProviderQuotas(profiles, { force: message.bool === true })
+			// Always answer: the webview shows a spinner until a response arrives and disables
+			// refresh while it waits, so a thrown error here would leave it stuck.
+			let providerQuotas: ProviderQuota[] = []
+			try {
+				const { getProviderQuotas, loadProfiles } =
+					await import("../../services/language-models/providerQuotas")
+				const profiles = await loadProfiles(provider.providerSettingsManager)
+				providerQuotas = await getProviderQuotas(profiles, { force: message.bool === true })
+			} catch (error) {
+				provider.log(
+					`[requestProviderQuotas] ${error instanceof Error ? error.message : "Failed to load provider limits"}`,
+				)
+			}
 			await provider.postMessageToWebview({ type: VsCodeLmModelsMessageType.providerQuotas, providerQuotas })
 			break
 		}

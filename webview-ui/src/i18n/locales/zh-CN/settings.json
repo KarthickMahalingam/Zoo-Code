@@ -43,7 +43,7 @@
 		"about": "关于 Zoo Code",
 		"skills": "Skills",
 		"rules": "规则",
-		"usage": "Usage"
+		"usage": "用量"
 	},
 	"about": {
 		"bugReport": {
@@ -1182,29 +1182,29 @@
 			"description": "启用后，Zoo 新建（而非修改）的文件标签页在接受更改后也会自动关闭。"
 		},
 		"appearance": {
-			"reset": "Reset to default",
+			"reset": "恢复默认",
 			"interfaceFontScale": {
-				"label": "Interface font size",
-				"description": "Scales all Zoo Code text. 100% matches VS Code."
+				"label": "界面字体大小",
+				"description": "缩放所有 Zoo Code 文本。100% 与 VS Code 一致。"
 			},
 			"terminalFontSize": {
-				"label": "Terminal font size",
-				"description": "Font size for command output shown in chat."
+				"label": "终端字体大小",
+				"description": "聊天中显示的命令输出的字体大小。"
 			},
 			"editorFontSize": {
-				"label": "Editor font size",
-				"description": "Font size for code blocks and diffs shown in chat."
+				"label": "编辑器字体大小",
+				"description": "聊天中显示的代码块和 diff 的字体大小。"
 			},
 			"spacingScale": {
-				"label": "Spacing density",
-				"description": "Padding between chat messages. Lower is more compact."
+				"label": "间距密度",
+				"description": "聊天消息之间的内边距。数值越小越紧凑。"
 			},
-			"preview": "Preview",
+			"preview": "预览",
 			"sample": {
-				"you": "You",
+				"you": "你",
 				"zoo": "Zoo",
-				"user": "Add a loading spinner to the Save button",
-				"assistant": "Done. I added a spinner that shows while the request is in flight."
+				"user": "给保存按钮添加一个加载动画",
+				"assistant": "完成。我添加了一个在请求进行时显示的加载动画。"
 			}
 		}
 	},
@@ -1262,90 +1262,90 @@
 		"footer": "使用技能编写器模式创建您自己的技能，可在 <MarketplaceLink>模式市集</MarketplaceLink> 中获得。"
 	},
 	"language": {
-		"description": "Language and date/time display.",
-		"languageTitle": "Language",
-		"displayLanguage": "Display language",
-		"displayLanguageDescription": "Language for Zoo Code's interface.",
-		"dateTimeTitle": "Date & time",
+		"description": "语言和日期/时间显示。",
+		"languageTitle": "语言",
+		"displayLanguage": "显示语言",
+		"displayLanguageDescription": "Zoo Code 界面的语言。",
+		"dateTimeTitle": "日期和时间",
 		"timeFormat": {
-			"label": "Time format",
-			"description": "Auto follows your system locale.",
+			"label": "时间格式",
+			"description": "自动将跟随显示语言。",
 			"options": {
-				"auto": "Auto",
-				"12h": "12-hour",
-				"24h": "24-hour"
+				"auto": "自动",
+				"12h": "12 小时制",
+				"24h": "24 小时制"
 			}
 		},
 		"dateFormat": {
-			"label": "Date format",
-			"example": "e.g. {{example}}",
+			"label": "日期格式",
+			"example": "例如 {{example}}",
 			"options": {
-				"auto": "Auto",
+				"auto": "自动",
 				"mdy": "MM/DD/YYYY",
 				"dmy": "DD/MM/YYYY",
 				"ymd": "YYYY-MM-DD"
 			}
 		},
 		"relativeTimes": {
-			"label": "Show relative times (\"5 min ago\") in task history"
+			"label": "在任务历史中显示相对时间（“5 分钟前”）"
 		},
 		"preview": {
-			"title": "Preview",
-			"chat": "Chat message",
-			"history": "Task history",
-			"relative": "5 min ago",
-			"hover": "(hover: {{value}})"
+			"title": "预览",
+			"chat": "聊天消息",
+			"history": "任务历史",
+			"relative": "5 分钟前",
+			"hover": "（悬停：{{value}}）"
 		}
 	},
 	"usage": {
-		"description": "Tokens and cost from your Zoo Code task history on this machine.",
+		"description": "来自此设备上 Zoo Code 任务历史的 Token 和费用。",
 		"range": {
-			"label": "Time range",
-			"today": "Today",
-			"7d": "7 days",
-			"30d": "30 days",
-			"all": "All time"
+			"label": "时间范围",
+			"today": "今天",
+			"7d": "7 天",
+			"30d": "30 天",
+			"all": "全部时间"
 		},
 		"scope": {
-			"label": "Show",
-			"workspace": "This workspace",
-			"all": "All workspaces"
+			"label": "显示",
+			"workspace": "此工作区",
+			"all": "所有工作区"
 		},
-		"empty": "No tasks in this time range.",
+		"empty": "此时间范围内没有任务。",
 		"stats": {
-			"cost": "cost",
-			"tokens": "tokens",
-			"tasks": "tasks",
-			"cacheHit": "{{percent}}% from cache",
-			"inOut": "{{input}} in · {{output}} out",
-			"models": "models"
+			"cost": "费用",
+			"tokens": "Token",
+			"tasks": "任务",
+			"cacheHit": "{{percent}}% 来自缓存",
+			"inOut": "输入 {{input}} · 输出 {{output}}",
+			"models": "模型"
 		},
-		"dailyCost": "Daily cost",
-		"byMode": "By mode",
-		"topTasks": "Most expensive tasks",
-		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
-		"exportCsv": "Export CSV",
-		"noPricingNote": "Some providers (e.g. GitHub Copilot) bill by subscription and don't report a per-task price, so this history is shown in tokens. See Provider limits above for credits.",
-		"dailyTokens": "Daily tokens",
-		"topTasksTokens": "Largest tasks",
-		"byProvider": "By provider",
-		"history": "Usage history",
+		"dailyCost": "每日费用",
+		"byMode": "按模式",
+		"topTasks": "费用最高的任务",
+		"disclaimer": "费用为根据任务历史得出的估算值，可能与提供商的账单不同。",
+		"exportCsv": "导出 CSV",
+		"noPricingNote": "部分提供商（如 GitHub Copilot）按订阅计费，不报告每个任务的价格，因此此历史以 Token 显示。额度请参见上方的提供商限额。",
+		"dailyTokens": "每日 Token",
+		"topTasksTokens": "最大的任务",
+		"byProvider": "按提供商",
+		"history": "用量历史",
 		"limits": {
-			"title": "Provider limits",
-			"refresh": "Refresh",
-			"updated": "Updated {{time}}",
-			"loading": "Checking connected providers…",
-			"resets": "Resets {{date}}",
-			"signedOut": "Not signed in",
-			"noCopilot": "No Copilot quota",
-			"noKey": "API key missing or invalid",
-			"unsupported": "Custom base URL — not checked",
-			"error": "Couldn't load"
+			"title": "提供商限额",
+			"refresh": "刷新",
+			"updated": "更新于 {{time}}",
+			"loading": "正在检查已连接的提供商…",
+			"resets": "重置于 {{date}}",
+			"signedOut": "未登录",
+			"noCopilot": "无 Copilot 配额",
+			"noKey": "API 密钥缺失或无效",
+			"unsupported": "自定义基础 URL — 未检查",
+			"error": "无法加载"
 		},
-		"byModel": "By model",
-		"notRecorded": "Not recorded",
-		"noPrice": "no price",
-		"tokensShort": "tok",
-		"chartLabel": "{{metric}}, total {{total}}"
+		"byModel": "按模型",
+		"notRecorded": "未记录",
+		"noPrice": "无价格",
+		"tokensShort": "Token",
+		"chartLabel": "{{metric}}，共 {{total}}"
 	}
 }

@@ -1,4 +1,4 @@
-import { HTMLAttributes, useMemo } from "react"
+import { FormEvent, HTMLAttributes } from "react"
 import { VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
 
 import { useAppTranslation } from "@/i18n/TranslationContext"
@@ -41,17 +41,12 @@ export const LanguageSettings = ({
 }: LanguageSettingsProps) => {
 	const { t } = useAppTranslation()
 
-	// Recompute when the language changes too, since "auto" is locale-driven.
-	/* eslint-disable react-hooks/exhaustive-deps */
-	const preview = useMemo(
-		() => ({
-			chatTime: formatTimeOnly(SAMPLE_TS, timeFormat),
-			dateExample: formatDateOnly(SAMPLE_TS, dateFormat),
-			hover: formatDateTime(SAMPLE_TS, timeFormat, dateFormat),
-		}),
-		[timeFormat, dateFormat, language],
-	)
-	/* eslint-enable react-hooks/exhaustive-deps */
+	// Three short Intl calls: computed on every render, so "auto" follows a language change too.
+	const preview = {
+		chatTime: formatTimeOnly(SAMPLE_TS, timeFormat),
+		dateExample: formatDateOnly(SAMPLE_TS, dateFormat),
+		hover: formatDateTime(SAMPLE_TS, timeFormat, dateFormat),
+	}
 
 	return (
 		<div className={cn("flex flex-col gap-2", className)} {...props}>
@@ -171,7 +166,9 @@ export const LanguageSettings = ({
 							label={t("settings:language.relativeTimes.label")}>
 							<VSCodeCheckbox
 								checked={showRelativeTimes}
-								onChange={(e: any) => setCachedStateField("showRelativeTimes", e.target.checked)}
+								onChange={(e: Event | FormEvent<HTMLElement>) =>
+									setCachedStateField("showRelativeTimes", (e.target as HTMLInputElement).checked)
+								}
 								data-testid="relative-times-checkbox">
 								<span className="font-medium">{t("settings:language.relativeTimes.label")}</span>
 							</VSCodeCheckbox>

@@ -51,6 +51,19 @@ describe("MessageTimestamp", () => {
 		expect(() => render(<MessageTimestamp ts={Date.now()} />)).not.toThrow()
 	})
 
+	it.each([0, -1, NaN, Infinity, 8.64e15 + 1, -8.64e15 - 1, Number.MAX_VALUE])(
+		"renders nothing for an invalid or out-of-range timestamp (%s)",
+		(ts) => {
+			render(<MessageTimestamp ts={ts} />)
+			expect(screen.queryByTestId("message-timestamp")).toBeNull()
+		},
+	)
+
+	it("still renders at the largest representable date", () => {
+		expect(() => render(<MessageTimestamp ts={8.64e15} />)).not.toThrow()
+		expect(screen.getByTestId("message-timestamp")).toBeTruthy()
+	})
+
 	it.each([0, -1, NaN, Infinity])("renders nothing for an invalid timestamp (%s)", (ts) => {
 		render(<MessageTimestamp ts={ts} />)
 		expect(screen.queryByTestId("message-timestamp")).toBeNull()

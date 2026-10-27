@@ -23,12 +23,15 @@ interface MessageTimestampProps {
  * gives assistive tech and copy/paste the exact value.
  */
 export const MessageTimestamp = ({ ts, timeFormat, dateFormat, className }: MessageTimestampProps) => {
-	if (!Number.isFinite(ts) || ts <= 0) return null
+	// Number.isFinite is not enough: a finite value beyond ±8.64e15 ms is an Invalid Date, and
+	// toISOString() would throw during render and take the whole chat row down with it.
+	const date = new Date(ts)
+	if (!Number.isFinite(ts) || ts <= 0 || Number.isNaN(date.getTime())) return null
 
 	return (
 		<StandardTooltip content={formatDateTime(ts, timeFormat, dateFormat)}>
 			<time
-				dateTime={new Date(ts).toISOString()}
+				dateTime={date.toISOString()}
 				className={cn(
 					"inline-flex items-center gap-1.5 text-xs text-vscode-descriptionForeground select-none",
 					className,

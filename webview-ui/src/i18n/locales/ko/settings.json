@@ -43,7 +43,7 @@
 		"about": "Zoo Code 정보",
 		"skills": "Skills",
 		"rules": "규칙",
-		"usage": "Usage"
+		"usage": "사용량"
 	},
 	"about": {
 		"bugReport": {
@@ -1182,29 +1182,29 @@
 			"description": "활성화 시, Zoo가 수정한 것이 아니라 새로 만든 파일의 탭도 변경 사항을 승인한 후 자동으로 닫힙니다."
 		},
 		"appearance": {
-			"reset": "Reset to default",
+			"reset": "기본값으로 재설정",
 			"interfaceFontScale": {
-				"label": "Interface font size",
-				"description": "Scales all Zoo Code text. 100% matches VS Code."
+				"label": "인터페이스 글꼴 크기",
+				"description": "모든 Zoo Code 텍스트의 크기를 조절합니다. 100%는 VS Code와 같습니다."
 			},
 			"terminalFontSize": {
-				"label": "Terminal font size",
-				"description": "Font size for command output shown in chat."
+				"label": "터미널 글꼴 크기",
+				"description": "채팅에 표시되는 명령 출력의 글꼴 크기입니다."
 			},
 			"editorFontSize": {
-				"label": "Editor font size",
-				"description": "Font size for code blocks and diffs shown in chat."
+				"label": "편집기 글꼴 크기",
+				"description": "채팅에 표시되는 코드 블록과 diff의 글꼴 크기입니다."
 			},
 			"spacingScale": {
-				"label": "Spacing density",
-				"description": "Padding between chat messages. Lower is more compact."
+				"label": "간격 밀도",
+				"description": "채팅 메시지 사이의 여백입니다. 낮을수록 더 촘촘합니다."
 			},
-			"preview": "Preview",
+			"preview": "미리보기",
 			"sample": {
-				"you": "You",
+				"you": "나",
 				"zoo": "Zoo",
-				"user": "Add a loading spinner to the Save button",
-				"assistant": "Done. I added a spinner that shows while the request is in flight."
+				"user": "저장 버튼에 로딩 스피너를 추가해 줘",
+				"assistant": "완료했습니다. 요청이 진행되는 동안 표시되는 스피너를 추가했습니다."
 			}
 		}
 	},
@@ -1262,90 +1262,90 @@
 		"footer": "스킬 작성자 모드로 자신만의 스킬을 만들 수 있습니다. <MarketplaceLink>모드 마켓플레이스</MarketplaceLink>에서 사용 가능합니다."
 	},
 	"language": {
-		"description": "Language and date/time display.",
-		"languageTitle": "Language",
-		"displayLanguage": "Display language",
-		"displayLanguageDescription": "Language for Zoo Code's interface.",
-		"dateTimeTitle": "Date & time",
+		"description": "언어 및 날짜/시간 표시.",
+		"languageTitle": "언어",
+		"displayLanguage": "표시 언어",
+		"displayLanguageDescription": "Zoo Code 인터페이스 언어입니다.",
+		"dateTimeTitle": "날짜 및 시간",
 		"timeFormat": {
-			"label": "Time format",
-			"description": "Auto follows your system locale.",
+			"label": "시간 형식",
+			"description": "자동은 표시 언어를 따릅니다.",
 			"options": {
-				"auto": "Auto",
-				"12h": "12-hour",
-				"24h": "24-hour"
+				"auto": "자동",
+				"12h": "12시간제",
+				"24h": "24시간제"
 			}
 		},
 		"dateFormat": {
-			"label": "Date format",
-			"example": "e.g. {{example}}",
+			"label": "날짜 형식",
+			"example": "예: {{example}}",
 			"options": {
-				"auto": "Auto",
+				"auto": "자동",
 				"mdy": "MM/DD/YYYY",
 				"dmy": "DD/MM/YYYY",
 				"ymd": "YYYY-MM-DD"
 			}
 		},
 		"relativeTimes": {
-			"label": "Show relative times (\"5 min ago\") in task history"
+			"label": "작업 기록에 상대 시간(\"5분 전\") 표시"
 		},
 		"preview": {
-			"title": "Preview",
-			"chat": "Chat message",
-			"history": "Task history",
-			"relative": "5 min ago",
-			"hover": "(hover: {{value}})"
+			"title": "미리보기",
+			"chat": "채팅 메시지",
+			"history": "작업 기록",
+			"relative": "5분 전",
+			"hover": "(호버: {{value}})"
 		}
 	},
 	"usage": {
-		"description": "Tokens and cost from your Zoo Code task history on this machine.",
+		"description": "이 컴퓨터의 Zoo Code 작업 기록에서 집계한 토큰과 비용입니다.",
 		"range": {
-			"label": "Time range",
-			"today": "Today",
-			"7d": "7 days",
-			"30d": "30 days",
-			"all": "All time"
+			"label": "기간",
+			"today": "오늘",
+			"7d": "7일",
+			"30d": "30일",
+			"all": "전체 기간"
 		},
 		"scope": {
-			"label": "Show",
-			"workspace": "This workspace",
-			"all": "All workspaces"
+			"label": "표시",
+			"workspace": "이 워크스페이스",
+			"all": "모든 워크스페이스"
 		},
-		"empty": "No tasks in this time range.",
+		"empty": "이 기간에 작업이 없습니다.",
 		"stats": {
-			"cost": "cost",
-			"tokens": "tokens",
-			"tasks": "tasks",
-			"cacheHit": "{{percent}}% from cache",
-			"inOut": "{{input}} in · {{output}} out",
-			"models": "models"
+			"cost": "비용",
+			"tokens": "토큰",
+			"tasks": "작업",
+			"cacheHit": "{{percent}}% 캐시에서",
+			"inOut": "입력 {{input}} · 출력 {{output}}",
+			"models": "모델"
 		},
-		"dailyCost": "Daily cost",
-		"byMode": "By mode",
-		"topTasks": "Most expensive tasks",
-		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
-		"exportCsv": "Export CSV",
-		"noPricingNote": "Some providers (e.g. GitHub Copilot) bill by subscription and don't report a per-task price, so this history is shown in tokens. See Provider limits above for credits.",
-		"dailyTokens": "Daily tokens",
-		"topTasksTokens": "Largest tasks",
-		"byProvider": "By provider",
-		"history": "Usage history",
+		"dailyCost": "일별 비용",
+		"byMode": "모드별",
+		"topTasks": "비용이 큰 작업",
+		"disclaimer": "비용은 작업 기록을 기반으로 한 추정치이며 공급자의 청구서와 다를 수 있습니다.",
+		"exportCsv": "CSV 내보내기",
+		"noPricingNote": "일부 공급자(예: GitHub Copilot)는 구독 방식으로 청구하며 작업별 가격을 보고하지 않으므로 이 기록은 토큰으로 표시됩니다. 크레딧은 위의 공급자 한도를 확인하세요.",
+		"dailyTokens": "일별 토큰",
+		"topTasksTokens": "큰 작업",
+		"byProvider": "공급자별",
+		"history": "사용 기록",
 		"limits": {
-			"title": "Provider limits",
-			"refresh": "Refresh",
-			"updated": "Updated {{time}}",
-			"loading": "Checking connected providers…",
-			"resets": "Resets {{date}}",
-			"signedOut": "Not signed in",
-			"noCopilot": "No Copilot quota",
-			"noKey": "API key missing or invalid",
-			"unsupported": "Custom base URL — not checked",
-			"error": "Couldn't load"
+			"title": "공급자 한도",
+			"refresh": "새로 고침",
+			"updated": "{{time}}에 업데이트됨",
+			"loading": "연결된 공급자를 확인하는 중…",
+			"resets": "{{date}}에 초기화",
+			"signedOut": "로그인하지 않음",
+			"noCopilot": "Copilot 할당량 없음",
+			"noKey": "API 키가 없거나 올바르지 않음",
+			"unsupported": "사용자 지정 기본 URL — 확인하지 않음",
+			"error": "불러올 수 없음"
 		},
-		"byModel": "By model",
-		"notRecorded": "Not recorded",
-		"noPrice": "no price",
-		"tokensShort": "tok",
-		"chartLabel": "{{metric}}, total {{total}}"
+		"byModel": "모델별",
+		"notRecorded": "기록되지 않음",
+		"noPrice": "가격 없음",
+		"tokensShort": "토큰",
+		"chartLabel": "{{metric}}, 합계 {{total}}"
 	}
 }

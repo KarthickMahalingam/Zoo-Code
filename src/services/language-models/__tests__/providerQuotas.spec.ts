@@ -642,6 +642,104 @@ describe("getProviderQuotas", () => {
 		expect(q).toMatchObject({ providerId: providerIdentifiers.deepseek, ok: false, reason: "noKey" })
 	})
 
+	it("queries a profile on the provider's own host even when an earlier profile uses a custom gateway", async () => {
+		const fetchSpy = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => {
+			return new Response(JSON.stringify({ balance_infos: [{ currency: "USD", total_balance: "7.5" }] }))
+		})
+		const [q] = await getProviderQuotas(
+			[
+				{
+					apiProvider: providerIdentifiers.deepseek,
+					deepSeekApiKey: "gateway-key",
+					deepSeekBaseUrl: "https://gateway.example.com/v1",
+				} as never,
+				{ apiProvider: providerIdentifiers.deepseek, deepSeekApiKey: "real-key" } as never,
+			],
+			{},
+			fetchSpy,
+		)
+		expect(q).toMatchObject({ ok: true, windows: [{ valueLabel: "$7.50 left" }] })
+		expect(String(fetchSpy.mock.calls[0][0])).toContain("api.deepseek.com")
+		// The gateway profile's key is never sent anywhere.
+		expect(JSON.stringify(fetchSpy.mock.calls)).not.toContain("gateway-key")
+	})
+
+	it("reports unsupported only when every keyed profile uses a custom gateway", async () => {
+		const [q] = await getProviderQuotas(
+			[
+				{
+					apiProvider: providerIdentifiers.deepseek,
+					deepSeekApiKey: "k",
+					deepSeekBaseUrl: "https://gateway.example.com/v1",
+				} as never,
+			],
+			{},
+			vi.fn(),
+		)
+		expect(q).toMatchObject({ ok: false, reason: "unsupported" })
+	})
+
+	it("does not cache a missing key: adding one shows up on the next call", async () => {
+		const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
+		const [before] = await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.openrouter } as never],
+			{},
+			fetchSpy,
+		)
+		expect(before).toMatchObject({ ok: false, reason: "noKey" })
+
+		const [after] = await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never],
+			{},
+			fetchSpy,
+		)
+		expect(after).toMatchObject({ ok: true })
+	})
+
+	it("does not cache a failure: a retry within the TTL is fetched again", async () => {
+		const fetchSpy = vi
+			.fn()
+			.mockResolvedValueOnce(new Response("", { status: 500 }))
+			.mockResolvedValueOnce(new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
+		const profiles = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never]
+
+		const [first] = await getProviderQuotas(profiles, {}, fetchSpy)
+		expect(first).toMatchObject({ ok: false, reason: "error" })
+		const [second] = await getProviderQuotas(profiles, {}, fetchSpy)
+		expect(second).toMatchObject({ ok: true })
+		expect(fetchSpy).toHaveBeenCalledTimes(2)
+	})
+
+	it("refetches when the API key changes, without keeping the key in the cache key", async () => {
+		const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
+		await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk-one" } as never],
+			{},
+			fetchSpy,
+		)
+		await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk-two" } as never],
+			{},
+			fetchSpy,
+		)
+		expect(fetchSpy).toHaveBeenCalledTimes(2)
+	})
+
+	it("shares one request between concurrent callers for the same credentials", async () => {
+		let release: (r: Response) => void = () => {}
+		const fetchSpy = vi.fn(() => new Promise<Response>((resolve) => (release = resolve)))
+		const profiles = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never]
+
+		const a = getProviderQuotas(profiles, {}, fetchSpy)
+		const b = getProviderQuotas(profiles, { force: true }, fetchSpy)
+		await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+		release(new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
+
+		const [ra, rb] = await Promise.all([a, b])
+		expect(fetchSpy).toHaveBeenCalledTimes(1)
+		expect(ra).toEqual(rb)
+	})
+
 	it("caches results for the same set of providers unless forced", async () => {
 		const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
 		const profiles = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never]

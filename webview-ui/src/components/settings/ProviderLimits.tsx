@@ -4,12 +4,11 @@ import { RefreshCw } from "lucide-react"
 import { VsCodeLmModelsMessageType, type ProviderQuota } from "@roo-code/types"
 
 import { useAppTranslation } from "@/i18n/TranslationContext"
+import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@src/lib/utils"
 import { vscode } from "@src/utils/vscode"
+import { formatDateOnly, formatTimeOnly } from "@src/utils/format"
 import { providerLabel } from "@src/utils/providerLabel"
-
-const formatReset = (ts: number) =>
-	new Date(ts).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric" })
 
 const barColor = (pct: number) =>
 	pct >= 90 ? "bg-vscode-charts-red" : pct >= 75 ? "bg-vscode-charts-yellow" : "bg-vscode-charts-green"
@@ -22,6 +21,7 @@ const barColor = (pct: number) =>
  */
 export const ProviderLimits = () => {
 	const { t } = useAppTranslation()
+	const { timeFormat, dateFormat } = useExtensionState()
 	const [quotas, setQuotas] = useState<ProviderQuota[] | undefined>()
 	const [loading, setLoading] = useState(true)
 
@@ -63,10 +63,7 @@ export const ProviderLimits = () => {
 					{fetchedAt ? (
 						<span>
 							{t("settings:usage.limits.updated", {
-								time: new Date(fetchedAt).toLocaleTimeString(undefined, {
-									hour: "numeric",
-									minute: "2-digit",
-								}),
+								time: formatTimeOnly(fetchedAt, timeFormat),
 							})}
 						</span>
 					) : null}
@@ -81,14 +78,27 @@ export const ProviderLimits = () => {
 					</div>
 				)}
 				{quotas?.map((q) => (
-					<QuotaRow key={q.providerId} quota={q} name={providerLabel(q.providerId)} />
+					<QuotaRow
+						key={q.providerId}
+						quota={q}
+						name={providerLabel(q.providerId)}
+						formatReset={(ts) => formatDateOnly(ts, dateFormat)}
+					/>
 				))}
 			</div>
 		</section>
 	)
 }
 
-const QuotaRow = ({ quota, name }: { quota: ProviderQuota; name: string }) => {
+const QuotaRow = ({
+	quota,
+	name,
+	formatReset,
+}: {
+	quota: ProviderQuota
+	name: string
+	formatReset: (ts: number) => string
+}) => {
 	const { t } = useAppTranslation()
 
 	return (

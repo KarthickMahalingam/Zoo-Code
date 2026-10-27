@@ -43,7 +43,7 @@
 		"about": "Informazioni su Zoo Code",
 		"skills": "Skills",
 		"rules": "Regole",
-		"usage": "Usage"
+		"usage": "Utilizzo"
 	},
 	"about": {
 		"bugReport": {
@@ -1182,29 +1182,29 @@
 			"description": "Quando abilitata, le schede dei file che Zoo ha creato (invece di modificare) vengono chiuse automaticamente dopo l'accettazione della modifica."
 		},
 		"appearance": {
-			"reset": "Reset to default",
+			"reset": "Ripristina predefinito",
 			"interfaceFontScale": {
-				"label": "Interface font size",
-				"description": "Scales all Zoo Code text. 100% matches VS Code."
+				"label": "Dimensione carattere dell'interfaccia",
+				"description": "Ridimensiona tutto il testo di Zoo Code. 100% corrisponde a VS Code."
 			},
 			"terminalFontSize": {
-				"label": "Terminal font size",
-				"description": "Font size for command output shown in chat."
+				"label": "Dimensione carattere del terminale",
+				"description": "Dimensione carattere dell'output dei comandi mostrato nella chat."
 			},
 			"editorFontSize": {
-				"label": "Editor font size",
-				"description": "Font size for code blocks and diffs shown in chat."
+				"label": "Dimensione carattere dell'editor",
+				"description": "Dimensione carattere dei blocchi di codice e dei diff mostrati nella chat."
 			},
 			"spacingScale": {
-				"label": "Spacing density",
-				"description": "Padding between chat messages. Lower is more compact."
+				"label": "Densità della spaziatura",
+				"description": "Spaziatura interna tra i messaggi della chat. Un valore più basso è più compatto."
 			},
-			"preview": "Preview",
+			"preview": "Anteprima",
 			"sample": {
-				"you": "You",
+				"you": "Tu",
 				"zoo": "Zoo",
-				"user": "Add a loading spinner to the Save button",
-				"assistant": "Done. I added a spinner that shows while the request is in flight."
+				"user": "Aggiungi un indicatore di caricamento al pulsante Salva",
+				"assistant": "Fatto. Ho aggiunto un indicatore che compare mentre la richiesta è in corso."
 			}
 		}
 	},
@@ -1262,90 +1262,90 @@
 		"footer": "Crea le tue skill con la modalità Skill Writer, disponibile in <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
 	},
 	"language": {
-		"description": "Language and date/time display.",
-		"languageTitle": "Language",
-		"displayLanguage": "Display language",
-		"displayLanguageDescription": "Language for Zoo Code's interface.",
-		"dateTimeTitle": "Date & time",
+		"description": "Lingua e visualizzazione di data e ora.",
+		"languageTitle": "Lingua",
+		"displayLanguage": "Lingua di visualizzazione",
+		"displayLanguageDescription": "Lingua dell'interfaccia di Zoo Code.",
+		"dateTimeTitle": "Data e ora",
 		"timeFormat": {
-			"label": "Time format",
-			"description": "Auto follows your system locale.",
+			"label": "Formato dell'ora",
+			"description": "Auto segue la lingua di visualizzazione.",
 			"options": {
 				"auto": "Auto",
-				"12h": "12-hour",
-				"24h": "24-hour"
+				"12h": "12 ore",
+				"24h": "24 ore"
 			}
 		},
 		"dateFormat": {
-			"label": "Date format",
-			"example": "e.g. {{example}}",
+			"label": "Formato della data",
+			"example": "es. {{example}}",
 			"options": {
 				"auto": "Auto",
-				"mdy": "MM/DD/YYYY",
-				"dmy": "DD/MM/YYYY",
-				"ymd": "YYYY-MM-DD"
+				"mdy": "MM/GG/AAAA",
+				"dmy": "GG/MM/AAAA",
+				"ymd": "AAAA-MM-GG"
 			}
 		},
 		"relativeTimes": {
-			"label": "Show relative times (\"5 min ago\") in task history"
+			"label": "Mostra i tempi relativi (\"5 min fa\") nella cronologia delle attività"
 		},
 		"preview": {
-			"title": "Preview",
-			"chat": "Chat message",
-			"history": "Task history",
-			"relative": "5 min ago",
+			"title": "Anteprima",
+			"chat": "Messaggio della chat",
+			"history": "Cronologia delle attività",
+			"relative": "5 min fa",
 			"hover": "(hover: {{value}})"
 		}
 	},
 	"usage": {
-		"description": "Tokens and cost from your Zoo Code task history on this machine.",
+		"description": "Token e costi dalla cronologia delle attività di Zoo Code su questo computer.",
 		"range": {
-			"label": "Time range",
-			"today": "Today",
-			"7d": "7 days",
-			"30d": "30 days",
-			"all": "All time"
+			"label": "Intervallo di tempo",
+			"today": "Oggi",
+			"7d": "7 giorni",
+			"30d": "30 giorni",
+			"all": "Sempre"
 		},
 		"scope": {
-			"label": "Show",
-			"workspace": "This workspace",
-			"all": "All workspaces"
+			"label": "Mostra",
+			"workspace": "Questo workspace",
+			"all": "Tutti i workspace"
 		},
-		"empty": "No tasks in this time range.",
+		"empty": "Nessuna attività in questo intervallo di tempo.",
 		"stats": {
-			"cost": "cost",
-			"tokens": "tokens",
-			"tasks": "tasks",
-			"cacheHit": "{{percent}}% from cache",
-			"inOut": "{{input}} in · {{output}} out",
-			"models": "models"
+			"cost": "costo",
+			"tokens": "token",
+			"tasks": "attività",
+			"cacheHit": "{{percent}}% dalla cache",
+			"inOut": "{{input}} in ingresso · {{output}} in uscita",
+			"models": "modelli"
 		},
-		"dailyCost": "Daily cost",
-		"byMode": "By mode",
-		"topTasks": "Most expensive tasks",
-		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
-		"exportCsv": "Export CSV",
-		"noPricingNote": "Some providers (e.g. GitHub Copilot) bill by subscription and don't report a per-task price, so this history is shown in tokens. See Provider limits above for credits.",
-		"dailyTokens": "Daily tokens",
-		"topTasksTokens": "Largest tasks",
-		"byProvider": "By provider",
-		"history": "Usage history",
+		"dailyCost": "Costo giornaliero",
+		"byMode": "Per modalità",
+		"topTasks": "Attività più costose",
+		"disclaimer": "I costi sono stime basate sulla cronologia delle attività e possono differire dalla fattura del tuo provider.",
+		"exportCsv": "Esporta CSV",
+		"noPricingNote": "Alcuni provider (es. GitHub Copilot) fatturano tramite abbonamento e non riportano un prezzo per attività, quindi questa cronologia è mostrata in token. Vedi i limiti dei provider sopra per i crediti.",
+		"dailyTokens": "Token giornalieri",
+		"topTasksTokens": "Attività più grandi",
+		"byProvider": "Per provider",
+		"history": "Cronologia di utilizzo",
 		"limits": {
-			"title": "Provider limits",
-			"refresh": "Refresh",
-			"updated": "Updated {{time}}",
-			"loading": "Checking connected providers…",
-			"resets": "Resets {{date}}",
-			"signedOut": "Not signed in",
-			"noCopilot": "No Copilot quota",
-			"noKey": "API key missing or invalid",
-			"unsupported": "Custom base URL — not checked",
-			"error": "Couldn't load"
+			"title": "Limiti dei provider",
+			"refresh": "Aggiorna",
+			"updated": "Aggiornato {{time}}",
+			"loading": "Controllo dei provider collegati…",
+			"resets": "Si reimposta {{date}}",
+			"signedOut": "Accesso non effettuato",
+			"noCopilot": "Nessuna quota Copilot",
+			"noKey": "Chiave API mancante o non valida",
+			"unsupported": "URL di base personalizzato — non controllato",
+			"error": "Impossibile caricare"
 		},
-		"byModel": "By model",
-		"notRecorded": "Not recorded",
-		"noPrice": "no price",
+		"byModel": "Per modello",
+		"notRecorded": "Non registrato",
+		"noPrice": "senza prezzo",
 		"tokensShort": "tok",
-		"chartLabel": "{{metric}}, total {{total}}"
+		"chartLabel": "{{metric}}, totale {{total}}"
 	}
 }

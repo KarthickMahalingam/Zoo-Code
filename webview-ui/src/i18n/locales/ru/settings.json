@@ -43,7 +43,7 @@
 		"about": "О Zoo Code",
 		"skills": "Skills",
 		"rules": "Правила",
-		"usage": "Usage"
+		"usage": "Использование"
 	},
 	"about": {
 		"bugReport": {
@@ -1182,29 +1182,29 @@
 			"description": "Если включено, вкладки файлов, которые Zoo создал (а не изменил), также автоматически закрываются после принятия изменения."
 		},
 		"appearance": {
-			"reset": "Reset to default",
+			"reset": "Сбросить по умолчанию",
 			"interfaceFontScale": {
-				"label": "Interface font size",
-				"description": "Scales all Zoo Code text. 100% matches VS Code."
+				"label": "Размер шрифта интерфейса",
+				"description": "Масштабирует весь текст Zoo Code. 100% соответствует VS Code."
 			},
 			"terminalFontSize": {
-				"label": "Terminal font size",
-				"description": "Font size for command output shown in chat."
+				"label": "Размер шрифта терминала",
+				"description": "Размер шрифта вывода команд, показываемого в чате."
 			},
 			"editorFontSize": {
-				"label": "Editor font size",
-				"description": "Font size for code blocks and diffs shown in chat."
+				"label": "Размер шрифта редактора",
+				"description": "Размер шрифта блоков кода и диффов, показываемых в чате."
 			},
 			"spacingScale": {
-				"label": "Spacing density",
-				"description": "Padding between chat messages. Lower is more compact."
+				"label": "Плотность отступов",
+				"description": "Отступы между сообщениями чата. Чем меньше значение, тем компактнее."
 			},
-			"preview": "Preview",
+			"preview": "Предпросмотр",
 			"sample": {
-				"you": "You",
+				"you": "Вы",
 				"zoo": "Zoo",
-				"user": "Add a loading spinner to the Save button",
-				"assistant": "Done. I added a spinner that shows while the request is in flight."
+				"user": "Добавь индикатор загрузки на кнопку «Сохранить»",
+				"assistant": "Готово. Я добавил индикатор, который отображается, пока выполняется запрос."
 			}
 		}
 	},
@@ -1262,90 +1262,90 @@
 		"footer": "Создавайте собственные навыки с режимом Skill Writer, доступным в <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
 	},
 	"language": {
-		"description": "Language and date/time display.",
-		"languageTitle": "Language",
-		"displayLanguage": "Display language",
-		"displayLanguageDescription": "Language for Zoo Code's interface.",
-		"dateTimeTitle": "Date & time",
+		"description": "Язык и отображение даты и времени.",
+		"languageTitle": "Язык",
+		"displayLanguage": "Язык интерфейса",
+		"displayLanguageDescription": "Язык интерфейса Zoo Code.",
+		"dateTimeTitle": "Дата и время",
 		"timeFormat": {
-			"label": "Time format",
-			"description": "Auto follows your system locale.",
+			"label": "Формат времени",
+			"description": "Авто следует языку интерфейса.",
 			"options": {
-				"auto": "Auto",
-				"12h": "12-hour",
-				"24h": "24-hour"
+				"auto": "Авто",
+				"12h": "12-часовой",
+				"24h": "24-часовой"
 			}
 		},
 		"dateFormat": {
-			"label": "Date format",
-			"example": "e.g. {{example}}",
+			"label": "Формат даты",
+			"example": "напр. {{example}}",
 			"options": {
-				"auto": "Auto",
-				"mdy": "MM/DD/YYYY",
-				"dmy": "DD/MM/YYYY",
-				"ymd": "YYYY-MM-DD"
+				"auto": "Авто",
+				"mdy": "ММ/ДД/ГГГГ",
+				"dmy": "ДД/ММ/ГГГГ",
+				"ymd": "ГГГГ-ММ-ДД"
 			}
 		},
 		"relativeTimes": {
-			"label": "Show relative times (\"5 min ago\") in task history"
+			"label": "Показывать относительное время («5 мин назад») в истории задач"
 		},
 		"preview": {
-			"title": "Preview",
-			"chat": "Chat message",
-			"history": "Task history",
-			"relative": "5 min ago",
-			"hover": "(hover: {{value}})"
+			"title": "Предпросмотр",
+			"chat": "Сообщение чата",
+			"history": "История задач",
+			"relative": "5 мин назад",
+			"hover": "(при наведении: {{value}})"
 		}
 	},
 	"usage": {
-		"description": "Tokens and cost from your Zoo Code task history on this machine.",
+		"description": "Токены и стоимость по истории задач Zoo Code на этом компьютере.",
 		"range": {
-			"label": "Time range",
-			"today": "Today",
-			"7d": "7 days",
-			"30d": "30 days",
-			"all": "All time"
+			"label": "Период",
+			"today": "Сегодня",
+			"7d": "7 дней",
+			"30d": "30 дней",
+			"all": "Всё время"
 		},
 		"scope": {
-			"label": "Show",
-			"workspace": "This workspace",
-			"all": "All workspaces"
+			"label": "Показать",
+			"workspace": "Эта рабочая область",
+			"all": "Все рабочие области"
 		},
-		"empty": "No tasks in this time range.",
+		"empty": "В этом периоде нет задач.",
 		"stats": {
-			"cost": "cost",
-			"tokens": "tokens",
-			"tasks": "tasks",
-			"cacheHit": "{{percent}}% from cache",
-			"inOut": "{{input}} in · {{output}} out",
-			"models": "models"
+			"cost": "стоимость",
+			"tokens": "токены",
+			"tasks": "задачи",
+			"cacheHit": "{{percent}}% из кэша",
+			"inOut": "{{input}} вход · {{output}} выход",
+			"models": "модели"
 		},
-		"dailyCost": "Daily cost",
-		"byMode": "By mode",
-		"topTasks": "Most expensive tasks",
-		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
-		"exportCsv": "Export CSV",
-		"noPricingNote": "Some providers (e.g. GitHub Copilot) bill by subscription and don't report a per-task price, so this history is shown in tokens. See Provider limits above for credits.",
-		"dailyTokens": "Daily tokens",
-		"topTasksTokens": "Largest tasks",
-		"byProvider": "By provider",
-		"history": "Usage history",
+		"dailyCost": "Стоимость по дням",
+		"byMode": "По режимам",
+		"topTasks": "Самые дорогие задачи",
+		"disclaimer": "Стоимость — это оценка по истории задач, она может отличаться от счёта вашего провайдера.",
+		"exportCsv": "Экспорт в CSV",
+		"noPricingNote": "Некоторые провайдеры (например, GitHub Copilot) тарифицируют по подписке и не сообщают цену за задачу, поэтому эта история показана в токенах. Кредиты смотрите выше в лимитах провайдеров.",
+		"dailyTokens": "Токены по дням",
+		"topTasksTokens": "Самые крупные задачи",
+		"byProvider": "По провайдерам",
+		"history": "История использования",
 		"limits": {
-			"title": "Provider limits",
-			"refresh": "Refresh",
-			"updated": "Updated {{time}}",
-			"loading": "Checking connected providers…",
-			"resets": "Resets {{date}}",
-			"signedOut": "Not signed in",
-			"noCopilot": "No Copilot quota",
-			"noKey": "API key missing or invalid",
-			"unsupported": "Custom base URL — not checked",
-			"error": "Couldn't load"
+			"title": "Лимиты провайдеров",
+			"refresh": "Обновить",
+			"updated": "Обновлено {{time}}",
+			"loading": "Проверка подключённых провайдеров…",
+			"resets": "Сброс {{date}}",
+			"signedOut": "Вход не выполнен",
+			"noCopilot": "Нет квоты Copilot",
+			"noKey": "Ключ API отсутствует или недействителен",
+			"unsupported": "Пользовательский базовый URL — не проверено",
+			"error": "Не удалось загрузить"
 		},
-		"byModel": "By model",
-		"notRecorded": "Not recorded",
-		"noPrice": "no price",
-		"tokensShort": "tok",
-		"chartLabel": "{{metric}}, total {{total}}"
+		"byModel": "По моделям",
+		"notRecorded": "Не записано",
+		"noPrice": "без цены",
+		"tokensShort": "ток.",
+		"chartLabel": "{{metric}}, всего {{total}}"
 	}
 }

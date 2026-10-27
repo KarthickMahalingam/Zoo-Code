@@ -43,7 +43,7 @@
 		"about": "Zoo Code Hakkında",
 		"skills": "Skills",
 		"rules": "Kurallar",
-		"usage": "Usage"
+		"usage": "Kullanım"
 	},
 	"about": {
 		"bugReport": {
@@ -1182,29 +1182,29 @@
 			"description": "Etkinlestirildiginde, Zoo'nun olusturdugu (degistirmedigi) dosyalarin sekmeleri de degisiklik kabul edildikten sonra otomatik olarak kapatilir."
 		},
 		"appearance": {
-			"reset": "Reset to default",
+			"reset": "Varsayılana sıfırla",
 			"interfaceFontScale": {
-				"label": "Interface font size",
-				"description": "Scales all Zoo Code text. 100% matches VS Code."
+				"label": "Arayüz yazı tipi boyutu",
+				"description": "Tüm Zoo Code metnini ölçekler. %100, VS Code ile aynıdır."
 			},
 			"terminalFontSize": {
-				"label": "Terminal font size",
-				"description": "Font size for command output shown in chat."
+				"label": "Terminal yazı tipi boyutu",
+				"description": "Sohbette gösterilen komut çıktısının yazı tipi boyutu."
 			},
 			"editorFontSize": {
-				"label": "Editor font size",
-				"description": "Font size for code blocks and diffs shown in chat."
+				"label": "Düzenleyici yazı tipi boyutu",
+				"description": "Sohbette gösterilen kod blokları ve diff'lerin yazı tipi boyutu."
 			},
 			"spacingScale": {
-				"label": "Spacing density",
-				"description": "Padding between chat messages. Lower is more compact."
+				"label": "Boşluk yoğunluğu",
+				"description": "Sohbet mesajları arasındaki dolgu. Düşük değer daha sıkışık görünür."
 			},
-			"preview": "Preview",
+			"preview": "Önizleme",
 			"sample": {
-				"you": "You",
+				"you": "Sen",
 				"zoo": "Zoo",
-				"user": "Add a loading spinner to the Save button",
-				"assistant": "Done. I added a spinner that shows while the request is in flight."
+				"user": "Kaydet düğmesine bir yükleniyor göstergesi ekle",
+				"assistant": "Tamam. İstek sürerken görünen bir gösterge ekledim."
 			}
 		}
 	},
@@ -1262,90 +1262,90 @@
 		"footer": "Skill Writer modu ile kendi becerilerinizi oluşturun. <MarketplaceLink>Modes Marketplace</MarketplaceLink>'de mevcut."
 	},
 	"language": {
-		"description": "Language and date/time display.",
-		"languageTitle": "Language",
-		"displayLanguage": "Display language",
-		"displayLanguageDescription": "Language for Zoo Code's interface.",
-		"dateTimeTitle": "Date & time",
+		"description": "Dil ile tarih/saat gösterimi.",
+		"languageTitle": "Dil",
+		"displayLanguage": "Görüntüleme dili",
+		"displayLanguageDescription": "Zoo Code arayüzünün dili.",
+		"dateTimeTitle": "Tarih ve saat",
 		"timeFormat": {
-			"label": "Time format",
-			"description": "Auto follows your system locale.",
+			"label": "Saat biçimi",
+			"description": "Otomatik, görüntüleme dilini izler.",
 			"options": {
-				"auto": "Auto",
-				"12h": "12-hour",
-				"24h": "24-hour"
+				"auto": "Otomatik",
+				"12h": "12 saatlik",
+				"24h": "24 saatlik"
 			}
 		},
 		"dateFormat": {
-			"label": "Date format",
-			"example": "e.g. {{example}}",
+			"label": "Tarih biçimi",
+			"example": "ör. {{example}}",
 			"options": {
-				"auto": "Auto",
-				"mdy": "MM/DD/YYYY",
-				"dmy": "DD/MM/YYYY",
-				"ymd": "YYYY-MM-DD"
+				"auto": "Otomatik",
+				"mdy": "AA/GG/YYYY",
+				"dmy": "GG/AA/YYYY",
+				"ymd": "YYYY-AA-GG"
 			}
 		},
 		"relativeTimes": {
-			"label": "Show relative times (\"5 min ago\") in task history"
+			"label": "Görev geçmişinde göreli zamanları (\"5 dk önce\") göster"
 		},
 		"preview": {
-			"title": "Preview",
-			"chat": "Chat message",
-			"history": "Task history",
-			"relative": "5 min ago",
-			"hover": "(hover: {{value}})"
+			"title": "Önizleme",
+			"chat": "Sohbet mesajı",
+			"history": "Görev geçmişi",
+			"relative": "5 dk önce",
+			"hover": "(üzerine gelince: {{value}})"
 		}
 	},
 	"usage": {
-		"description": "Tokens and cost from your Zoo Code task history on this machine.",
+		"description": "Bu makinedeki Zoo Code görev geçmişinizden token ve maliyet.",
 		"range": {
-			"label": "Time range",
-			"today": "Today",
-			"7d": "7 days",
-			"30d": "30 days",
-			"all": "All time"
+			"label": "Zaman aralığı",
+			"today": "Bugün",
+			"7d": "7 gün",
+			"30d": "30 gün",
+			"all": "Tüm zamanlar"
 		},
 		"scope": {
-			"label": "Show",
-			"workspace": "This workspace",
-			"all": "All workspaces"
+			"label": "Göster",
+			"workspace": "Bu çalışma alanı",
+			"all": "Tüm çalışma alanları"
 		},
-		"empty": "No tasks in this time range.",
+		"empty": "Bu zaman aralığında görev yok.",
 		"stats": {
-			"cost": "cost",
-			"tokens": "tokens",
-			"tasks": "tasks",
-			"cacheHit": "{{percent}}% from cache",
-			"inOut": "{{input}} in · {{output}} out",
-			"models": "models"
+			"cost": "maliyet",
+			"tokens": "token",
+			"tasks": "görev",
+			"cacheHit": "%{{percent}} önbellekten",
+			"inOut": "{{input}} giriş · {{output}} çıkış",
+			"models": "model"
 		},
-		"dailyCost": "Daily cost",
-		"byMode": "By mode",
-		"topTasks": "Most expensive tasks",
-		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
-		"exportCsv": "Export CSV",
-		"noPricingNote": "Some providers (e.g. GitHub Copilot) bill by subscription and don't report a per-task price, so this history is shown in tokens. See Provider limits above for credits.",
-		"dailyTokens": "Daily tokens",
-		"topTasksTokens": "Largest tasks",
-		"byProvider": "By provider",
-		"history": "Usage history",
+		"dailyCost": "Günlük maliyet",
+		"byMode": "Moda göre",
+		"topTasks": "En pahalı görevler",
+		"disclaimer": "Maliyetler görev geçmişinden yapılan tahminlerdir ve sağlayıcınızın faturasından farklı olabilir.",
+		"exportCsv": "CSV olarak dışa aktar",
+		"noPricingNote": "Bazı sağlayıcılar (ör. GitHub Copilot) abonelik üzerinden faturalandırır ve görev başına fiyat bildirmez; bu yüzden bu geçmiş token cinsinden gösterilir. Krediler için yukarıdaki sağlayıcı limitlerine bakın.",
+		"dailyTokens": "Günlük token",
+		"topTasksTokens": "En büyük görevler",
+		"byProvider": "Sağlayıcıya göre",
+		"history": "Kullanım geçmişi",
 		"limits": {
-			"title": "Provider limits",
-			"refresh": "Refresh",
-			"updated": "Updated {{time}}",
-			"loading": "Checking connected providers…",
-			"resets": "Resets {{date}}",
-			"signedOut": "Not signed in",
-			"noCopilot": "No Copilot quota",
-			"noKey": "API key missing or invalid",
-			"unsupported": "Custom base URL — not checked",
-			"error": "Couldn't load"
+			"title": "Sağlayıcı limitleri",
+			"refresh": "Yenile",
+			"updated": "Güncellendi: {{time}}",
+			"loading": "Bağlı sağlayıcılar kontrol ediliyor…",
+			"resets": "Sıfırlanma: {{date}}",
+			"signedOut": "Oturum açılmadı",
+			"noCopilot": "Copilot kotası yok",
+			"noKey": "API anahtarı eksik veya geçersiz",
+			"unsupported": "Özel temel URL — kontrol edilmedi",
+			"error": "Yüklenemedi"
 		},
-		"byModel": "By model",
-		"notRecorded": "Not recorded",
-		"noPrice": "no price",
+		"byModel": "Modele göre",
+		"notRecorded": "Kaydedilmedi",
+		"noPrice": "fiyat yok",
 		"tokensShort": "tok",
-		"chartLabel": "{{metric}}, total {{total}}"
+		"chartLabel": "{{metric}}, toplam {{total}}"
 	}
 }

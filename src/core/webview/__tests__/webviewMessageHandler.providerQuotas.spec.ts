@@ -91,6 +91,30 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 		expect(provider.postMessageToWebview).toHaveBeenCalled()
 	})
 
+	it("still answers, and logs, when the profile list cannot be read", async () => {
+		const log = vi.fn()
+		const provider = makeProvider({ log })
+		provider.providerSettingsManager.listConfig = vi.fn(async () => {
+			throw new Error("secret storage unavailable")
+		}) as never
+
+		await webviewMessageHandler(provider, { type: "requestProviderQuotas" })
+
+		expect(provider.postMessageToWebview).toHaveBeenCalledWith({ type: "providerQuotas", providerQuotas: [] })
+		expect(log).toHaveBeenCalledWith(expect.stringContaining("secret storage unavailable"))
+	})
+
+	it("still answers when the quota service throws something that is not an Error", async () => {
+		const log = vi.fn()
+		const provider = makeProvider({ log })
+		quotas.getProviderQuotas.mockRejectedValue("nope")
+
+		await webviewMessageHandler(provider, { type: "requestProviderQuotas" })
+
+		expect(provider.postMessageToWebview).toHaveBeenCalledWith({ type: "providerQuotas", providerQuotas: [] })
+		expect(log).toHaveBeenCalledWith(expect.stringContaining("Failed to load provider limits"))
+	})
+
 	it("answers with an empty list when there are no profiles", async () => {
 		quotas.getProviderQuotas.mockResolvedValue([])
 		const provider = makeProvider()

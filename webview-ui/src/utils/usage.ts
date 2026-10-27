@@ -131,17 +131,23 @@ function startOfLocalDay(ts: number): number {
 	return d.getTime()
 }
 
+/** Local midnight `days` calendar days before `ts` (not `days * 24h`, which is off by an hour across a DST change). */
+function startOfLocalDayMinus(ts: number, days: number): number {
+	const d = new Date(ts)
+	d.setHours(0, 0, 0, 0)
+	d.setDate(d.getDate() - days)
+	return d.getTime()
+}
+
 /** Inclusive lower bound for a range, or `undefined` for "all". */
 export function rangeStart(range: UsageRange, now: number): number | undefined {
-	const today = startOfLocalDay(now)
-
 	switch (range) {
 		case "today":
-			return today
+			return startOfLocalDay(now)
 		case "7d":
-			return today - 6 * DAY_MS
+			return startOfLocalDayMinus(now, 6)
 		case "30d":
-			return today - 29 * DAY_MS
+			return startOfLocalDayMinus(now, 29)
 		default:
 			return undefined
 	}
@@ -299,7 +305,12 @@ export function usageToCsv(history: HistoryItem[], options: UsageOptions): strin
 		"cost",
 	]
 
-	const escape = (value: string) => `"${value.replace(/"/g, '""').replace(/\r?\n/g, " ")}"`
+	// Spreadsheet apps evaluate a quoted cell that starts with = + - @ (or tab/CR) as a formula, and the
+	// task text is user- and model-controlled. A leading apostrophe makes the cell inert text.
+	const escape = (value: string) => {
+		const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+		return `"${safe.replace(/"/g, '""').replace(/\r?\n/g, " ")}"`
+	}
 
 	const rows = history
 		.filter(

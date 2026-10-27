@@ -5,6 +5,8 @@ import {
 	type ProviderSettings,
 } from "@roo-code/types"
 
+import { createHash } from "node:crypto"
+
 import { getGitHubCopilotQuota } from "./copilotQuota"
 import {
 	QuotaHttpError,
@@ -451,22 +453,34 @@ const KEYED_PROVIDERS: KeyedProvider[] = [
 	},
 ]
 
-async function fetchKeyed(
-	provider: KeyedProvider,
-	profiles: ProviderSettings[],
-	fetchImpl: Fetch,
-): Promise<ProviderQuota> {
-	const now = Date.now()
-	const creds = profiles
+type KeyedCredentials = ReturnType<KeyedProvider["credentials"]>
+
+/**
+ * The credentials to query with: a profile whose host is safe to query wins over
+ * one pointed at a custom gateway, which is only a fallback (reported as
+ * unsupported when nothing better exists).
+ */
+function pickCredentials(provider: KeyedProvider, profiles: ProviderSettings[]): KeyedCredentials | undefined {
+	const withKey = profiles
 		.filter((p) => p.apiProvider === provider.providerId)
 		.map(provider.credentials)
-		.find((c) => !!c.apiKey)
+		.filter((c) => !!c.apiKey)
+	return withKey.find((c) => c.urls?.length) ?? withKey[0]
+}
 
-	if (!creds?.apiKey) return { providerId: provider.providerId, ok: false, reason: "noKey", fetchedAt: now }
-
+/** Resolves without any network call when there is nothing to query. */
+function unqueryable(provider: KeyedProvider, creds: KeyedCredentials | undefined): ProviderQuota | undefined {
+	const base = { providerId: provider.providerId, ok: false, fetchedAt: Date.now() } as const
+	if (!creds?.apiKey) return { ...base, reason: "noKey" }
 	// SAFETY: never send a key to a host other than the provider's own API. A
 	// profile pointed at a custom gateway is reported as unsupported instead.
-	if (!creds.urls?.length) {
+	if (!creds.urls?.length) return { ...base, reason: "unsupported" }
+	return undefined
+}
+
+async function fetchKeyed(provider: KeyedProvider, creds: KeyedCredentials, fetchImpl: Fetch): Promise<ProviderQuota> {
+	const now = Date.now()
+	if (!creds.apiKey || !creds.urls?.length) {
 		return { providerId: provider.providerId, ok: false, reason: "unsupported", fetchedAt: now }
 	}
 
@@ -540,7 +554,49 @@ export async function loadProfiles(source: ProfileSource): Promise<ProviderSetti
 	return profiles.filter((p): p is ProviderSettings => !!p)
 }
 
-let cache: { at: number; key: string; result: ProviderQuota[] } | undefined
+// Successful results only, per provider and per credential set. A missing key, a
+// sign-out or a transient error is never pinned, so fixing it shows up on the
+// next open instead of after the TTL.
+const cache = new Map<string, { at: number; result: ProviderQuota }>()
+const inflight = new Map<string, Promise<ProviderQuota>>()
+
+/** Identifies the key and URLs a result was fetched with, without keeping the key itself. */
+function fingerprint(provider: KeyedProvider, creds: KeyedCredentials): string {
+	const digest = createHash("sha256")
+		.update(`${creds.apiKey}\n${(creds.urls ?? []).join("\n")}`)
+		.digest("hex")
+		.slice(0, 16)
+	return `${provider.providerId}:${digest}`
+}
+
+function quotaForKeyedProvider(
+	provider: KeyedProvider,
+	profiles: ProviderSettings[],
+	force: boolean,
+	fetchImpl: Fetch,
+): Promise<ProviderQuota> {
+	const creds = pickCredentials(provider, profiles)
+	const skipped = unqueryable(provider, creds)
+	if (skipped) return Promise.resolve(skipped)
+
+	const resolved = creds as KeyedCredentials
+	const key = fingerprint(provider, resolved)
+	const hit = cache.get(key)
+	if (!force && hit && Date.now() - hit.at < CACHE_TTL_MS) return Promise.resolve(hit.result)
+
+	// Concurrent callers (e.g. a refresh while the first load is still running) share one request.
+	const pending = inflight.get(key)
+	if (pending) return pending
+
+	const request = fetchKeyed(provider, resolved, fetchImpl)
+		.then((result) => {
+			if (result.ok) cache.set(key, { at: Date.now(), result })
+			return result
+		})
+		.finally(() => inflight.delete(key))
+	inflight.set(key, request)
+	return request
+}
 
 /**
  * Quotas for every *connected* provider with a usage API. `profiles` are the
@@ -552,22 +608,18 @@ export async function getProviderQuotas(
 	fetchImpl: Fetch = fetch,
 ): Promise<ProviderQuota[]> {
 	const connected = new Set(profiles.map((p) => p.apiProvider).filter(Boolean) as string[])
-	const key = [...connected].sort().join(",")
-
-	if (!force && cache && cache.key === key && Date.now() - cache.at < CACHE_TTL_MS) return cache.result
 
 	const tasks: Promise<ProviderQuota>[] = []
 	if (connected.has(providerIdentifiers.githubCopilot)) tasks.push(fetchCopilot(force))
 	for (const provider of KEYED_PROVIDERS) {
-		if (connected.has(provider.providerId)) tasks.push(fetchKeyed(provider, profiles, fetchImpl))
+		if (connected.has(provider.providerId)) tasks.push(quotaForKeyedProvider(provider, profiles, force, fetchImpl))
 	}
 
-	const result = await Promise.all(tasks)
-	cache = { at: Date.now(), key, result }
-	return result
+	return Promise.all(tasks)
 }
 
 /** @internal test hook */
 export function resetProviderQuotaCache() {
-	cache = undefined
+	cache.clear()
+	inflight.clear()
 }

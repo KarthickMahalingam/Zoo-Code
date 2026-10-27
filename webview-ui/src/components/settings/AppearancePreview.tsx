@@ -18,19 +18,22 @@ interface AppearancePreviewProps {
 export const AppearancePreview = ({ values, chatFontSize }: AppearancePreviewProps) => {
 	const { t } = useAppTranslation()
 
+	// Only set what the user has set. An unset value must resolve through the same CSS fallback the
+	// live UI uses (e.g. the terminal falls back to VS Code's editor font size), so the preview
+	// never shows a size the chat would not.
 	const vars: Record<string, string> = {}
 	for (const key of Object.keys(APPEARANCE_SETTINGS) as AppearanceKey[]) {
 		const setting = APPEARANCE_SETTINGS[key]
-		const v = clampAppearance(key, values[key]) ?? setting.fallback
-		vars[setting.cssVar] = setting.toCss(v)
+		const v = clampAppearance(key, values[key])
+		if (v !== undefined) vars[setting.cssVar] = setting.toCss(v)
 	}
 	if (chatFontSize) vars["--zoo-chat-font-size"] = `${chatFontSize}px`
 
 	const uiText: CSSProperties = {
-		fontSize: "calc(var(--zoo-chat-font-size, var(--vscode-font-size)) * var(--zoo-ui-scale))",
+		fontSize: "calc(var(--zoo-chat-font-size, var(--vscode-font-size)) * var(--zoo-ui-scale, 1))",
 	}
 	const row: CSSProperties = {
-		padding: "calc(10px * var(--zoo-spacing-scale)) calc(15px * var(--zoo-spacing-scale))",
+		padding: "calc(10px * var(--zoo-spacing-scale, 1)) calc(15px * var(--zoo-spacing-scale, 1))",
 	}
 	const mono: CSSProperties = {
 		fontFamily: "var(--vscode-editor-font-family, monospace)",

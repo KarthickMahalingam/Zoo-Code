@@ -3,10 +3,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { providerIdentifiers, type ProviderQuota } from "@roo-code/types"
 
+import { formatDateOnly, formatTimeOnly } from "@src/utils/format"
+
 import { ProviderLimits } from "../ProviderLimits"
 
 const post = vi.hoisted(() => vi.fn())
 vi.mock("@src/utils/vscode", () => ({ vscode: { postMessage: post } }))
+
+const prefs = vi.hoisted(() => ({ timeFormat: "auto" as string, dateFormat: "auto" as string }))
+vi.mock("@/context/ExtensionStateContext", () => ({ useExtensionState: () => prefs }))
+
+// Render the key plus its interpolation values so assertions can see the formatted output.
+vi.mock("@/i18n/TranslationContext", () => ({
+	useAppTranslation: () => ({
+		t: (key: string, options?: Record<string, string>) =>
+			options ? `${key} ${Object.values(options).join(" ")}` : key,
+	}),
+}))
 
 const respond = (providerQuotas: ProviderQuota[]) =>
 	act(() => {
@@ -14,7 +27,11 @@ const respond = (providerQuotas: ProviderQuota[]) =>
 	})
 
 describe("ProviderLimits", () => {
-	beforeEach(() => post.mockClear())
+	beforeEach(() => {
+		post.mockClear()
+		prefs.timeFormat = "auto"
+		prefs.dateFormat = "auto"
+	})
 
 	it("asks the extension for quotas on mount without forcing", () => {
 		render(<ProviderLimits />)
@@ -53,7 +70,10 @@ describe("ProviderLimits", () => {
 		expect(row.textContent).toContain("28%")
 		const bar = row.querySelector("[role=progressbar]")!
 		expect(bar.getAttribute("aria-valuenow")).toBe("28")
-		expect(row.textContent).toContain("resets")
+		// The translation key plus the formatted reset date, not just the key.
+		expect(row.textContent).toContain(
+			`settings:usage.limits.resets ${formatDateOnly(Date.parse("2026-11-01T12:00:00Z"))}`,
+		)
 	})
 
 	it("omits the bar for balance-only providers", () => {
@@ -71,13 +91,38 @@ describe("ProviderLimits", () => {
 		expect(row.querySelector("[role=progressbar]")).toBeNull()
 	})
 
-	it.each(["noKey", "signedOut", "unsupported", "error"] as const)("shows a quiet status for %s", (reason) => {
+	it("formats the reset date and the updated time with the user's date and time preferences", () => {
+		prefs.dateFormat = "ymd"
+		prefs.timeFormat = "24h"
 		render(<ProviderLimits />)
-		respond([{ providerId: providerIdentifiers.openrouter, ok: false, reason, fetchedAt: 1 }])
+		const resetAt = new Date(2026, 10, 1, 12, 0).getTime()
+		const fetchedAt = new Date(2026, 10, 1, 14, 41).getTime()
+		respond([
+			{
+				providerId: providerIdentifiers.openrouter,
+				ok: true,
+				fetchedAt,
+				windows: [{ id: "key_limit", valueLabel: "x", usedPercent: 10, resetAt }],
+			},
+		])
 		const row = screen.getByTestId(`provider-limit-${providerIdentifiers.openrouter}`)
-		expect(row.textContent).toContain(`settings:usage.limits.${reason}`.split(".").pop()!)
-		expect(row.querySelector("[role=progressbar]")).toBeNull()
+		expect(row.textContent).toContain("settings:usage.limits.resets 2026-11-01")
+		expect(screen.getByTestId("provider-limits-refresh").textContent).toContain(
+			`settings:usage.limits.updated ${formatTimeOnly(fetchedAt, "24h")}`,
+		)
+		expect(screen.getByTestId("provider-limits-refresh").textContent).not.toMatch(/\b(AM|PM)\b/i)
 	})
+
+	it.each(["noKey", "noCopilot", "signedOut", "unsupported", "error"] as const)(
+		"shows the quiet status text for %s",
+		(reason) => {
+			render(<ProviderLimits />)
+			respond([{ providerId: providerIdentifiers.openrouter, ok: false, reason, fetchedAt: 1 }])
+			const row = screen.getByTestId(`provider-limit-${providerIdentifiers.openrouter}`)
+			expect(row.textContent).toContain(`settings:usage.limits.${reason}`)
+			expect(row.querySelector("[role=progressbar]")).toBeNull()
+		},
+	)
 
 	it.each([
 		[50, "bg-vscode-charts-green"],

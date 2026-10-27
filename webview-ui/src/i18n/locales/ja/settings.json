@@ -43,7 +43,7 @@
 		"about": "Zoo Codeについて",
 		"skills": "Skills",
 		"rules": "ルール",
-		"usage": "Usage"
+		"usage": "使用状況"
 	},
 	"about": {
 		"bugReport": {
@@ -1182,29 +1182,29 @@
 			"description": "有効にすると、Zooが作成した（変更ではなく）ファイルのタブも、変更を承認した後に自動的に閉じられます。"
 		},
 		"appearance": {
-			"reset": "Reset to default",
+			"reset": "デフォルトに戻す",
 			"interfaceFontScale": {
-				"label": "Interface font size",
-				"description": "Scales all Zoo Code text. 100% matches VS Code."
+				"label": "インターフェースのフォントサイズ",
+				"description": "Zoo Code のすべてのテキストを拡大縮小します。100% は VS Code と同じです。"
 			},
 			"terminalFontSize": {
-				"label": "Terminal font size",
-				"description": "Font size for command output shown in chat."
+				"label": "ターミナルのフォントサイズ",
+				"description": "チャットに表示されるコマンド出力のフォントサイズ。"
 			},
 			"editorFontSize": {
-				"label": "Editor font size",
-				"description": "Font size for code blocks and diffs shown in chat."
+				"label": "エディターのフォントサイズ",
+				"description": "チャットに表示されるコードブロックと diff のフォントサイズ。"
 			},
 			"spacingScale": {
-				"label": "Spacing density",
-				"description": "Padding between chat messages. Lower is more compact."
+				"label": "余白の密度",
+				"description": "チャットメッセージ間の余白。値が小さいほどコンパクトになります。"
 			},
-			"preview": "Preview",
+			"preview": "プレビュー",
 			"sample": {
-				"you": "You",
+				"you": "あなた",
 				"zoo": "Zoo",
-				"user": "Add a loading spinner to the Save button",
-				"assistant": "Done. I added a spinner that shows while the request is in flight."
+				"user": "保存ボタンに読み込み中スピナーを追加して",
+				"assistant": "完了しました。リクエスト処理中に表示されるスピナーを追加しました。"
 			}
 		}
 	},
@@ -1262,90 +1262,90 @@
 		"footer": "スキルライターモードで独自のスキルを作成します。<MarketplaceLink>モードマーケットプレイス</MarketplaceLink>で入手可能です。"
 	},
 	"language": {
-		"description": "Language and date/time display.",
-		"languageTitle": "Language",
-		"displayLanguage": "Display language",
-		"displayLanguageDescription": "Language for Zoo Code's interface.",
-		"dateTimeTitle": "Date & time",
+		"description": "言語と日付/時刻の表示。",
+		"languageTitle": "言語",
+		"displayLanguage": "表示言語",
+		"displayLanguageDescription": "Zoo Code のインターフェースの言語。",
+		"dateTimeTitle": "日付と時刻",
 		"timeFormat": {
-			"label": "Time format",
-			"description": "Auto follows your system locale.",
+			"label": "時刻形式",
+			"description": "自動は表示言語に従います。",
 			"options": {
-				"auto": "Auto",
-				"12h": "12-hour",
-				"24h": "24-hour"
+				"auto": "自動",
+				"12h": "12時間制",
+				"24h": "24時間制"
 			}
 		},
 		"dateFormat": {
-			"label": "Date format",
-			"example": "e.g. {{example}}",
+			"label": "日付形式",
+			"example": "例: {{example}}",
 			"options": {
-				"auto": "Auto",
+				"auto": "自動",
 				"mdy": "MM/DD/YYYY",
 				"dmy": "DD/MM/YYYY",
 				"ymd": "YYYY-MM-DD"
 			}
 		},
 		"relativeTimes": {
-			"label": "Show relative times (\"5 min ago\") in task history"
+			"label": "タスク履歴に相対時間(「5分前」)を表示する"
 		},
 		"preview": {
-			"title": "Preview",
-			"chat": "Chat message",
-			"history": "Task history",
-			"relative": "5 min ago",
-			"hover": "(hover: {{value}})"
+			"title": "プレビュー",
+			"chat": "チャットメッセージ",
+			"history": "タスク履歴",
+			"relative": "5分前",
+			"hover": "(ホバー: {{value}})"
 		}
 	},
 	"usage": {
-		"description": "Tokens and cost from your Zoo Code task history on this machine.",
+		"description": "このマシン上の Zoo Code のタスク履歴によるトークンとコスト。",
 		"range": {
-			"label": "Time range",
-			"today": "Today",
-			"7d": "7 days",
-			"30d": "30 days",
-			"all": "All time"
+			"label": "期間",
+			"today": "今日",
+			"7d": "7日間",
+			"30d": "30日間",
+			"all": "全期間"
 		},
 		"scope": {
-			"label": "Show",
-			"workspace": "This workspace",
-			"all": "All workspaces"
+			"label": "表示",
+			"workspace": "このワークスペース",
+			"all": "すべてのワークスペース"
 		},
-		"empty": "No tasks in this time range.",
+		"empty": "この期間にタスクはありません。",
 		"stats": {
-			"cost": "cost",
-			"tokens": "tokens",
-			"tasks": "tasks",
-			"cacheHit": "{{percent}}% from cache",
-			"inOut": "{{input}} in · {{output}} out",
-			"models": "models"
+			"cost": "コスト",
+			"tokens": "トークン",
+			"tasks": "タスク",
+			"cacheHit": "{{percent}}% がキャッシュから",
+			"inOut": "入力 {{input}} · 出力 {{output}}",
+			"models": "モデル"
 		},
-		"dailyCost": "Daily cost",
-		"byMode": "By mode",
-		"topTasks": "Most expensive tasks",
-		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
-		"exportCsv": "Export CSV",
-		"noPricingNote": "Some providers (e.g. GitHub Copilot) bill by subscription and don't report a per-task price, so this history is shown in tokens. See Provider limits above for credits.",
-		"dailyTokens": "Daily tokens",
-		"topTasksTokens": "Largest tasks",
-		"byProvider": "By provider",
-		"history": "Usage history",
+		"dailyCost": "日別コスト",
+		"byMode": "モード別",
+		"topTasks": "コストの高いタスク",
+		"disclaimer": "コストはタスク履歴からの推定値であり、プロバイダーの請求額と異なる場合があります。",
+		"exportCsv": "CSV をエクスポート",
+		"noPricingNote": "一部のプロバイダー(GitHub Copilot など)はサブスクリプション課金で、タスクごとの価格を報告しないため、この履歴はトークンで表示されます。クレジットについては上のプロバイダーの上限を参照してください。",
+		"dailyTokens": "日別トークン",
+		"topTasksTokens": "大きいタスク",
+		"byProvider": "プロバイダー別",
+		"history": "使用履歴",
 		"limits": {
-			"title": "Provider limits",
-			"refresh": "Refresh",
-			"updated": "Updated {{time}}",
-			"loading": "Checking connected providers…",
-			"resets": "Resets {{date}}",
-			"signedOut": "Not signed in",
-			"noCopilot": "No Copilot quota",
-			"noKey": "API key missing or invalid",
-			"unsupported": "Custom base URL — not checked",
-			"error": "Couldn't load"
+			"title": "プロバイダーの上限",
+			"refresh": "更新",
+			"updated": "{{time}} に更新",
+			"loading": "接続済みのプロバイダーを確認中…",
+			"resets": "{{date}} にリセット",
+			"signedOut": "サインインしていません",
+			"noCopilot": "Copilot のクォータなし",
+			"noKey": "API キーがないか無効です",
+			"unsupported": "カスタムベース URL — 確認していません",
+			"error": "読み込めませんでした"
 		},
-		"byModel": "By model",
-		"notRecorded": "Not recorded",
-		"noPrice": "no price",
-		"tokensShort": "tok",
-		"chartLabel": "{{metric}}, total {{total}}"
+		"byModel": "モデル別",
+		"notRecorded": "記録なし",
+		"noPrice": "価格なし",
+		"tokensShort": "トークン",
+		"chartLabel": "{{metric}}、合計 {{total}}"
 	}
 }

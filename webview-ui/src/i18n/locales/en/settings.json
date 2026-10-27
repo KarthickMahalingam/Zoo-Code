@@ -1269,7 +1269,7 @@
 		"dateTimeTitle": "Date & time",
 		"timeFormat": {
 			"label": "Time format",
-			"description": "Auto follows your system locale.",
+			"description": "Auto follows your display language.",
 			"options": {
 				"auto": "Auto",
 				"12h": "12-hour",

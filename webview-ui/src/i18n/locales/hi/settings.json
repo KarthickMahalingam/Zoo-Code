@@ -43,7 +43,7 @@
 		"about": "परिचय",
 		"skills": "Skills",
 		"rules": "नियम",
-		"usage": "Usage"
+		"usage": "उपयोग"
 	},
 	"about": {
 		"bugReport": {
@@ -1182,29 +1182,29 @@
 			"description": "Saksham hone par, Zoo dvara banaayi gayi (sanshodhit nahin) files ki tabs ko bhi parivartan svikaar hone ke baad svachalit roop se band kar diya jaata hai."
 		},
 		"appearance": {
-			"reset": "Reset to default",
+			"reset": "डिफ़ॉल्ट पर रीसेट करें",
 			"interfaceFontScale": {
-				"label": "Interface font size",
-				"description": "Scales all Zoo Code text. 100% matches VS Code."
+				"label": "इंटरफ़ेस फ़ॉन्ट आकार",
+				"description": "Zoo Code के सारे टेक्स्ट को स्केल करता है। 100% VS Code के बराबर है।"
 			},
 			"terminalFontSize": {
-				"label": "Terminal font size",
-				"description": "Font size for command output shown in chat."
+				"label": "टर्मिनल फ़ॉन्ट आकार",
+				"description": "चैट में दिखाए गए कमांड आउटपुट का फ़ॉन्ट आकार।"
 			},
 			"editorFontSize": {
-				"label": "Editor font size",
-				"description": "Font size for code blocks and diffs shown in chat."
+				"label": "एडिटर फ़ॉन्ट आकार",
+				"description": "चैट में दिखाए गए कोड ब्लॉक और डिफ़ का फ़ॉन्ट आकार।"
 			},
 			"spacingScale": {
-				"label": "Spacing density",
-				"description": "Padding between chat messages. Lower is more compact."
+				"label": "स्पेसिंग घनत्व",
+				"description": "चैट संदेशों के बीच की पैडिंग। कम मान अधिक सघन होता है।"
 			},
-			"preview": "Preview",
+			"preview": "पूर्वावलोकन",
 			"sample": {
-				"you": "You",
+				"you": "आप",
 				"zoo": "Zoo",
-				"user": "Add a loading spinner to the Save button",
-				"assistant": "Done. I added a spinner that shows while the request is in flight."
+				"user": "Save बटन में लोडिंग स्पिनर जोड़ें",
+				"assistant": "हो गया। मैंने एक स्पिनर जोड़ा है जो अनुरोध चलने के दौरान दिखता है।"
 			}
 		}
 	},
@@ -1262,90 +1262,90 @@
 		"footer": "Skill Writer मोड के साथ अपने स्वयं के Skills बनाएं, <MarketplaceLink>Modes Marketplace</MarketplaceLink> में उपलब्ध।"
 	},
 	"language": {
-		"description": "Language and date/time display.",
-		"languageTitle": "Language",
-		"displayLanguage": "Display language",
-		"displayLanguageDescription": "Language for Zoo Code's interface.",
-		"dateTimeTitle": "Date & time",
+		"description": "भाषा और तारीख़/समय का प्रदर्शन।",
+		"languageTitle": "भाषा",
+		"displayLanguage": "प्रदर्शन भाषा",
+		"displayLanguageDescription": "Zoo Code के इंटरफ़ेस की भाषा।",
+		"dateTimeTitle": "तारीख़ और समय",
 		"timeFormat": {
-			"label": "Time format",
-			"description": "Auto follows your system locale.",
+			"label": "समय प्रारूप",
+			"description": "ऑटो आपकी प्रदर्शन भाषा का पालन करता है।",
 			"options": {
-				"auto": "Auto",
-				"12h": "12-hour",
-				"24h": "24-hour"
+				"auto": "ऑटो",
+				"12h": "12-घंटे",
+				"24h": "24-घंटे"
 			}
 		},
 		"dateFormat": {
-			"label": "Date format",
-			"example": "e.g. {{example}}",
+			"label": "तारीख़ प्रारूप",
+			"example": "उदा. {{example}}",
 			"options": {
-				"auto": "Auto",
+				"auto": "ऑटो",
 				"mdy": "MM/DD/YYYY",
 				"dmy": "DD/MM/YYYY",
 				"ymd": "YYYY-MM-DD"
 			}
 		},
 		"relativeTimes": {
-			"label": "Show relative times (\"5 min ago\") in task history"
+			"label": "टास्क इतिहास में सापेक्ष समय (\"5 मिनट पहले\") दिखाएँ"
 		},
 		"preview": {
-			"title": "Preview",
-			"chat": "Chat message",
-			"history": "Task history",
-			"relative": "5 min ago",
-			"hover": "(hover: {{value}})"
+			"title": "पूर्वावलोकन",
+			"chat": "चैट संदेश",
+			"history": "टास्क इतिहास",
+			"relative": "5 मिनट पहले",
+			"hover": "(होवर: {{value}})"
 		}
 	},
 	"usage": {
-		"description": "Tokens and cost from your Zoo Code task history on this machine.",
+		"description": "इस मशीन पर आपके Zoo Code टास्क इतिहास से टोकन और लागत।",
 		"range": {
-			"label": "Time range",
-			"today": "Today",
-			"7d": "7 days",
-			"30d": "30 days",
-			"all": "All time"
+			"label": "समय सीमा",
+			"today": "आज",
+			"7d": "7 दिन",
+			"30d": "30 दिन",
+			"all": "सभी समय"
 		},
 		"scope": {
-			"label": "Show",
-			"workspace": "This workspace",
-			"all": "All workspaces"
+			"label": "दिखाएँ",
+			"workspace": "यह वर्कस्पेस",
+			"all": "सभी वर्कस्पेस"
 		},
-		"empty": "No tasks in this time range.",
+		"empty": "इस समय सीमा में कोई टास्क नहीं।",
 		"stats": {
-			"cost": "cost",
-			"tokens": "tokens",
-			"tasks": "tasks",
-			"cacheHit": "{{percent}}% from cache",
-			"inOut": "{{input}} in · {{output}} out",
-			"models": "models"
+			"cost": "लागत",
+			"tokens": "टोकन",
+			"tasks": "टास्क",
+			"cacheHit": "{{percent}}% कैश से",
+			"inOut": "{{input}} इनपुट · {{output}} आउटपुट",
+			"models": "मॉडल"
 		},
-		"dailyCost": "Daily cost",
-		"byMode": "By mode",
-		"topTasks": "Most expensive tasks",
-		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
-		"exportCsv": "Export CSV",
-		"noPricingNote": "Some providers (e.g. GitHub Copilot) bill by subscription and don't report a per-task price, so this history is shown in tokens. See Provider limits above for credits.",
-		"dailyTokens": "Daily tokens",
-		"topTasksTokens": "Largest tasks",
-		"byProvider": "By provider",
-		"history": "Usage history",
+		"dailyCost": "दैनिक लागत",
+		"byMode": "मोड के अनुसार",
+		"topTasks": "सबसे महंगे टास्क",
+		"disclaimer": "लागत टास्क इतिहास से अनुमान हैं और आपके प्रदाता के बिल से भिन्न हो सकती हैं।",
+		"exportCsv": "CSV निर्यात करें",
+		"noPricingNote": "कुछ प्रदाता (जैसे GitHub Copilot) सदस्यता के आधार पर बिल करते हैं और प्रति-टास्क मूल्य नहीं बताते, इसलिए यह इतिहास टोकन में दिखाया गया है। क्रेडिट के लिए ऊपर प्रदाता सीमाएँ देखें।",
+		"dailyTokens": "दैनिक टोकन",
+		"topTasksTokens": "सबसे बड़े टास्क",
+		"byProvider": "प्रदाता के अनुसार",
+		"history": "उपयोग इतिहास",
 		"limits": {
-			"title": "Provider limits",
-			"refresh": "Refresh",
-			"updated": "Updated {{time}}",
-			"loading": "Checking connected providers…",
-			"resets": "Resets {{date}}",
-			"signedOut": "Not signed in",
-			"noCopilot": "No Copilot quota",
-			"noKey": "API key missing or invalid",
-			"unsupported": "Custom base URL — not checked",
-			"error": "Couldn't load"
+			"title": "प्रदाता सीमाएँ",
+			"refresh": "रीफ़्रेश करें",
+			"updated": "{{time}} को अपडेट किया गया",
+			"loading": "कनेक्टेड प्रदाताओं की जाँच हो रही है…",
+			"resets": "{{date}} को रीसेट होगा",
+			"signedOut": "साइन इन नहीं है",
+			"noCopilot": "कोई Copilot कोटा नहीं",
+			"noKey": "API कुंजी अनुपलब्ध या अमान्य",
+			"unsupported": "कस्टम बेस URL — जाँच नहीं की गई",
+			"error": "लोड नहीं हो सका"
 		},
-		"byModel": "By model",
-		"notRecorded": "Not recorded",
-		"noPrice": "no price",
-		"tokensShort": "tok",
-		"chartLabel": "{{metric}}, total {{total}}"
+		"byModel": "मॉडल के अनुसार",
+		"notRecorded": "दर्ज नहीं",
+		"noPrice": "कोई मूल्य नहीं",
+		"tokensShort": "टोकन",
+		"chartLabel": "{{metric}}, कुल {{total}}"
 	}
 }

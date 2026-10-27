@@ -43,7 +43,7 @@
 		"about": "Sobre Zoo Code",
 		"skills": "Skills",
 		"rules": "Regles",
-		"usage": "Usage"
+		"usage": "Ús"
 	},
 	"about": {
 		"bugReport": {
@@ -1182,29 +1182,29 @@
 			"description": "Quan esta activat, les pestanyes dels fitxers que Zoo ha creat (en lloc de modificar) tambe es tanquen automaticament despres d'acceptar el canvi."
 		},
 		"appearance": {
-			"reset": "Reset to default",
+			"reset": "Restableix el valor per defecte",
 			"interfaceFontScale": {
-				"label": "Interface font size",
-				"description": "Scales all Zoo Code text. 100% matches VS Code."
+				"label": "Mida de la lletra de la interfície",
+				"description": "Escala tot el text de Zoo Code. El 100% coincideix amb VS Code."
 			},
 			"terminalFontSize": {
-				"label": "Terminal font size",
-				"description": "Font size for command output shown in chat."
+				"label": "Mida de la lletra del terminal",
+				"description": "Mida de la lletra de la sortida d'ordres mostrada al xat."
 			},
 			"editorFontSize": {
-				"label": "Editor font size",
-				"description": "Font size for code blocks and diffs shown in chat."
+				"label": "Mida de la lletra de l'editor",
+				"description": "Mida de la lletra dels blocs de codi i dels diffs mostrats al xat."
 			},
 			"spacingScale": {
-				"label": "Spacing density",
-				"description": "Padding between chat messages. Lower is more compact."
+				"label": "Densitat de l'espaiat",
+				"description": "Farciment entre els missatges del xat. Un valor més baix és més compacte."
 			},
-			"preview": "Preview",
+			"preview": "Previsualització",
 			"sample": {
-				"you": "You",
+				"you": "Tu",
 				"zoo": "Zoo",
-				"user": "Add a loading spinner to the Save button",
-				"assistant": "Done. I added a spinner that shows while the request is in flight."
+				"user": "Afegeix un indicador de càrrega al botó Desa",
+				"assistant": "Fet. He afegit un indicador que es mostra mentre la sol·licitud està en curs."
 			}
 		}
 	},
@@ -1262,89 +1262,89 @@
 		"footer": "Crea les teves pròpies skills amb el mode Skill Writer, disponible al <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
 	},
 	"language": {
-		"description": "Language and date/time display.",
-		"languageTitle": "Language",
-		"displayLanguage": "Display language",
-		"displayLanguageDescription": "Language for Zoo Code's interface.",
-		"dateTimeTitle": "Date & time",
+		"description": "Idioma i visualització de data i hora.",
+		"languageTitle": "Idioma",
+		"displayLanguage": "Idioma de visualització",
+		"displayLanguageDescription": "Idioma de la interfície de Zoo Code.",
+		"dateTimeTitle": "Data i hora",
 		"timeFormat": {
-			"label": "Time format",
-			"description": "Auto follows your system locale.",
+			"label": "Format de l'hora",
+			"description": "Automàtic segueix l'idioma de visualització.",
 			"options": {
-				"auto": "Auto",
-				"12h": "12-hour",
-				"24h": "24-hour"
+				"auto": "Automàtic",
+				"12h": "12 hores",
+				"24h": "24 hores"
 			}
 		},
 		"dateFormat": {
-			"label": "Date format",
-			"example": "e.g. {{example}}",
+			"label": "Format de la data",
+			"example": "p. ex. {{example}}",
 			"options": {
-				"auto": "Auto",
-				"mdy": "MM/DD/YYYY",
-				"dmy": "DD/MM/YYYY",
-				"ymd": "YYYY-MM-DD"
+				"auto": "Automàtic",
+				"mdy": "MM/DD/AAAA",
+				"dmy": "DD/MM/AAAA",
+				"ymd": "AAAA-MM-DD"
 			}
 		},
 		"relativeTimes": {
-			"label": "Show relative times (\"5 min ago\") in task history"
+			"label": "Mostra els temps relatius (\"fa 5 min\") a l'historial de tasques"
 		},
 		"preview": {
-			"title": "Preview",
-			"chat": "Chat message",
-			"history": "Task history",
-			"relative": "5 min ago",
-			"hover": "(hover: {{value}})"
+			"title": "Previsualització",
+			"chat": "Missatge del xat",
+			"history": "Historial de tasques",
+			"relative": "fa 5 min",
+			"hover": "(en passar el cursor: {{value}})"
 		}
 	},
 	"usage": {
-		"description": "Tokens and cost from your Zoo Code task history on this machine.",
+		"description": "Tokens i cost de l'historial de tasques de Zoo Code en aquesta màquina.",
 		"range": {
-			"label": "Time range",
-			"today": "Today",
-			"7d": "7 days",
-			"30d": "30 days",
-			"all": "All time"
+			"label": "Interval de temps",
+			"today": "Avui",
+			"7d": "7 dies",
+			"30d": "30 dies",
+			"all": "Tot el temps"
 		},
 		"scope": {
-			"label": "Show",
-			"workspace": "This workspace",
-			"all": "All workspaces"
+			"label": "Mostra",
+			"workspace": "Aquest espai de treball",
+			"all": "Tots els espais de treball"
 		},
-		"empty": "No tasks in this time range.",
+		"empty": "No hi ha tasques en aquest interval de temps.",
 		"stats": {
 			"cost": "cost",
 			"tokens": "tokens",
-			"tasks": "tasks",
-			"cacheHit": "{{percent}}% from cache",
-			"inOut": "{{input}} in · {{output}} out",
+			"tasks": "tasques",
+			"cacheHit": "{{percent}}% de la memòria cau",
+			"inOut": "{{input}} d'entrada · {{output}} de sortida",
 			"models": "models"
 		},
-		"dailyCost": "Daily cost",
-		"byMode": "By mode",
-		"topTasks": "Most expensive tasks",
-		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
-		"exportCsv": "Export CSV",
-		"noPricingNote": "Some providers (e.g. GitHub Copilot) bill by subscription and don't report a per-task price, so this history is shown in tokens. See Provider limits above for credits.",
-		"dailyTokens": "Daily tokens",
-		"topTasksTokens": "Largest tasks",
-		"byProvider": "By provider",
-		"history": "Usage history",
+		"dailyCost": "Cost diari",
+		"byMode": "Per mode",
+		"topTasks": "Tasques més cares",
+		"disclaimer": "Els costos són estimacions de l'historial de tasques i poden diferir de la factura del teu proveïdor.",
+		"exportCsv": "Exporta CSV",
+		"noPricingNote": "Alguns proveïdors (p. ex. GitHub Copilot) facturen per subscripció i no informen d'un preu per tasca, per això aquest historial es mostra en tokens. Consulta els límits dels proveïdors a dalt per als crèdits.",
+		"dailyTokens": "Tokens diaris",
+		"topTasksTokens": "Tasques més grans",
+		"byProvider": "Per proveïdor",
+		"history": "Historial d'ús",
 		"limits": {
-			"title": "Provider limits",
-			"refresh": "Refresh",
-			"updated": "Updated {{time}}",
-			"loading": "Checking connected providers…",
-			"resets": "Resets {{date}}",
-			"signedOut": "Not signed in",
-			"noCopilot": "No Copilot quota",
-			"noKey": "API key missing or invalid",
-			"unsupported": "Custom base URL — not checked",
-			"error": "Couldn't load"
+			"title": "Límits dels proveïdors",
+			"refresh": "Actualitza",
+			"updated": "Actualitzat {{time}}",
+			"loading": "Comprovant els proveïdors connectats…",
+			"resets": "Es restableix {{date}}",
+			"signedOut": "No has iniciat sessió",
+			"noCopilot": "Sense quota de Copilot",
+			"noKey": "Clau d'API absent o no vàlida",
+			"unsupported": "URL base personalitzada — no comprovat",
+			"error": "No s'ha pogut carregar"
 		},
-		"byModel": "By model",
-		"notRecorded": "Not recorded",
-		"noPrice": "no price",
+		"byModel": "Per model",
+		"notRecorded": "No registrat",
+		"noPrice": "sense preu",
 		"tokensShort": "tok",
 		"chartLabel": "{{metric}}, total {{total}}"
 	}
