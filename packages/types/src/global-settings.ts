@@ -281,18 +281,21 @@ export const globalSettingsSchema = z.object({
 	 */
 	chatFontSize: z.number().int().min(8).max(32).nullish(),
 	/**
-	 * CSS font-family for Zoo Code's chat prose. `null`/unset inherits `--vscode-font-family`.
+	 * Scale (percent) applied to Zoo Code's interface text. `null`/unset = 100.
 	 */
-	interfaceFontFamily: z.string().max(256).nullish(),
+	interfaceFontScale: z.number().int().min(50).max(200).nullish(),
 	/**
-	 * CSS font-family for inline/fenced code in chat. `null`/unset inherits `--vscode-editor-font-family`.
+	 * Font size (px) for command/terminal output shown in chat. `null`/unset inherits.
 	 */
-	codeFontFamily: z.string().max(256).nullish(),
+	terminalFontSize: z.number().int().min(8).max(32).nullish(),
 	/**
-	 * Vertical/horizontal spacing scale for chat rows.
-	 * @default "comfortable"
+	 * Font size (px) for code blocks and diffs shown in chat. `null`/unset inherits.
 	 */
-	spacingDensity: z.enum(["compact", "comfortable", "spacious"]).optional(),
+	editorFontSize: z.number().int().min(8).max(32).nullish(),
+	/**
+	 * Scale (percent) applied to chat row padding. `null`/unset = 100.
+	 */
+	spacingScale: z.number().int().min(50).max(200).nullish(),
 	/**
 	 * Clock format used when rendering timestamps. "auto" follows the display language's locale.
 	 * @default "auto"

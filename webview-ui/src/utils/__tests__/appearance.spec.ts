@@ -1,56 +1,56 @@
-import { applyFontVariable, sanitizeFontFamily } from "../appearance"
+import { APPEARANCE_SETTINGS, applyAppearanceVariables, clampAppearance } from "../appearance"
 
-describe("sanitizeFontFamily", () => {
-	it.each([
-		["Inter", "Inter"],
-		["  Inter, sans-serif  ", "Inter, sans-serif"],
-		['"JetBrains Mono", monospace', '"JetBrains Mono", monospace'],
-		["'Fira Code', Menlo", "'Fira Code', Menlo"],
-		["Noto Sans CJK JP", "Noto Sans CJK JP"],
-		["ヒラギノ角ゴ", "ヒラギノ角ゴ"],
-	])("accepts %j", (input, expected) => {
-		expect(sanitizeFontFamily(input)).toBe(expected)
+describe("clampAppearance", () => {
+	it("passes through in-range integers", () => {
+		expect(clampAppearance("interfaceFontScale", 110)).toBe(110)
+		expect(clampAppearance("terminalFontSize", 14)).toBe(14)
 	})
 
-	it.each([
-		["", "empty"],
-		["   ", "whitespace"],
-		["Inter; color: red", "semicolon"],
-		["Inter}body{display:none", "braces"],
-		["url(http://evil)", "url()"],
-		["Inter</style>", "angle brackets"],
-		["a".repeat(257), "too long"],
-	])("rejects %j (%s)", (input) => {
-		expect(sanitizeFontFamily(input)).toBeUndefined()
+	it("clamps to the setting's range", () => {
+		expect(clampAppearance("interfaceFontScale", 10)).toBe(APPEARANCE_SETTINGS.interfaceFontScale.min)
+		expect(clampAppearance("editorFontSize", 999)).toBe(APPEARANCE_SETTINGS.editorFontSize.max)
 	})
 
-	it("handles null/undefined", () => {
-		expect(sanitizeFontFamily(null)).toBeUndefined()
-		expect(sanitizeFontFamily(undefined)).toBeUndefined()
+	it("rounds fractional input", () => {
+		expect(clampAppearance("spacingScale", 87.6)).toBe(88)
+	})
+
+	it("treats null/undefined/NaN as unset", () => {
+		expect(clampAppearance("spacingScale", undefined)).toBeUndefined()
+		expect(clampAppearance("spacingScale", null)).toBeUndefined()
+		expect(clampAppearance("spacingScale", NaN)).toBeUndefined()
 	})
 })
 
-describe("applyFontVariable", () => {
+describe("applyAppearanceVariables", () => {
 	let root: HTMLElement
 
 	beforeEach(() => {
 		root = document.createElement("div")
 	})
 
-	it("sets the variable for a valid font", () => {
-		applyFontVariable("--zoo-chat-font-family", "Inter, sans-serif", root)
-		expect(root.style.getPropertyValue("--zoo-chat-font-family")).toBe("Inter, sans-serif")
+	it("writes percent settings as unitless multipliers and px settings as px", () => {
+		applyAppearanceVariables(root, {
+			interfaceFontScale: 120,
+			terminalFontSize: 14,
+			editorFontSize: 13,
+			spacingScale: 80,
+		})
+		expect(root.style.getPropertyValue("--zoo-ui-scale")).toBe("1.2")
+		expect(root.style.getPropertyValue("--zoo-terminal-font-size")).toBe("14px")
+		expect(root.style.getPropertyValue("--zoo-editor-font-size")).toBe("13px")
+		expect(root.style.getPropertyValue("--zoo-spacing-scale")).toBe("0.8")
 	})
 
-	it("removes the variable when cleared", () => {
-		applyFontVariable("--zoo-chat-font-family", "Inter", root)
-		applyFontVariable("--zoo-chat-font-family", undefined, root)
-		expect(root.style.getPropertyValue("--zoo-chat-font-family")).toBe("")
+	it("removes overrides for unset values so stylesheet defaults apply", () => {
+		applyAppearanceVariables(root, { interfaceFontScale: 120, terminalFontSize: 14 })
+		applyAppearanceVariables(root, { interfaceFontScale: undefined, terminalFontSize: null })
+		expect(root.style.getPropertyValue("--zoo-ui-scale")).toBe("")
+		expect(root.style.getPropertyValue("--zoo-terminal-font-size")).toBe("")
 	})
 
-	it("removes the variable for an invalid value instead of applying it", () => {
-		applyFontVariable("--zoo-chat-font-family", "Inter", root)
-		applyFontVariable("--zoo-chat-font-family", "Inter; x: y", root)
-		expect(root.style.getPropertyValue("--zoo-chat-font-family")).toBe("")
+	it("clamps out-of-range values before writing", () => {
+		applyAppearanceVariables(root, { spacingScale: 1000 })
+		expect(root.style.getPropertyValue("--zoo-spacing-scale")).toBe("2")
 	})
 })

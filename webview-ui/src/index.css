@@ -27,10 +27,10 @@
 @theme {
 	--font-display: var(--vscode-font-family);
 
-	--text-xs: calc(var(--vscode-font-size) * 0.85);
-	--text-sm: calc(var(--vscode-font-size) * 0.9);
-	--text-base: var(--vscode-font-size);
-	--text-lg: calc(var(--vscode-font-size) * 1.1);
+	--text-xs: calc(var(--vscode-font-size) * var(--zoo-ui-scale, 1) * 0.85);
+	--text-sm: calc(var(--vscode-font-size) * var(--zoo-ui-scale, 1) * 0.9);
+	--text-base: calc(var(--vscode-font-size) * var(--zoo-ui-scale, 1));
+	--text-lg: calc(var(--vscode-font-size) * var(--zoo-ui-scale, 1) * 1.1);
 
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
@@ -271,22 +271,25 @@ html {
 	--zoo-chat-font-size: var(--vscode-font-size);
 
 	/*
-	 * Spacing density tokens for chat rows. `data-zoo-density` is set on <html>
-	 * from the "Spacing density" UI setting; "comfortable" matches the
-	 * historical hardcoded padding (10px / 15px) so defaults are unchanged.
+	 * Appearance settings (UI tab). Each is overridden inline on <html> by
+	 * ExtensionStateContext only when the user sets it, so the defaults below
+	 * reproduce the historical look exactly (scale 1, VS Code sizes, 10/15px).
 	 */
-	--zoo-row-py: 10px;
-	--zoo-row-px: 15px;
+	--zoo-ui-scale: 1;
+	--zoo-spacing-scale: 1;
+	--zoo-terminal-font-size: var(--vscode-editor-font-size, 13px);
+	--zoo-editor-font-size: var(--vscode-editor-font-size, 13px);
+	--zoo-row-py: calc(10px * var(--zoo-spacing-scale));
+	--zoo-row-px: calc(15px * var(--zoo-spacing-scale));
 }
 
-html[data-zoo-density="compact"] {
-	--zoo-row-py: 5px;
-	--zoo-row-px: 10px;
-}
-
-html[data-zoo-density="spacious"] {
-	--zoo-row-py: 16px;
-	--zoo-row-px: 18px;
+/*
+ * Interface font size scales the whole webview's base text. Tailwind's text-*
+ * tokens and most components derive from body font-size, so one rule covers
+ * chat, settings and history without touching each component.
+ */
+body {
+	font-size: calc(var(--vscode-font-size) * var(--zoo-ui-scale));
 }
 
 body {
@@ -562,6 +565,7 @@ input[cmdk-input]:focus {
 .diff-view pre,
 .diff-view code,
 .diff-view .hljs {
+	font-size: var(--zoo-editor-font-size);
 	font-family:
 		var(--vscode-editor-font-family), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 		"Courier New", monospace;

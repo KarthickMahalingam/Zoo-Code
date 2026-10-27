@@ -1570,6 +1570,15 @@ export const webviewMessageHandler = async (
 			}
 			break
 		}
+		case VsCodeLmModelsMessageType.requestGithubCopilotQuota: {
+			const { getGitHubCopilotQuota } = await import("../../services/language-models/copilotQuota")
+			const githubCopilotQuota = await getGitHubCopilotQuota({ force: message.bool === true })
+			await provider.postMessageToWebview({
+				type: VsCodeLmModelsMessageType.githubCopilotQuota,
+				githubCopilotQuota,
+			})
+			break
+		}
 		case VsCodeLmModelsMessageType.githubCopilotManageAccount:
 			try {
 				await openGitHubAccountManagement()

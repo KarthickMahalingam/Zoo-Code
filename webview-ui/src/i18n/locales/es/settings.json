@@ -1181,36 +1181,24 @@
 			"label": "Cerrar automaticamente los archivos nuevos creados",
 			"description": "Cuando esta opcion esta activada, las pestanas de archivos que Zoo ha creado (en lugar de modificar) tambien se cierran automaticamente despues de aceptar la modificacion."
 		},
-		"interfaceFont": {
-			"label": "Interface font",
-			"description": "Font for chat messages. Pick a preset or choose Custom… to enter any installed font.",
-			"placeholder": "e.g. Inter, sans-serif",
-			"default": "Match VS Code"
-		},
-		"codeFont": {
-			"label": "Code font",
-			"description": "Font for code in chat. Pick a preset or choose Custom… to enter any installed font.",
-			"placeholder": "e.g. 'JetBrains Mono', monospace",
-			"default": "Match editor font"
-		},
-		"fontInvalid": "Enter a font family list, e.g. Inter, sans-serif. This value won't be saved.",
-		"spacingDensity": {
-			"label": "Spacing density",
-			"description": "How much padding chat messages use. Compact fits more on screen.",
-			"options": {
-				"compact": "Compact",
-				"comfortable": "Comfortable",
-				"spacious": "Spacious"
+		"appearance": {
+			"reset": "Reset to default",
+			"interfaceFontScale": {
+				"label": "Interface font size",
+				"description": "Scales all Zoo Code text. 100% matches VS Code."
+			},
+			"terminalFontSize": {
+				"label": "Terminal font size",
+				"description": "Font size for command output shown in chat."
+			},
+			"editorFontSize": {
+				"label": "Editor font size",
+				"description": "Font size for code blocks and diffs shown in chat."
+			},
+			"spacingScale": {
+				"label": "Spacing density",
+				"description": "Padding between chat messages. Lower is more compact."
 			}
-		},
-		"fontCustom": "Custom…",
-		"preview": {
-			"label": "Preview",
-			"you": "You",
-			"zoo": "Zoo",
-			"userMessage": "Make the selected edge thicker",
-			"assistantBefore": "Updated",
-			"assistantAfter": "to use a 2px stroke when selected."
 		}
 	},
 	"skills": {
@@ -1311,6 +1299,20 @@
 		"dailyTokens": "Daily tokens",
 		"topTasksTokens": "Largest tasks",
 		"byProvider": "By provider",
-		"unknownProvider": "Unknown provider"
+		"unknownProvider": "Unknown provider",
+		"copilot": {
+			"title": "GitHub Copilot",
+			"credits": "Premium credits",
+			"usedOf": "{{used}} / {{total}} used",
+			"percentUsed": "{{percent}}% used",
+			"resets": "Resets {{date}}",
+			"updated": "Updated {{time}}",
+			"refresh": "Refresh",
+			"loading": "Loading Copilot usage…",
+			"unlimited": "Unlimited premium requests on this plan.",
+			"signedOut": "Sign in to GitHub Copilot in the Providers tab to see credits.",
+			"noCopilot": "This GitHub account has no Copilot quota to show.",
+			"error": "Couldn't load Copilot usage."
+		}
 	}
 }

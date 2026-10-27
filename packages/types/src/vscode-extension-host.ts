@@ -16,7 +16,7 @@ import { RouterModelsMessageType, type ModelInfo, type ModelRecord, type RouterM
 import { LmStudioModelsMessageType } from "./providers/lm-studio.js"
 import { OllamaModelsMessageType } from "./providers/ollama.js"
 import { OpenAiModelsMessageType } from "./providers/openai.js"
-import { VsCodeLmModelsMessageType } from "./providers/vscode-llm.js"
+import { VsCodeLmModelsMessageType, type GitHubCopilotQuotaResult } from "./providers/vscode-llm.js"
 import type { OpenAiCodexRateLimitInfo } from "./providers/openai-codex-rate-limits.js"
 import type { SkillMetadata } from "./skills.js"
 import type { RuleMetadata } from "./rules.js"
@@ -50,6 +50,7 @@ export interface ExtensionMessage {
 		| typeof VsCodeLmModelsMessageType.vsCodeLmModels
 		| typeof VsCodeLmModelsMessageType.githubCopilotModels
 		| typeof VsCodeLmModelsMessageType.githubCopilotSignInResult
+		| typeof VsCodeLmModelsMessageType.githubCopilotQuota
 		| "vsCodeLmApiAvailable"
 		| "updatePrompt"
 		| "systemPrompt"
@@ -158,6 +159,7 @@ export interface ExtensionMessage {
 		modelInfo?: ModelInfo
 	}[]
 	githubCopilotAccount?: string | null
+	githubCopilotQuota?: GitHubCopilotQuotaResult
 	mcpServers?: McpServer[]
 	commits?: GitCommit[]
 	listApiConfig?: ProviderSettingsEntry[]
@@ -339,9 +341,10 @@ export type ExtensionState = Pick<
 	| "includeTaskHistoryInEnhance"
 	| "reasoningBlockCollapsed"
 	| "chatFontSize"
-	| "interfaceFontFamily"
-	| "codeFontFamily"
-	| "spacingDensity"
+	| "interfaceFontScale"
+	| "terminalFontSize"
+	| "editorFontSize"
+	| "spacingScale"
 	| "timeFormat"
 	| "enterBehavior"
 	| "includeCurrentTime"
@@ -520,6 +523,7 @@ export interface WebviewMessage {
 		| typeof VsCodeLmModelsMessageType.githubCopilotSignIn
 		| typeof VsCodeLmModelsMessageType.githubCopilotReconnect
 		| typeof VsCodeLmModelsMessageType.githubCopilotManageAccount
+		| typeof VsCodeLmModelsMessageType.requestGithubCopilotQuota
 		| "openImage"
 		| "saveImage"
 		| "openFile"

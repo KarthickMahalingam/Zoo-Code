@@ -12,10 +12,12 @@ import { SetCachedStateField } from "./types"
 import { SectionHeader } from "./SectionHeader"
 import { Section } from "./Section"
 import { SearchableSetting } from "./SearchableSetting"
-import { Slider, Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui"
+import { Slider, Button } from "../ui"
 import { ExtensionStateContextType } from "@/context/ExtensionStateContext"
-import { DEFAULT_SPACING_DENSITY, SPACING_DENSITIES, type SpacingDensity } from "@/utils/appearance"
-import { AppearancePreview, CODE_FONT_PRESETS, FontPresetSelect, INTERFACE_FONT_PRESETS } from "./AppearanceControls"
+import { APPEARANCE_SETTINGS, type AppearanceKey } from "@/utils/appearance"
+import { NumberStepper } from "./NumberStepper"
+
+const APPEARANCE_KEYS = Object.keys(APPEARANCE_SETTINGS) as AppearanceKey[]
 
 export const CHAT_FONT_SIZE_MIN = 8
 export const CHAT_FONT_SIZE_MAX = 32
@@ -25,9 +27,10 @@ interface UISettingsProps extends HTMLAttributes<HTMLDivElement> {
 	reasoningBlockCollapsed: boolean
 	enterBehavior: "send" | "newline"
 	chatFontSize?: number
-	interfaceFontFamily?: string
-	codeFontFamily?: string
-	spacingDensity?: SpacingDensity
+	interfaceFontScale?: number
+	terminalFontSize?: number
+	editorFontSize?: number
+	spacingScale?: number
 	autoCloseZooOpenedFiles?: boolean
 	autoCloseZooOpenedFilesAfterUserEdited?: boolean
 	autoCloseZooOpenedNewFiles?: boolean
@@ -38,9 +41,10 @@ export const UISettings = ({
 	reasoningBlockCollapsed,
 	enterBehavior,
 	chatFontSize,
-	interfaceFontFamily,
-	codeFontFamily,
-	spacingDensity,
+	interfaceFontScale,
+	terminalFontSize,
+	editorFontSize,
+	spacingScale,
 	autoCloseZooOpenedFiles,
 	autoCloseZooOpenedFilesAfterUserEdited,
 	autoCloseZooOpenedNewFiles,
@@ -48,6 +52,13 @@ export const UISettings = ({
 	...props
 }: UISettingsProps) => {
 	const { t } = useAppTranslation()
+
+	const appearance: Record<AppearanceKey, number | undefined> = {
+		interfaceFontScale,
+		terminalFontSize,
+		editorFontSize,
+		spacingScale,
+	}
 
 	// Detect platform for dynamic modifier key display
 	const primaryMod = useMemo(() => {
@@ -168,78 +179,30 @@ export const UISettings = ({
 						</div>
 					</SearchableSetting>
 
-					{/* Interface (chat prose) font */}
-					<SearchableSetting
-						settingId="ui-interface-font"
-						section="ui"
-						label={t("settings:ui.interfaceFont.label")}>
-						<FontPresetSelect
-							label={t("settings:ui.interfaceFont.label")}
-							description={t("settings:ui.interfaceFont.description")}
-							defaultLabel={t("settings:ui.interfaceFont.default")}
-							customLabel={t("settings:ui.fontCustom")}
-							customPlaceholder={t("settings:ui.interfaceFont.placeholder")}
-							invalidMessage={t("settings:ui.fontInvalid")}
-							presets={INTERFACE_FONT_PRESETS}
-							value={interfaceFontFamily}
-							onChange={(value) => setCachedStateField("interfaceFontFamily", value)}
-							testId="interface-font"
-						/>
-					</SearchableSetting>
-
-					{/* Code font */}
-					<SearchableSetting settingId="ui-code-font" section="ui" label={t("settings:ui.codeFont.label")}>
-						<FontPresetSelect
-							label={t("settings:ui.codeFont.label")}
-							description={t("settings:ui.codeFont.description")}
-							defaultLabel={t("settings:ui.codeFont.default")}
-							customLabel={t("settings:ui.fontCustom")}
-							customPlaceholder={t("settings:ui.codeFont.placeholder")}
-							invalidMessage={t("settings:ui.fontInvalid")}
-							presets={CODE_FONT_PRESETS}
-							value={codeFontFamily}
-							onChange={(value) => setCachedStateField("codeFontFamily", value)}
-							testId="code-font"
-						/>
-					</SearchableSetting>
-
-					{/* Spacing density */}
-					<SearchableSetting
-						settingId="ui-spacing-density"
-						section="ui"
-						label={t("settings:ui.spacingDensity.label")}>
-						<div className="flex flex-col gap-1">
-							<label className="block font-medium mb-1">{t("settings:ui.spacingDensity.label")}</label>
-							<Select
-								value={spacingDensity ?? DEFAULT_SPACING_DENSITY}
-								onValueChange={(value) => {
-									setCachedStateField("spacingDensity", value as SpacingDensity)
-									telemetryClient.capture("ui_settings_spacing_density_changed", { value })
-								}}>
-								<SelectTrigger className="w-full" data-testid="spacing-density-select">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{SPACING_DENSITIES.map((density) => (
-										<SelectItem key={density} value={density}>
-											{t(`settings:ui.spacingDensity.options.${density}`)}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-							<div className="text-vscode-descriptionForeground text-sm mt-1">
-								{t("settings:ui.spacingDensity.description")}
-							</div>
-						</div>
-					</SearchableSetting>
-
-					{/* Live preview of the appearance settings above (unsaved values) */}
-					<AppearancePreview
-						interfaceFontFamily={interfaceFontFamily}
-						codeFontFamily={codeFontFamily}
-						chatFontSize={chatFontSize}
-						spacingDensity={spacingDensity ?? DEFAULT_SPACING_DENSITY}
-					/>
+					{/* Appearance sizes: interface %, terminal px, editor px, spacing % */}
+					{APPEARANCE_KEYS.map((key) => (
+						<SearchableSetting
+							key={key}
+							settingId={`ui-${key}`}
+							section="ui"
+							label={t(`settings:ui.appearance.${key}.label`)}>
+							<NumberStepper
+								label={t(`settings:ui.appearance.${key}.label`)}
+								description={t(`settings:ui.appearance.${key}.description`)}
+								resetLabel={t("settings:ui.appearance.reset")}
+								setting={APPEARANCE_SETTINGS[key]}
+								value={appearance[key]}
+								onChange={(value) => {
+									setCachedStateField(key, value)
+									telemetryClient.capture("ui_settings_appearance_changed", {
+										key,
+										value: value ?? null,
+									})
+								}}
+								testId={`appearance-${key}`}
+							/>
+						</SearchableSetting>
+					))}
 
 					{/* Auto-close Zoo opened files */}
 					<SearchableSetting

@@ -44,7 +44,7 @@ const StyledMarkdown = styled.div`
 	}
 
 	code:not(pre > code) {
-		font-family: var(--zoo-code-font-family, var(--vscode-editor-font-family, monospace));
+		font-family: var(--vscode-editor-font-family, monospace);
 		font-size: 0.85em;
 		filter: saturation(110%) brightness(95%);
 		color: var(--vscode-textPreformat-foreground) !important;
@@ -89,7 +89,7 @@ const StyledMarkdown = styled.div`
 	}
 
 	font-family:
-		var(--zoo-chat-font-family, var(--vscode-font-family)),
+		var(--vscode-font-family),
 		system-ui,
 		-apple-system,
 		BlinkMacSystemFont,
@@ -102,7 +102,7 @@ const StyledMarkdown = styled.div`
 		"Helvetica Neue",
 		sans-serif;
 
-	font-size: var(--zoo-chat-font-size, var(--vscode-font-size, 13px));
+	font-size: calc(var(--zoo-chat-font-size, var(--vscode-font-size, 13px)) * var(--zoo-ui-scale, 1));
 
 	p,
 	li,

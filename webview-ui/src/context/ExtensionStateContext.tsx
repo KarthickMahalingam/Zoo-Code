@@ -34,7 +34,7 @@ import { CustomSupportPrompts } from "@roo/support-prompt"
 import { experimentDefault } from "@roo/experiments"
 
 import { vscode } from "@src/utils/vscode"
-import { applyFontVariable } from "@src/utils/appearance"
+import { applyAppearanceVariables } from "@src/utils/appearance"
 import { convertTextMateToHljs } from "@src/utils/textMateToHljs"
 
 export interface ExtensionStateContextType extends ExtensionState {
@@ -133,9 +133,10 @@ export interface ExtensionStateContextType extends ExtensionState {
 	setReasoningBlockCollapsed: (value: boolean) => void
 	chatFontSize?: number
 	setChatFontSize: (value: number | undefined) => void
-	interfaceFontFamily?: string
-	codeFontFamily?: string
-	spacingDensity?: "compact" | "comfortable" | "spacious"
+	interfaceFontScale?: number
+	terminalFontSize?: number
+	editorFontSize?: number
+	spacingScale?: number
 	timeFormat?: "auto" | "12h" | "24h"
 	enterBehavior?: "send" | "newline"
 	setEnterBehavior: (value: "send" | "newline") => void
@@ -538,30 +539,26 @@ export const ExtensionStateContextProvider: React.FC<{
 		}
 	}, [state.chatFontSize])
 
-	// Chat prose / code font overrides. Removing the inline property lets the
-	// stylesheet defaults (VS Code's own font variables) take over again.
+	// Appearance scales/sizes. Unset values remove the inline override so the
+	// stylesheet defaults in index.css (100% / VS Code's sizes) apply.
 	useEffect(() => {
-		applyFontVariable("--zoo-chat-font-family", state.interfaceFontFamily)
-	}, [state.interfaceFontFamily])
-
-	useEffect(() => {
-		applyFontVariable("--zoo-code-font-family", state.codeFontFamily)
-	}, [state.codeFontFamily])
-
-	// Spacing density is expressed as a data attribute so all spacing tokens
-	// live in CSS (index.css) rather than being scattered across components.
-	useEffect(() => {
-		document.documentElement.dataset.zooDensity = state.spacingDensity ?? "comfortable"
-	}, [state.spacingDensity])
+		applyAppearanceVariables(document.documentElement, {
+			interfaceFontScale: state.interfaceFontScale,
+			terminalFontSize: state.terminalFontSize,
+			editorFontSize: state.editorFontSize,
+			spacingScale: state.spacingScale,
+		})
+	}, [state.interfaceFontScale, state.terminalFontSize, state.editorFontSize, state.spacingScale])
 
 	const contextValue: ExtensionStateContextType = {
 		...state,
 		// `chatFontSize` is persisted as nullish (null on reset); normalize null to
 		// undefined so it matches the context type and means "use VS Code default".
 		chatFontSize: state.chatFontSize ?? undefined,
-		interfaceFontFamily: state.interfaceFontFamily ?? undefined,
-		codeFontFamily: state.codeFontFamily ?? undefined,
-		spacingDensity: state.spacingDensity ?? "comfortable",
+		interfaceFontScale: state.interfaceFontScale ?? undefined,
+		terminalFontSize: state.terminalFontSize ?? undefined,
+		editorFontSize: state.editorFontSize ?? undefined,
+		spacingScale: state.spacingScale ?? undefined,
 		timeFormat: state.timeFormat ?? "auto",
 		reasoningBlockCollapsed: state.reasoningBlockCollapsed ?? true,
 		didHydrateState,

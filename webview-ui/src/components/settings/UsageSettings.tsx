@@ -18,7 +18,10 @@ import { Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue }
 import { SectionHeader } from "./SectionHeader"
 import { Section } from "./Section"
 import { SearchableSetting } from "./SearchableSetting"
+import { providerIdentifiers } from "@roo-code/types"
+
 import { PROVIDERS } from "./constants"
+import { CopilotQuotaCard } from "./CopilotQuotaCard"
 
 const PROVIDER_LABELS = new Map(PROVIDERS.map((p) => [p.value, p.label]))
 const providerLabel = (id: string) => PROVIDER_LABELS.get(id) ?? id
@@ -68,6 +71,10 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 		[taskHistory, range, workspace, profileMeta],
 	)
 
+	// Show the live credits card only for users who actually use Copilot, so
+	// nobody else triggers a GitHub request just by opening the tab.
+	const hasCopilotProfile = (listApiConfigMeta ?? []).some((p) => p.apiProvider === providerIdentifiers.githubCopilot)
+
 	const profileSubtitle = (name: string) => {
 		const meta = profileMeta.get(name)
 		if (!meta?.apiProvider) return t("settings:usage.unknownProvider")
@@ -98,6 +105,8 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 			<SectionHeader description={t("settings:usage.description")}>{t("settings:sections.usage")}</SectionHeader>
 
 			<Section>
+				{hasCopilotProfile && <CopilotQuotaCard />}
+
 				<SearchableSetting settingId="usage-filters" section="usage" label={t("settings:usage.range.label")}>
 					{/* Segmented range control */}
 					<div

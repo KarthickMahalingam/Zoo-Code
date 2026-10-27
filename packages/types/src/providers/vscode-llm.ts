@@ -11,7 +11,33 @@ export const vsCodeLmModelsMessageTypes = [
 	"githubCopilotManageAccount",
 	"githubCopilotSignInResult",
 	"githubCopilotModels",
+	"requestGithubCopilotQuota",
+	"githubCopilotQuota",
 ] as const
+
+/**
+ * The signed-in account's GitHub Copilot premium-request allowance, as reported by
+ * `GET /copilot_internal/user` (the same source Copilot Chat's own usage panel reads).
+ */
+export interface GitHubCopilotQuota {
+	/** e.g. "business", "individual". */
+	plan?: string
+	unlimited: boolean
+	/** Total credits for the period; undefined when unlimited or not reported. */
+	entitlement?: number
+	/** Credits used this period, `entitlement - quota_remaining` (one decimal, like GitHub's panel). */
+	used?: number
+	/** 0–100. */
+	usedPercent?: number
+	/** Epoch ms when the allowance resets. */
+	resetAt?: number
+	/** Epoch ms when this snapshot was fetched. */
+	fetchedAt: number
+}
+
+export type GitHubCopilotQuotaResult =
+	| { ok: true; quota: GitHubCopilotQuota }
+	| { ok: false; reason: "signedOut" | "noCopilot" | "error"; message?: string }
 
 export const vsCodeLmModelsMessageTypeSchema = z.enum(vsCodeLmModelsMessageTypes)
 

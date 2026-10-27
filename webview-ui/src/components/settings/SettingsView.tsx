@@ -217,9 +217,10 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		openRouterImageGenerationSelectedModel,
 		reasoningBlockCollapsed,
 		chatFontSize,
-		interfaceFontFamily,
-		codeFontFamily,
-		spacingDensity,
+		interfaceFontScale,
+		terminalFontSize,
+		editorFontSize,
+		spacingScale,
 		timeFormat,
 		enterBehavior,
 		includeCurrentTime,
@@ -450,9 +451,10 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					reasoningBlockCollapsed: reasoningBlockCollapsed ?? true,
 					chatFontSize: chatFontSize ?? null,
 					// null (not undefined) so a reset survives JSON and clears the stored value
-					interfaceFontFamily: interfaceFontFamily ?? null,
-					codeFontFamily: codeFontFamily ?? null,
-					spacingDensity: spacingDensity ?? "comfortable",
+					interfaceFontScale: interfaceFontScale ?? null,
+					terminalFontSize: terminalFontSize ?? null,
+					editorFontSize: editorFontSize ?? null,
+					spacingScale: spacingScale ?? null,
 					timeFormat: timeFormat ?? "auto",
 					enterBehavior: enterBehavior ?? "send",
 					includeCurrentTime: includeCurrentTime ?? true,
@@ -957,9 +959,10 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 								reasoningBlockCollapsed={reasoningBlockCollapsed ?? true}
 								enterBehavior={enterBehavior ?? "send"}
 								chatFontSize={chatFontSize ?? undefined}
-								interfaceFontFamily={interfaceFontFamily ?? undefined}
-								codeFontFamily={codeFontFamily ?? undefined}
-								spacingDensity={spacingDensity}
+								interfaceFontScale={interfaceFontScale ?? undefined}
+								terminalFontSize={terminalFontSize ?? undefined}
+								editorFontSize={editorFontSize ?? undefined}
+								spacingScale={spacingScale ?? undefined}
 								autoCloseZooOpenedFiles={autoCloseZooOpenedFiles}
 								autoCloseZooOpenedFilesAfterUserEdited={autoCloseZooOpenedFilesAfterUserEdited}
 								autoCloseZooOpenedNewFiles={autoCloseZooOpenedNewFiles}
