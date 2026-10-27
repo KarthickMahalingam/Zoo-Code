@@ -1,4 +1,4 @@
-import { formatLargeNumber, formatDate, formatTimeAgo } from "../format"
+import { formatLargeNumber, formatDate, formatDateTime, formatTimeAgo, hourCycleOptions } from "../format"
 
 // Mock i18next
 vi.mock("i18next", () => ({
@@ -64,6 +64,39 @@ describe("formatDate", () => {
 		// The exact format depends on the locale, but it should contain the date components
 		expect(result).toMatch(/january|jan/i)
 		expect(result).toMatch(/15/)
+	})
+
+	it("honours an explicit 24-hour time format", () => {
+		const timestamp = new Date("2024-01-15T14:30:00").getTime()
+		expect(formatDate(timestamp, "24h")).toMatch(/14:30/)
+		expect(formatDate(timestamp, "24h")).not.toMatch(/PM/i)
+	})
+
+	it("honours an explicit 12-hour time format", () => {
+		const timestamp = new Date("2024-01-15T14:30:00").getTime()
+		expect(formatDate(timestamp, "12h")).toMatch(/2:30\s?PM/i)
+	})
+})
+
+describe("hourCycleOptions", () => {
+	it("leaves auto to the locale", () => {
+		expect(hourCycleOptions("auto")).toEqual({})
+		expect(hourCycleOptions()).toEqual({})
+	})
+
+	it("maps 12h / 24h", () => {
+		expect(hourCycleOptions("12h")).toEqual({ hour12: true })
+		// h23 (not hour12:false) avoids "24:05" rendering in some engines
+		expect(hourCycleOptions("24h")).toEqual({ hourCycle: "h23" })
+	})
+})
+
+describe("formatDateTime", () => {
+	it("includes date and time honouring the format", () => {
+		const timestamp = new Date("2024-01-15T00:05:00").getTime()
+		const result = formatDateTime(timestamp, "24h")
+		expect(result).toMatch(/2024/)
+		expect(result).toMatch(/00:05/)
 	})
 })
 

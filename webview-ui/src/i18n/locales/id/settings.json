@@ -42,7 +42,8 @@
 		"language": "Bahasa",
 		"about": "Tentang Zoo Code",
 		"skills": "Skills",
-		"rules": "Aturan"
+		"rules": "Aturan",
+		"usage": "Usage"
 	},
 	"about": {
 		"bugReport": {
@@ -1179,6 +1180,27 @@
 		"autoCloseZooOpenedNewFiles": {
 			"label": "Tutup otomatis file baru yang dibuat",
 			"description": "Saat diaktifkan, tab untuk file yang dibuat Zoo (bukan dimodifikasi) juga ditutup secara otomatis setelah perubahan diterima."
+		},
+		"interfaceFont": {
+			"label": "Interface font",
+			"description": "Font family for chat messages. Leave empty to use VS Code's font.",
+			"placeholder": "VS Code default"
+		},
+		"codeFont": {
+			"label": "Code font",
+			"description": "Font family for code in chat. Leave empty to use the editor font.",
+			"placeholder": "Editor font"
+		},
+		"fontInvalid": "Enter a font family list, e.g. Inter, sans-serif. This value won't be saved.",
+		"fontReset": "Use default",
+		"spacingDensity": {
+			"label": "Spacing density",
+			"description": "How much padding chat messages use. Compact fits more on screen.",
+			"options": {
+				"compact": "Compact",
+				"comfortable": "Comfortable",
+				"spacious": "Spacious"
+			}
 		}
 	},
 	"skills": {
@@ -1233,5 +1255,45 @@
 			"descriptionTooLong": "Deskripsi harus 1024 karakter atau kurang"
 		},
 		"footer": "Buat skills Anda sendiri dengan mode Skill Writer, tersedia di <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
+	},
+	"language": {
+		"timeFormat": {
+			"label": "Time format",
+			"description": "How times are shown in Zoo Code. Auto follows the display language.",
+			"preview": "Example: {{example}}",
+			"options": {
+				"auto": "Auto",
+				"12h": "12-hour",
+				"24h": "24-hour"
+			}
+		}
+	},
+	"usage": {
+		"description": "Tokens and cost from your Zoo Code task history on this machine.",
+		"range": {
+			"label": "Time range",
+			"today": "Today",
+			"7d": "7 days",
+			"30d": "30 days",
+			"all": "All time"
+		},
+		"scope": {
+			"label": "Show",
+			"workspace": "This workspace",
+			"all": "All workspaces"
+		},
+		"empty": "No tasks in this time range.",
+		"stats": {
+			"cost": "cost",
+			"tokens": "tokens",
+			"tasks": "tasks",
+			"cacheHit": "{{percent}}% from cache"
+		},
+		"dailyCost": "Daily cost",
+		"byProfile": "By API profile",
+		"byMode": "By mode",
+		"topTasks": "Most expensive tasks",
+		"disclaimer": "Costs are estimates from task history and may differ from your provider's bill.",
+		"exportCsv": "Export CSV"
 	}
 }

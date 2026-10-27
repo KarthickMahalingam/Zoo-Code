@@ -266,6 +266,24 @@ html {
 	 * runtime. Scoped to chat rendering so it does not resize settings/other UI.
 	 */
 	--zoo-chat-font-size: var(--vscode-font-size);
+
+	/*
+	 * Spacing density tokens for chat rows. `data-zoo-density` is set on <html>
+	 * from the "Spacing density" UI setting; "comfortable" matches the
+	 * historical hardcoded padding (10px / 15px) so defaults are unchanged.
+	 */
+	--zoo-row-py: 10px;
+	--zoo-row-px: 15px;
+}
+
+html[data-zoo-density="compact"] {
+	--zoo-row-py: 5px;
+	--zoo-row-px: 10px;
+}
+
+html[data-zoo-density="spacious"] {
+	--zoo-row-py: 16px;
+	--zoo-row-px: 18px;
 }
 
 body {

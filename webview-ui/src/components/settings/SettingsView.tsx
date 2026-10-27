@@ -29,6 +29,7 @@ import {
 	GitCommitVertical,
 	GraduationCap,
 	ScrollText,
+	ChartColumn,
 } from "lucide-react"
 
 import {
@@ -82,6 +83,7 @@ import { SlashCommandsSettings } from "./SlashCommandsSettings"
 import { SkillsSettings } from "./SkillsSettings"
 import { RulesSettings } from "./RulesSettings"
 import { UISettings } from "./UISettings"
+import { UsageSettings } from "./UsageSettings"
 import ModesView from "../modes/ModesView"
 import McpView from "../mcp/McpView"
 import { WorktreesView } from "../worktrees/WorktreesView"
@@ -114,6 +116,7 @@ export const sectionNames = [
 	"worktrees",
 	"prompts",
 	"ui",
+	"usage",
 	"experimental",
 	"language",
 	"about",
@@ -214,6 +217,10 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		openRouterImageGenerationSelectedModel,
 		reasoningBlockCollapsed,
 		chatFontSize,
+		interfaceFontFamily,
+		codeFontFamily,
+		spacingDensity,
+		timeFormat,
 		enterBehavior,
 		includeCurrentTime,
 		includeCurrentCost,
@@ -442,6 +449,11 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					includeTaskHistoryInEnhance: includeTaskHistoryInEnhance ?? true,
 					reasoningBlockCollapsed: reasoningBlockCollapsed ?? true,
 					chatFontSize: chatFontSize ?? null,
+					// null (not undefined) so a reset survives JSON and clears the stored value
+					interfaceFontFamily: interfaceFontFamily ?? null,
+					codeFontFamily: codeFontFamily ?? null,
+					spacingDensity: spacingDensity ?? "comfortable",
+					timeFormat: timeFormat ?? "auto",
 					enterBehavior: enterBehavior ?? "send",
 					includeCurrentTime: includeCurrentTime ?? true,
 					includeCurrentCost: includeCurrentCost ?? true,
@@ -556,6 +568,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			{ id: "prompts", icon: MessageSquare },
 			{ id: "worktrees", icon: GitBranch },
 			{ id: "ui", icon: Glasses },
+			{ id: "usage", icon: ChartColumn },
 			{ id: "experimental", icon: FlaskConical },
 			{ id: "language", icon: Globe },
 			{ id: "about", icon: Info },
@@ -944,12 +957,18 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 								reasoningBlockCollapsed={reasoningBlockCollapsed ?? true}
 								enterBehavior={enterBehavior ?? "send"}
 								chatFontSize={chatFontSize ?? undefined}
+								interfaceFontFamily={interfaceFontFamily ?? undefined}
+								codeFontFamily={codeFontFamily ?? undefined}
+								spacingDensity={spacingDensity}
 								autoCloseZooOpenedFiles={autoCloseZooOpenedFiles}
 								autoCloseZooOpenedFilesAfterUserEdited={autoCloseZooOpenedFilesAfterUserEdited}
 								autoCloseZooOpenedNewFiles={autoCloseZooOpenedNewFiles}
 								setCachedStateField={setCachedStateField}
 							/>
 						)}
+
+						{/* Usage Section */}
+						{renderTab === "usage" && <UsageSettings />}
 
 						{/* Experimental Section */}
 						{renderTab === "experimental" && (
@@ -971,7 +990,11 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 
 						{/* Language Section */}
 						{renderTab === "language" && (
-							<LanguageSettings language={language || "en"} setCachedStateField={setCachedStateField} />
+							<LanguageSettings
+								language={language || "en"}
+								timeFormat={timeFormat}
+								setCachedStateField={setCachedStateField}
+							/>
 						)}
 
 						{/* About Section */}

@@ -1,5 +1,7 @@
 import i18next from "i18next"
 
+export type TimeFormat = "auto" | "12h" | "24h"
+
 export function formatLargeNumber(num: number): string {
 	if (num >= 1e9) {
 		return (num / 1e9).toFixed(1) + i18next.t("common:number_format.billion_suffix")
@@ -14,9 +16,24 @@ export function formatLargeNumber(num: number): string {
 }
 
 /**
+ * Maps the user's time format preference to `Intl` hour-cycle options.
+ * "auto" returns `{}` so the locale decides (e.g. 24h for de, 12h for en-US).
+ */
+export function hourCycleOptions(timeFormat: TimeFormat = "auto"): Intl.DateTimeFormatOptions {
+	switch (timeFormat) {
+		case "12h":
+			return { hour12: true }
+		case "24h":
+			return { hourCycle: "h23" }
+		default:
+			return {}
+	}
+}
+
+/**
  * @internal
  */
-export const formatDate = (timestamp: number) => {
+export const formatDate = (timestamp: number, timeFormat: TimeFormat = "auto") => {
 	const date = new Date(timestamp)
 	const locale = i18next.language || "en"
 
@@ -25,7 +42,18 @@ export const formatDate = (timestamp: number) => {
 		day: "numeric",
 		hour: "numeric",
 		minute: "2-digit",
-		hour12: true,
+		...hourCycleOptions(timeFormat),
+	})
+}
+
+/** Full date + time, used for tooltips on relative timestamps. */
+export const formatDateTime = (timestamp: number, timeFormat: TimeFormat = "auto") => {
+	const locale = i18next.language || "en"
+
+	return new Date(timestamp).toLocaleString(locale, {
+		dateStyle: "medium",
+		timeStyle: "short",
+		...hourCycleOptions(timeFormat),
 	})
 }
 

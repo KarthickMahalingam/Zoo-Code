@@ -44,7 +44,7 @@ const StyledMarkdown = styled.div`
 	}
 
 	code:not(pre > code) {
-		font-family: var(--vscode-editor-font-family, monospace);
+		font-family: var(--zoo-code-font-family, var(--vscode-editor-font-family, monospace));
 		font-size: 0.85em;
 		filter: saturation(110%) brightness(95%);
 		color: var(--vscode-textPreformat-foreground) !important;
@@ -89,7 +89,7 @@ const StyledMarkdown = styled.div`
 	}
 
 	font-family:
-		var(--vscode-font-family),
+		var(--zoo-chat-font-family, var(--vscode-font-family)),
 		system-ui,
 		-apple-system,
 		BlinkMacSystemFont,

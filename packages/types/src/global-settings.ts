@@ -281,6 +281,24 @@ export const globalSettingsSchema = z.object({
 	 */
 	chatFontSize: z.number().int().min(8).max(32).nullish(),
 	/**
+	 * CSS font-family for Zoo Code's chat prose. `null`/unset inherits `--vscode-font-family`.
+	 */
+	interfaceFontFamily: z.string().max(256).nullish(),
+	/**
+	 * CSS font-family for inline/fenced code in chat. `null`/unset inherits `--vscode-editor-font-family`.
+	 */
+	codeFontFamily: z.string().max(256).nullish(),
+	/**
+	 * Vertical/horizontal spacing scale for chat rows.
+	 * @default "comfortable"
+	 */
+	spacingDensity: z.enum(["compact", "comfortable", "spacious"]).optional(),
+	/**
+	 * Clock format used when rendering timestamps. "auto" follows the display language's locale.
+	 * @default "auto"
+	 */
+	timeFormat: z.enum(["auto", "12h", "24h"]).optional(),
+	/**
 	 * Controls the keyboard behavior for sending messages in the chat input.
 	 * - "send": Enter sends message, Shift+Enter creates newline (default)
 	 * - "newline": Enter creates newline, Shift+Enter/Ctrl+Enter sends message

@@ -1,6 +1,7 @@
-import React from "react"
+import React, { useContext } from "react"
 import type { HistoryItem } from "@roo-code/types"
-import { formatTimeAgo } from "@/utils/format"
+import { formatDateTime, formatTimeAgo } from "@/utils/format"
+import { ExtensionStateContext } from "@/context/ExtensionStateContext"
 import { CopyButton } from "./CopyButton"
 import { ExportButton } from "./ExportButton"
 import { DeleteButton } from "./DeleteButton"
@@ -28,6 +29,8 @@ const TaskItemFooter: React.FC<TaskItemFooterProps> = ({
 	onRename,
 }) => {
 	const { t } = useAppTranslation()
+	// Optional read: this leaf renders standalone (tests, previews) without a provider.
+	const timeFormat = useContext(ExtensionStateContext)?.timeFormat
 
 	return (
 		<div className="text-xs text-vscode-descriptionForeground flex justify-between items-center">
@@ -48,7 +51,7 @@ const TaskItemFooter: React.FC<TaskItemFooterProps> = ({
 					</>
 				)}
 				{/* Datetime with time-ago format */}
-				<StandardTooltip content={new Date(item.ts).toLocaleString()}>
+				<StandardTooltip content={formatDateTime(item.ts, timeFormat)}>
 					<span className="first-letter:uppercase">{formatTimeAgo(item.ts)}</span>
 				</StandardTooltip>
 

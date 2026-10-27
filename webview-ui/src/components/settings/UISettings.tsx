@@ -1,4 +1,4 @@
-import { HTMLAttributes, useMemo } from "react"
+import { HTMLAttributes, useEffect, useMemo, useState } from "react"
 import { useAppTranslation } from "@/i18n/TranslationContext"
 import { VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
 import { telemetryClient } from "@/utils/TelemetryClient"
@@ -12,8 +12,9 @@ import { SetCachedStateField } from "./types"
 import { SectionHeader } from "./SectionHeader"
 import { Section } from "./Section"
 import { SearchableSetting } from "./SearchableSetting"
-import { Slider, Button } from "../ui"
+import { Slider, Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui"
 import { ExtensionStateContextType } from "@/context/ExtensionStateContext"
+import { DEFAULT_SPACING_DENSITY, SPACING_DENSITIES, type SpacingDensity, sanitizeFontFamily } from "@/utils/appearance"
 
 export const CHAT_FONT_SIZE_MIN = 8
 export const CHAT_FONT_SIZE_MAX = 32
@@ -23,6 +24,9 @@ interface UISettingsProps extends HTMLAttributes<HTMLDivElement> {
 	reasoningBlockCollapsed: boolean
 	enterBehavior: "send" | "newline"
 	chatFontSize?: number
+	interfaceFontFamily?: string
+	codeFontFamily?: string
+	spacingDensity?: SpacingDensity
 	autoCloseZooOpenedFiles?: boolean
 	autoCloseZooOpenedFilesAfterUserEdited?: boolean
 	autoCloseZooOpenedNewFiles?: boolean
@@ -33,6 +37,9 @@ export const UISettings = ({
 	reasoningBlockCollapsed,
 	enterBehavior,
 	chatFontSize,
+	interfaceFontFamily,
+	codeFontFamily,
+	spacingDensity,
 	autoCloseZooOpenedFiles,
 	autoCloseZooOpenedFilesAfterUserEdited,
 	autoCloseZooOpenedNewFiles,
@@ -160,6 +167,67 @@ export const UISettings = ({
 						</div>
 					</SearchableSetting>
 
+					{/* Interface (chat prose) font */}
+					<SearchableSetting
+						settingId="ui-interface-font"
+						section="ui"
+						label={t("settings:ui.interfaceFont.label")}>
+						<FontFamilyField
+							label={t("settings:ui.interfaceFont.label")}
+							description={t("settings:ui.interfaceFont.description")}
+							placeholder={t("settings:ui.interfaceFont.placeholder")}
+							invalidMessage={t("settings:ui.fontInvalid")}
+							resetLabel={t("settings:ui.fontReset")}
+							value={interfaceFontFamily}
+							onChange={(value) => setCachedStateField("interfaceFontFamily", value)}
+							testId="interface-font"
+						/>
+					</SearchableSetting>
+
+					{/* Code font */}
+					<SearchableSetting settingId="ui-code-font" section="ui" label={t("settings:ui.codeFont.label")}>
+						<FontFamilyField
+							label={t("settings:ui.codeFont.label")}
+							description={t("settings:ui.codeFont.description")}
+							placeholder={t("settings:ui.codeFont.placeholder")}
+							invalidMessage={t("settings:ui.fontInvalid")}
+							resetLabel={t("settings:ui.fontReset")}
+							value={codeFontFamily}
+							onChange={(value) => setCachedStateField("codeFontFamily", value)}
+							testId="code-font"
+						/>
+					</SearchableSetting>
+
+					{/* Spacing density */}
+					<SearchableSetting
+						settingId="ui-spacing-density"
+						section="ui"
+						label={t("settings:ui.spacingDensity.label")}>
+						<div className="flex flex-col gap-1">
+							<label className="block font-medium mb-1">{t("settings:ui.spacingDensity.label")}</label>
+							<Select
+								value={spacingDensity ?? DEFAULT_SPACING_DENSITY}
+								onValueChange={(value) => {
+									setCachedStateField("spacingDensity", value as SpacingDensity)
+									telemetryClient.capture("ui_settings_spacing_density_changed", { value })
+								}}>
+								<SelectTrigger className="w-full" data-testid="spacing-density-select">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									{SPACING_DENSITIES.map((density) => (
+										<SelectItem key={density} value={density}>
+											{t(`settings:ui.spacingDensity.options.${density}`)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							<div className="text-vscode-descriptionForeground text-sm mt-1">
+								{t("settings:ui.spacingDensity.description")}
+							</div>
+						</div>
+					</SearchableSetting>
+
 					{/* Auto-close Zoo opened files */}
 					<SearchableSetting
 						settingId="ui-auto-close-zoo-opened-files"
@@ -224,6 +292,87 @@ export const UISettings = ({
 					</SearchableSetting>
 				</div>
 			</Section>
+		</div>
+	)
+}
+
+interface FontFamilyFieldProps {
+	label: string
+	description: string
+	placeholder: string
+	invalidMessage: string
+	resetLabel: string
+	value?: string
+	onChange: (value: string | undefined) => void
+	testId: string
+}
+
+/**
+ * Free-text font-family input. Keeps a local draft so the user can type
+ * freely, and only commits a sanitized value (or `undefined` = inherit) to
+ * cached settings. Invalid input is flagged but never persisted.
+ */
+const FontFamilyField = ({
+	label,
+	description,
+	placeholder,
+	invalidMessage,
+	resetLabel,
+	value,
+	onChange,
+	testId,
+}: FontFamilyFieldProps) => {
+	const [draft, setDraft] = useState(value ?? "")
+
+	// Re-sync when the persisted value changes underneath us (reset, import).
+	useEffect(() => setDraft(value ?? ""), [value])
+
+	const trimmed = draft.trim()
+	const isInvalid = trimmed.length > 0 && sanitizeFontFamily(trimmed) === undefined
+
+	const handleChange = (next: string) => {
+		setDraft(next)
+		const nextTrimmed = next.trim()
+
+		if (!nextTrimmed) {
+			onChange(undefined)
+		} else {
+			const safe = sanitizeFontFamily(nextTrimmed)
+			if (safe) onChange(safe)
+		}
+	}
+
+	return (
+		<div className="flex flex-col gap-1">
+			<label className="block font-medium mb-1">{label}</label>
+			<div className="flex flex-wrap items-center gap-2">
+				<Input
+					className="min-w-0 flex-1"
+					style={trimmed && !isInvalid ? { fontFamily: trimmed } : undefined}
+					value={draft}
+					placeholder={placeholder}
+					spellCheck={false}
+					aria-invalid={isInvalid}
+					onChange={(e) => handleChange(e.target.value)}
+					data-testid={`${testId}-input`}
+				/>
+				<Button
+					className="h-auto max-w-full whitespace-normal text-center"
+					variant="secondary"
+					size="sm"
+					disabled={value === undefined && !draft}
+					onClick={() => handleChange("")}
+					data-testid={`${testId}-reset`}>
+					{resetLabel}
+				</Button>
+			</div>
+			{isInvalid ? (
+				<div className="text-vscode-errorForeground text-sm mt-1" data-testid={`${testId}-error`}>
+					{invalidMessage}
+				</div>
+			) : (
+				<div className="text-vscode-descriptionForeground text-sm mt-1">{description}</div>
+			)}
 		</div>
 	)
 }
