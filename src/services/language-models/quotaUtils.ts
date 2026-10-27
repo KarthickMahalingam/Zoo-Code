@@ -18,6 +18,21 @@ export const asRecord = (value: unknown): Record<string, unknown> | undefined =>
 
 export const clampPercent = (value: number): number => Math.min(100, Math.max(0, value))
 
+/**
+ * Epoch milliseconds from a provider timestamp. Numbers below 1e12 are treated
+ * as epoch seconds; strings are parsed as dates. Anything else is undefined.
+ */
+export const toEpochMs = (value: unknown): number | undefined => {
+	if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+		return value < 1_000_000_000_000 ? value * 1000 : value
+	}
+	if (typeof value === "string" && value.trim() !== "") {
+		const parsed = Date.parse(value)
+		return Number.isNaN(parsed) ? undefined : parsed
+	}
+	return undefined
+}
+
 /** `$12.40`, `-$0.50`, `¥8.00`. */
 export const formatMoney = (value: number, symbol = "$"): string =>
 	`${value < 0 ? "-" : ""}${symbol}${Math.abs(value).toFixed(2)}`

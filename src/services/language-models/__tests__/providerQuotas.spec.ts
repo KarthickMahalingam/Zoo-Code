@@ -22,9 +22,15 @@ import {
 	getProviderQuotas,
 	loadProfiles,
 	parseDeepSeekBalance,
+	parseKimiCodeUsage,
+	parseMiniMaxRemains,
 	parseMoonshotBalance,
+	parseNanoGptUsage,
+	parseOpenCodeGoUsage,
 	parseOpenRouterKey,
+	parseZaiQuota,
 	resetProviderQuotaCache,
+	windowLabel,
 } from "../providerQuotas"
 
 describe("parseOpenRouterKey", () => {
@@ -90,6 +96,266 @@ describe("parseMoonshotBalance", () => {
 	it("reads available_balance", () => {
 		expect(parseMoonshotBalance({ data: { available_balance: 19.5 } })).toEqual([
 			{ id: "balance", valueLabel: "$19.50 left" },
+		])
+	})
+})
+
+describe("windowLabel", () => {
+	it("names rolling windows by length", () => {
+		expect(windowLabel(5 * 3600, "x")).toBe("5-hour")
+		expect(windowLabel(7 * 86400, "x")).toBe("Weekly")
+		expect(windowLabel(3 * 86400, "x")).toBe("3-day")
+		expect(windowLabel(undefined, "Tokens")).toBe("Tokens")
+		expect(windowLabel(90, "Tokens")).toBe("Tokens")
+	})
+})
+
+describe("parseKimiCodeUsage", () => {
+	it("reads the ratio-based usages block in display order", () => {
+		expect(
+			parseKimiCodeUsage({
+				usages: {
+					limit_month_total: { used_ratio: 0.1 },
+					limit_5h: { used_ratio: 0.25, reset_time: 1_800_000_000 },
+					limit_7d: { used_ratio: 0.5 },
+				},
+			}),
+		).toEqual([
+			{ id: "limit_5h", valueLabel: "5-hour", usedPercent: 25, resetAt: 1_800_000_000_000 },
+			{ id: "limit_7d", valueLabel: "Weekly", usedPercent: 50, resetAt: undefined },
+			{ id: "limit_month_total", valueLabel: "Monthly", usedPercent: expect.closeTo(10, 5), resetAt: undefined },
+		])
+	})
+
+	it("skips entries without a finite ratio", () => {
+		expect(parseKimiCodeUsage({ usages: { limit_5h: {}, limit_7d: { used_ratio: "x" } } })).toBeUndefined()
+	})
+
+	it("falls back to the legacy weekly usage block, deriving used from remaining", () => {
+		expect(parseKimiCodeUsage({ usage: { limit: 200, remaining: 150 } })).toEqual([
+			{ id: "weekly", valueLabel: "Weekly", usedPercent: 25, resetAt: undefined },
+		])
+	})
+
+	it("returns undefined for junk", () => {
+		expect(parseKimiCodeUsage(null)).toBeUndefined()
+		expect(parseKimiCodeUsage({})).toBeUndefined()
+	})
+})
+
+describe("parseZaiQuota", () => {
+	it("maps 5-hour and weekly limits, including credit counts", () => {
+		expect(
+			parseZaiQuota({
+				code: 200,
+				data: {
+					limits: [
+						{ type: "TOKENS_LIMIT", unit: 3, number: 5, percentage: 40, nextResetTime: 1_800_000_000_000 },
+						{ type: "CREDIT_LIMIT", unit: 6, number: 1, usage: 2000, currentValue: 500 },
+						{ type: "TIME_LIMIT", percentage: 99 },
+					],
+				},
+			}),
+		).toEqual([
+			{ id: "limit_0", valueLabel: "5-hour", usedPercent: 40, resetAt: 1_800_000_000_000 },
+			{ id: "limit_1", valueLabel: "Weekly: 500 / 2,000 credits", usedPercent: 25, resetAt: undefined },
+		])
+	})
+
+	it("treats a business failure inside HTTP 200 as no data", () => {
+		expect(parseZaiQuota({ success: false, code: 1001, msg: "expired", data: { limits: [] } })).toBeUndefined()
+		expect(parseZaiQuota({ code: 1001, data: { limits: [{ type: "TOKENS_LIMIT" }] } })).toBeUndefined()
+	})
+})
+
+describe("parseMiniMaxRemains", () => {
+	const row = {
+		model_name: "MiniMax-M2",
+		current_interval_total_count: 100,
+		current_interval_remaining_percent: 80,
+		end_time: 1_800_000_000_000,
+		current_weekly_total_count: 1000,
+		current_weekly_usage_count: 900,
+		weekly_end_time: 1_900_000_000_000,
+	}
+
+	it("reports the 5-hour window and a weekly window when the plan has one", () => {
+		expect(parseMiniMaxRemains({ model_remains: [{ model_name: "other" }, row] })).toEqual([
+			{ id: "5h", valueLabel: "5-hour", usedPercent: 20, resetAt: 1_800_000_000_000 },
+			{ id: "weekly", valueLabel: "Weekly", usedPercent: 10, resetAt: 1_900_000_000_000 },
+		])
+	})
+
+	it("reads counters as used (not left) for the legacy coding plan", () => {
+		const windows = parseMiniMaxRemains(
+			{
+				model_remains: [
+					{
+						model_name: "MiniMax-M2",
+						current_interval_total_count: 100,
+						current_interval_usage_count: 30,
+						current_weekly_total_count: 1000,
+						current_weekly_usage_count: 900,
+					},
+				],
+			},
+			false,
+		)!
+		expect(windows[0].usedPercent).toBe(30)
+		expect(windows[1].usedPercent).toBe(90)
+	})
+
+	it("omits the weekly window when the plan tier does not apply it (status 3)", () => {
+		const result = parseMiniMaxRemains({ model_remains: [{ ...row, current_weekly_status: 3 }] })
+		expect(result?.map((w) => w.id)).toEqual(["5h"])
+	})
+
+	it("rejects an error envelope or an empty list", () => {
+		expect(parseMiniMaxRemains({ base_resp: { status_code: 1004 }, model_remains: [row] })).toBeUndefined()
+		expect(parseMiniMaxRemains({ model_remains: [] })).toBeUndefined()
+	})
+})
+
+describe("parseNanoGptUsage", () => {
+	it("derives percent from percentUsed or used/limit and keeps state in the label", () => {
+		expect(
+			parseNanoGptUsage({
+				state: "grace",
+				limits: { dailyInputTokens: 1000 },
+				dailyInputTokens: { used: 250 },
+				monthly: { percentUsed: 0.4, resetAt: 1_800_000_000 },
+			}),
+		).toEqual([
+			{ id: "daily", valueLabel: "Daily (grace)", usedPercent: 25, resetAt: undefined },
+			{ id: "monthly", valueLabel: "Monthly (grace)", usedPercent: 40, resetAt: 1_800_000_000_000 },
+		])
+	})
+
+	it("shows no percent for a degraded window", () => {
+		const daily = parseNanoGptUsage({ dailyInputTokens: { percentUsed: 0.9, degraded: true } })![0]
+		expect(daily.usedPercent).toBeUndefined()
+	})
+})
+
+describe("parseOpenCodeGoUsage", () => {
+	it("maps rolling, weekly and monthly windows that carry a percent and a reset", () => {
+		expect(
+			parseOpenCodeGoUsage({
+				usage: {
+					rolling: { percent: 12, resetsAt: 1_800_000_000 },
+					weekly: { percent: 140, resetsAt: 1_800_000_001 },
+					monthly: { percent: 5 },
+				},
+			}),
+		).toEqual([
+			{ id: "5h", valueLabel: "5-hour", usedPercent: 12, resetAt: 1_800_000_000_000 },
+			{ id: "weekly", valueLabel: "Weekly", usedPercent: 100, resetAt: 1_800_000_001_000 },
+		])
+	})
+})
+
+describe("getProviderQuotas – coding-plan providers", () => {
+	beforeEach(() => resetProviderQuotaCache())
+
+	it("queries z.ai on the host matching the profile's API line", async () => {
+		const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ code: 200, data: { limits: [] } })))
+		await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.zai, zaiApiKey: "k", zaiApiLine: "china_coding" } as never],
+			{},
+			fetchSpy,
+		)
+		expect(fetchSpy).toHaveBeenCalledWith(
+			"https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+			expect.anything(),
+		)
+	})
+
+	it("falls back to the coding-plan endpoint for MiniMax and reads its counters as used", async () => {
+		const body = {
+			model_remains: [
+				{
+					model_name: "MiniMax-M2",
+					current_interval_total_count: 100,
+					current_interval_usage_count: 30,
+				},
+			],
+		}
+		const fetchSpy = vi
+			.fn()
+			.mockResolvedValueOnce(new Response("", { status: 404 }))
+			.mockResolvedValueOnce(new Response(JSON.stringify(body)))
+		const [q] = await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.minimax, minimaxApiKey: "k" } as never],
+			{},
+			fetchSpy,
+		)
+		expect(fetchSpy.mock.calls.map((c) => c[0])).toEqual([
+			"https://api.minimax.io/v1/token_plan/remains",
+			"https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+		])
+		expect(q).toMatchObject({ ok: true, windows: [{ id: "5h", usedPercent: 30 }] })
+	})
+
+	it("uses the China MiniMax hosts for a minimaxi.com base URL", async () => {
+		const fetchSpy = vi.fn(
+			async (_url: RequestInfo | URL, _init?: RequestInit) => new Response("", { status: 404 }),
+		)
+		await getProviderQuotas(
+			[
+				{
+					apiProvider: providerIdentifiers.minimax,
+					minimaxApiKey: "k",
+					minimaxBaseUrl: "https://api.minimaxi.com/anthropic",
+				} as never,
+			],
+			{},
+			fetchSpy,
+		)
+		expect(fetchSpy.mock.calls.map((c) => c[0])).toEqual([
+			"https://api.minimaxi.com/v1/token_plan/remains",
+			"https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains",
+		])
+	})
+
+	it("never sends a MiniMax key to an unknown base URL", async () => {
+		const fetchSpy = vi.fn()
+		const [q] = await getProviderQuotas(
+			[
+				{
+					apiProvider: providerIdentifiers.minimax,
+					minimaxApiKey: "k",
+					minimaxBaseUrl: "https://gateway.example/anthropic",
+				} as never,
+			],
+			{},
+			fetchSpy,
+		)
+		expect(q).toMatchObject({ ok: false, reason: "unsupported" })
+		expect(fetchSpy).not.toHaveBeenCalled()
+	})
+
+	it("reports noKey for a Kimi Code profile signed in with OAuth (no API key)", async () => {
+		const fetchSpy = vi.fn()
+		const [q] = await getProviderQuotas([{ apiProvider: providerIdentifiers.kimiCode } as never], {}, fetchSpy)
+		expect(q).toMatchObject({ ok: false, reason: "noKey" })
+		expect(fetchSpy).not.toHaveBeenCalled()
+	})
+
+	it("calls NanoGPT, Kimi Code and OpenCode Go on their own hosts only", async () => {
+		const fetchSpy = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({})))
+		await getProviderQuotas(
+			[
+				{ apiProvider: providerIdentifiers.nanogpt, nanoGptApiKey: "k" } as never,
+				{ apiProvider: providerIdentifiers.kimiCode, kimiCodeApiKey: "k" } as never,
+				{ apiProvider: providerIdentifiers.opencodeGo, opencodeGoApiKey: "k" } as never,
+			],
+			{},
+			fetchSpy,
+		)
+		expect(fetchSpy.mock.calls.map((c) => c[0]).sort()).toEqual([
+			"https://api.kimi.com/coding/v1/usages",
+			"https://nano-gpt.com/api/subscription/v1/usage",
+			"https://opencode.ai/zen/go/v1/usage",
 		])
 	})
 })

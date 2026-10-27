@@ -16,7 +16,8 @@ const barColor = (pct: number) =>
 
 /**
  * "Provider limits": live credits/balances for every connected provider that
- * exposes a usage API (GitHub Copilot, OpenRouter, DeepSeek, Moonshot), one
+ * exposes a usage API (GitHub Copilot, OpenRouter, DeepSeek, Moonshot, Kimi Code,
+ * z.ai, MiniMax, NanoGPT, OpenCode Go), one
  * compact row each. Fetched by the extension host; keys never reach the webview.
  */
 export const ProviderLimits = () => {
