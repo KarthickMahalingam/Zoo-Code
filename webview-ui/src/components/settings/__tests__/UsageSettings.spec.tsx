@@ -207,6 +207,13 @@ describe("UsageSettings", () => {
 			expect(screen.getByTestId("usage-stats").textContent).toContain("$1.00")
 		})
 
+		it("includes everything for the all-time range", () => {
+			state.taskHistory = [priced(1), priced(5, { ts: NOW - 200 * 24 * 60 * 60 * 1000 })]
+			render(<UsageSettings />)
+			fireEvent.click(screen.getByTestId("usage-range-all"))
+			expect(screen.getByTestId("usage-stats").textContent).toContain("$6.00")
+		})
+
 		it("marks the active range for assistive tech", () => {
 			render(<UsageSettings />)
 			expect(screen.getByTestId("usage-range-7d").getAttribute("aria-checked")).toBe("true")
@@ -238,6 +245,14 @@ describe("UsageSettings", () => {
 			expect(revokeObjectURL).toHaveBeenCalledWith("blob:x")
 			click.mockRestore()
 		})
+	})
+
+	it("exposes the chart to assistive tech as a single labelled image", () => {
+		state.taskHistory = [priced(1)]
+		render(<UsageSettings />)
+		const chart = screen.getByTestId("usage-daily-chart")
+		expect(chart.getAttribute("role")).toBe("img")
+		expect(chart.getAttribute("aria-label")).toBeTruthy()
 	})
 
 	it("draws one chart bar per day for a bounded range", () => {

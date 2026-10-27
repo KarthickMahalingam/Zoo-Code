@@ -148,11 +148,26 @@ describe("getGitHubCopilotQuota", () => {
 		expect(result).toMatchObject({ ok: false, reason: "noCopilot" })
 	})
 
-	it("turns network errors into an error result instead of throwing", async () => {
+	it("turns network errors into a generic error result instead of throwing", async () => {
 		const result = await getGitHubCopilotQuota({}, (async () => {
 			throw new Error("offline")
 		}) as never)
-		expect(result).toEqual({ ok: false, reason: "error", message: "offline" })
+		// Arbitrary error text is never forwarded: it can embed URLs, headers or tokens.
+		expect(result).toEqual({ ok: false, reason: "error", message: "Request failed" })
+	})
+
+	it("never leaks the access token through an error message", async () => {
+		const result = await getGitHubCopilotQuota({}, (async () => {
+			throw new Error("request to https://api.github.com failed: Authorization: token gho_token")
+		}) as never)
+		expect(JSON.stringify(result)).not.toContain("gho_token")
+	})
+
+	it("reports a timeout plainly", async () => {
+		const result = await getGitHubCopilotQuota({}, (async () => {
+			throw Object.assign(new Error("The operation timed out"), { name: "TimeoutError" })
+		}) as never)
+		expect(result).toEqual({ ok: false, reason: "error", message: "Request timed out" })
 	})
 
 	it("caches successful results and bypasses the cache when forced", async () => {

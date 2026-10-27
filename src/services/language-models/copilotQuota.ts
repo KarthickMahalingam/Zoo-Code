@@ -2,6 +2,8 @@ import * as vscode from "vscode"
 
 import { githubCopilotLanguageModel, type GitHubCopilotQuota, type GitHubCopilotQuotaResult } from "@roo-code/types"
 
+import { asRecord, clampPercent, roundToTenth, safeErrorMessage, toNumber } from "./quotaUtils"
+
 /**
  * GitHub Copilot premium-request allowance for the Usage tab.
  *
@@ -17,21 +19,6 @@ const COPILOT_USER_URL = "https://api.github.com/copilot_internal/user"
 const REQUEST_TIMEOUT_MS = 15_000
 /** Avoid hammering the endpoint when the Usage tab is reopened repeatedly. */
 const CACHE_TTL_MS = 60_000
-
-const toNumber = (value: unknown): number | undefined => {
-	if (typeof value === "number" && Number.isFinite(value)) return value
-	if (typeof value === "string" && value.trim() !== "") {
-		const parsed = Number(value)
-		return Number.isFinite(parsed) ? parsed : undefined
-	}
-	return undefined
-}
-
-const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-	value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
-
-/** One decimal, matching GitHub's panel ("38,903.9 / 140,000"). */
-const roundCredits = (value: number) => Math.round(value * 10) / 10
 
 /**
  * Parses the endpoint payload. Pure, so it is unit-tested against recorded
@@ -63,11 +50,11 @@ export function parseCopilotQuota(payload: unknown, now = Date.now()): GitHubCop
 	let usedPercent: number | undefined
 
 	if (entitlement !== undefined && entitlement > 0 && remaining !== undefined) {
-		used = roundCredits(Math.min(entitlement, Math.max(0, entitlement - remaining)))
-		usedPercent = Math.min(100, Math.max(0, (used / entitlement) * 100))
+		used = roundToTenth(Math.min(entitlement, Math.max(0, entitlement - remaining)))
+		usedPercent = clampPercent((used / entitlement) * 100)
 	} else {
 		const percentRemaining = toNumber(snapshot.percent_remaining)
-		if (percentRemaining !== undefined) usedPercent = Math.min(100, Math.max(0, 100 - percentRemaining))
+		if (percentRemaining !== undefined) usedPercent = clampPercent(100 - percentRemaining)
 	}
 
 	return {
@@ -129,7 +116,7 @@ export function getGitHubCopilotQuota(
 			if (result.ok) cache = { at: Date.now(), result }
 			return result
 		} catch (error) {
-			return { ok: false, reason: "error", message: error instanceof Error ? error.message : String(error) }
+			return { ok: false, reason: "error", message: safeErrorMessage(error) }
 		} finally {
 			inFlight = undefined
 		}

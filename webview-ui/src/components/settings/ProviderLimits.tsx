@@ -6,6 +6,7 @@ import { VsCodeLmModelsMessageType, type ProviderQuota } from "@roo-code/types"
 import { useAppTranslation } from "@/i18n/TranslationContext"
 import { cn } from "@src/lib/utils"
 import { vscode } from "@src/utils/vscode"
+import { providerLabel } from "@src/utils/providerLabel"
 
 const formatReset = (ts: number) =>
 	new Date(ts).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric" })
@@ -18,7 +19,7 @@ const barColor = (pct: number) =>
  * exposes a usage API (GitHub Copilot, OpenRouter, DeepSeek, Moonshot), one
  * compact row each. Fetched by the extension host; keys never reach the webview.
  */
-export const ProviderLimits = ({ providerLabel }: { providerLabel: (id: string) => string }) => {
+export const ProviderLimits = () => {
 	const { t } = useAppTranslation()
 	const [quotas, setQuotas] = useState<ProviderQuota[] | undefined>()
 	const [loading, setLoading] = useState(true)

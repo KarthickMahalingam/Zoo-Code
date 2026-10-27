@@ -1345,6 +1345,7 @@
 		"byModel": "By model",
 		"notRecorded": "Not recorded",
 		"noPrice": "no price",
-		"tokensShort": "tok"
+		"tokensShort": "tok",
+		"chartLabel": "{{metric}}, total {{total}}"
 	}
 }

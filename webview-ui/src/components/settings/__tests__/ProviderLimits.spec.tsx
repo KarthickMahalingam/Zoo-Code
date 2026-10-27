@@ -13,25 +13,22 @@ const respond = (providerQuotas: ProviderQuota[]) =>
 		window.dispatchEvent(new MessageEvent("message", { data: { type: "providerQuotas", providerQuotas } }))
 	})
 
-const label = (id: string) => `Label:${id}`
-const COPILOT = providerIdentifiers.githubCopilot
-
 describe("ProviderLimits", () => {
 	beforeEach(() => post.mockClear())
 
 	it("asks the extension for quotas on mount without forcing", () => {
-		render(<ProviderLimits providerLabel={label} />)
+		render(<ProviderLimits />)
 		expect(post).toHaveBeenCalledWith({ type: "requestProviderQuotas", bool: false })
 	})
 
 	it("shows a loading row until the first response", () => {
-		render(<ProviderLimits providerLabel={label} />)
+		render(<ProviderLimits />)
 		expect(screen.getByTestId("provider-limits")).toBeTruthy()
 		expect(screen.queryByTestId(`provider-limit-${providerIdentifiers.githubCopilot}`)).toBeNull()
 	})
 
 	it("renders credits with a progress bar and reset date", () => {
-		render(<ProviderLimits providerLabel={label} />)
+		render(<ProviderLimits />)
 		respond([
 			{
 				providerId: providerIdentifiers.githubCopilot,
@@ -50,7 +47,7 @@ describe("ProviderLimits", () => {
 		])
 
 		const row = screen.getByTestId(`provider-limit-${providerIdentifiers.githubCopilot}`)
-		expect(row.textContent).toContain(`Label:${COPILOT}`)
+		expect(row.textContent).toContain("GitHub Copilot")
 		expect(row.textContent).toContain("business")
 		expect(row.textContent).toContain("39,389.3 / 140,000 used")
 		expect(row.textContent).toContain("28%")
@@ -60,7 +57,7 @@ describe("ProviderLimits", () => {
 	})
 
 	it("omits the bar for balance-only providers", () => {
-		render(<ProviderLimits providerLabel={label} />)
+		render(<ProviderLimits />)
 		respond([
 			{
 				providerId: providerIdentifiers.deepseek,
@@ -75,7 +72,7 @@ describe("ProviderLimits", () => {
 	})
 
 	it.each(["noKey", "signedOut", "unsupported", "error"] as const)("shows a quiet status for %s", (reason) => {
-		render(<ProviderLimits providerLabel={label} />)
+		render(<ProviderLimits />)
 		respond([{ providerId: providerIdentifiers.openrouter, ok: false, reason, fetchedAt: 1 }])
 		const row = screen.getByTestId(`provider-limit-${providerIdentifiers.openrouter}`)
 		expect(row.textContent).toContain(`settings:usage.limits.${reason}`.split(".").pop()!)
@@ -83,13 +80,13 @@ describe("ProviderLimits", () => {
 	})
 
 	it("hides the whole section when nothing connected has a usage API", () => {
-		render(<ProviderLimits providerLabel={label} />)
+		render(<ProviderLimits />)
 		respond([])
 		expect(screen.queryByTestId("provider-limits")).toBeNull()
 	})
 
 	it("refresh forces a new request", () => {
-		render(<ProviderLimits providerLabel={label} />)
+		render(<ProviderLimits />)
 		respond([
 			{
 				providerId: providerIdentifiers.deepseek,
@@ -104,7 +101,7 @@ describe("ProviderLimits", () => {
 	})
 
 	it("ignores unrelated messages", () => {
-		render(<ProviderLimits providerLabel={label} />)
+		render(<ProviderLimits />)
 		act(() => {
 			window.dispatchEvent(new MessageEvent("message", { data: { type: "somethingElse" } }))
 		})

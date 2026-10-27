@@ -6,6 +6,15 @@ import {
 } from "@roo-code/types"
 
 import { getGitHubCopilotQuota } from "./copilotQuota"
+import {
+	QuotaHttpError,
+	asRecord,
+	clampPercent,
+	formatCredits,
+	formatMoney,
+	safeErrorMessage,
+	toNumber,
+} from "./quotaUtils"
 
 /**
  * Live limits/balances for every connected provider that exposes a usage API,
@@ -18,25 +27,6 @@ import { getGitHubCopilotQuota } from "./copilotQuota"
 
 const REQUEST_TIMEOUT_MS = 15_000
 const CACHE_TTL_MS = 60_000
-
-const toNumber = (value: unknown): number | undefined => {
-	if (typeof value === "number" && Number.isFinite(value)) return value
-	if (typeof value === "string" && value.trim() !== "") {
-		const n = Number(value)
-		return Number.isFinite(n) ? n : undefined
-	}
-	return undefined
-}
-
-const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-	value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
-
-const money = (value: number, symbol = "$") => `${value < 0 ? "-" : ""}${symbol}${Math.abs(value).toFixed(2)}`
-
-const credits = (value: number) =>
-	value.toLocaleString("en-US", { maximumFractionDigits: Number.isInteger(value) ? 0 : 1 })
-
-const clampPct = (value: number) => Math.min(100, Math.max(0, value))
 
 // Parsers (pure; unit-tested) ----------------------------------------------------------------------
 
@@ -53,14 +43,14 @@ export function parseOpenRouterKey(payload: unknown): ProviderQuotaWindow[] | un
 		return [
 			{
 				id: "key_limit",
-				valueLabel: `${money(used)} / ${money(limit)} used`,
-				usedPercent: clampPct((used / limit) * 100),
+				valueLabel: `${formatMoney(used)} / ${formatMoney(limit)} used`,
+				usedPercent: clampPercent((used / limit) * 100),
 			},
 		]
 	}
 
 	const usage = toNumber(data.usage_monthly) ?? toNumber(data.usage)
-	return usage === undefined ? undefined : [{ id: "spend", valueLabel: `${money(usage)} spent this month` }]
+	return usage === undefined ? undefined : [{ id: "spend", valueLabel: `${formatMoney(usage)} spent this month` }]
 }
 
 /** DeepSeek `GET /user/balance` → prepaid balance (prefers a positive USD balance). */
@@ -77,13 +67,13 @@ export function parseDeepSeekBalance(payload: unknown): ProviderQuotaWindow[] | 
 
 	const balance = toNumber(pick?.total_balance)
 	if (balance === undefined) return undefined
-	return [{ id: "balance", valueLabel: `${money(balance, pick?.currency === "CNY" ? "¥" : "$")} left` }]
+	return [{ id: "balance", valueLabel: `${formatMoney(balance, pick?.currency === "CNY" ? "¥" : "$")} left` }]
 }
 
 /** Moonshot `GET /v1/users/me/balance` → available balance. */
 export function parseMoonshotBalance(payload: unknown): ProviderQuotaWindow[] | undefined {
 	const balance = toNumber(asRecord(asRecord(payload)?.data)?.available_balance)
-	return balance === undefined ? undefined : [{ id: "balance", valueLabel: `${money(balance)} left` }]
+	return balance === undefined ? undefined : [{ id: "balance", valueLabel: `${formatMoney(balance)} left` }]
 }
 
 // Fetchers ----------------------------------------------------------------------------------------
@@ -97,7 +87,7 @@ async function getJson(fetchImpl: Fetch, url: string, apiKey: string): Promise<u
 		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 	})
 	if (response.status === 401 || response.status === 403) throw new AuthError()
-	if (!response.ok) throw new Error(`HTTP ${response.status}`)
+	if (!response.ok) throw new QuotaHttpError(response.status)
 	return response.json()
 }
 
@@ -141,12 +131,6 @@ const KEYED_PROVIDERS: KeyedProvider[] = [
 	},
 ]
 
-/** Providers this service can report on (used by the webview to decide what to show). */
-export const QUOTA_PROVIDER_IDS = [
-	providerIdentifiers.githubCopilot,
-	...KEYED_PROVIDERS.map((p) => p.providerId),
-] as string[]
-
 const sameOrigin = (a: string, b: string) => {
 	try {
 		return new URL(a).origin === new URL(b).origin
@@ -184,7 +168,7 @@ async function fetchKeyed(
 			providerId: provider.providerId,
 			ok: false,
 			reason: error instanceof AuthError ? "noKey" : "error",
-			message: error instanceof Error ? error.message : String(error),
+			message: error instanceof AuthError ? undefined : safeErrorMessage(error),
 			fetchedAt: now,
 		}
 	}
@@ -203,7 +187,7 @@ async function fetchCopilot(force: boolean): Promise<ProviderQuota> {
 				id: "premium",
 				valueLabel:
 					q.used !== undefined && q.entitlement !== undefined
-						? `${credits(q.used)} / ${credits(q.entitlement)} used`
+						? `${formatCredits(q.used)} / ${formatCredits(q.entitlement)} used`
 						: `${Math.round(q.usedPercent ?? 0)}% used`,
 				usedPercent: q.usedPercent,
 				resetAt: q.resetAt,
@@ -212,6 +196,25 @@ async function fetchCopilot(force: boolean): Promise<ProviderQuota> {
 }
 
 // Entry point -------------------------------------------------------------------------------------
+
+/** The slice of `ProviderSettingsManager` this service needs (keeps it testable without the manager). */
+export interface ProfileSource {
+	listConfig(): Promise<{ id: string }[]>
+	getProfile(params: { id: string }): Promise<ProviderSettings>
+}
+
+/**
+ * Loads full profiles (including API keys) host-side. A profile that fails to
+ * load is skipped rather than failing the whole refresh. Keys never leave the
+ * extension host: only formatted quota rows are posted to the webview.
+ */
+export async function loadProfiles(source: ProfileSource): Promise<ProviderSettings[]> {
+	const entries = await source.listConfig()
+	const profiles = await Promise.all(
+		entries.map((entry) => source.getProfile({ id: entry.id }).catch(() => undefined)),
+	)
+	return profiles.filter((p): p is ProviderSettings => !!p)
+}
 
 let cache: { at: number; key: string; result: ProviderQuota[] } | undefined
 

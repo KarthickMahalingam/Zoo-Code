@@ -20,6 +20,7 @@ vi.mock("../copilotQuota", () => ({
 
 import {
 	getProviderQuotas,
+	loadProfiles,
 	parseDeepSeekBalance,
 	parseMoonshotBalance,
 	parseOpenRouterKey,
@@ -69,6 +70,22 @@ describe("parseDeepSeekBalance", () => {
 	})
 })
 
+describe("parseDeepSeekBalance – fallbacks", () => {
+	it("falls back to a zero USD balance, then to the first row", () => {
+		expect(
+			parseDeepSeekBalance({
+				balance_infos: [
+					{ currency: "EUR", total_balance: "0" },
+					{ currency: "USD", total_balance: "0" },
+				],
+			}),
+		).toEqual([{ id: "balance", valueLabel: "$0.00 left" }])
+		expect(parseDeepSeekBalance({ balance_infos: [{ currency: "EUR", total_balance: "3" }] })).toEqual([
+			{ id: "balance", valueLabel: "$3.00 left" },
+		])
+	})
+})
+
 describe("parseMoonshotBalance", () => {
 	it("reads available_balance", () => {
 		expect(parseMoonshotBalance({ data: { available_balance: 19.5 } })).toEqual([
@@ -102,6 +119,39 @@ describe("getProviderQuotas", () => {
 		const [q] = await getProviderQuotas([{ apiProvider: providerIdentifiers.openrouter } as never], {}, okFetch)
 		expect(q).toMatchObject({ providerId: providerIdentifiers.openrouter, ok: false, reason: "noKey" })
 		expect(okFetch).not.toHaveBeenCalled()
+	})
+
+	it("treats a malformed custom base URL as a different host and never sends the key", async () => {
+		const fetchSpy = vi.fn(okFetch)
+		const [q] = await getProviderQuotas(
+			[
+				{
+					apiProvider: providerIdentifiers.openrouter,
+					openRouterApiKey: "sk",
+					openRouterBaseUrl: "not a url",
+				} as never,
+			],
+			{},
+			fetchSpy,
+		)
+		expect(q).toMatchObject({ ok: false, reason: "unsupported" })
+		expect(fetchSpy).not.toHaveBeenCalled()
+	})
+
+	it("accepts the provider's own host written with a trailing path or slash", async () => {
+		const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
+		const [q] = await getProviderQuotas(
+			[
+				{
+					apiProvider: providerIdentifiers.openrouter,
+					openRouterApiKey: "sk",
+					openRouterBaseUrl: "https://openrouter.ai/api/v1/",
+				} as never,
+			],
+			{},
+			fetchSpy,
+		)
+		expect(q).toMatchObject({ ok: true })
 	})
 
 	it("never sends a key to a custom base URL", async () => {
@@ -152,5 +202,104 @@ describe("getProviderQuotas", () => {
 		expect(fetchSpy).toHaveBeenCalledTimes(1)
 		await getProviderQuotas(profiles, { force: true }, fetchSpy)
 		expect(fetchSpy).toHaveBeenCalledTimes(2)
+	})
+})
+
+describe("loadProfiles", () => {
+	it("loads every saved profile through the manager, with keys", async () => {
+		const source = {
+			listConfig: vi.fn(async () => [{ id: "a" }, { id: "b" }]),
+			getProfile: vi.fn(
+				async ({ id }: { id: string }) => ({ apiProvider: "x", openRouterApiKey: `key-${id}` }) as never,
+			),
+		}
+		const profiles = await loadProfiles(source)
+		expect(profiles).toEqual([
+			{ apiProvider: "x", openRouterApiKey: "key-a" },
+			{ apiProvider: "x", openRouterApiKey: "key-b" },
+		])
+		expect(source.getProfile).toHaveBeenCalledWith({ id: "a" })
+	})
+
+	it("skips a profile that fails to load instead of failing the whole refresh", async () => {
+		const source = {
+			listConfig: vi.fn(async () => [{ id: "ok" }, { id: "broken" }]),
+			getProfile: vi.fn(async ({ id }: { id: string }) => {
+				if (id === "broken") throw new Error("corrupt secret storage")
+				return { apiProvider: "x" } as never
+			}),
+		}
+		expect(await loadProfiles(source)).toEqual([{ apiProvider: "x" }])
+	})
+
+	it("returns an empty list when there are no profiles", async () => {
+		expect(await loadProfiles({ listConfig: async () => [], getProfile: vi.fn() })).toEqual([])
+	})
+})
+
+describe("error handling never leaks credentials", () => {
+	beforeEach(() => resetProviderQuotaCache())
+
+	it("reports a generic message for network errors that embed the key", async () => {
+		const [q] = await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.deepseek, deepSeekApiKey: "sk-secret" } as never],
+			{},
+			vi.fn(async () => {
+				throw new Error("connect ECONNREFUSED https://api.deepseek.com Authorization: Bearer sk-secret")
+			}),
+		)
+		expect(q).toMatchObject({ ok: false, reason: "error", message: "Request failed" })
+		expect(JSON.stringify(q)).not.toContain("sk-secret")
+	})
+
+	it("reports only the status for non-auth HTTP failures", async () => {
+		const [q] = await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.moonshot, moonshotApiKey: "sk" } as never],
+			{},
+			vi.fn(async () => new Response("<html>secret internal page</html>", { status: 502 })),
+		)
+		expect(q).toMatchObject({ ok: false, reason: "error", message: "HTTP 502" })
+	})
+
+	it("treats an empty payload as an error", async () => {
+		const [q] = await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.deepseek, deepSeekApiKey: "sk" } as never],
+			{},
+			vi.fn(async () => new Response(JSON.stringify({ balance_infos: [] }))),
+		)
+		expect(q).toMatchObject({ ok: false, reason: "error", message: "No usage data" })
+	})
+
+	it("surfaces Copilot failures with their reason", async () => {
+		const copilotMod = await import("../copilotQuota")
+		vi.mocked(copilotMod.getGitHubCopilotQuota).mockResolvedValueOnce({ ok: false, reason: "signedOut" })
+		const [q] = await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never], {
+			force: true,
+		})
+		expect(q).toMatchObject({ ok: false, reason: "signedOut" })
+	})
+
+	it("shows Copilot unlimited plans without numbers", async () => {
+		const copilotMod = await import("../copilotQuota")
+		vi.mocked(copilotMod.getGitHubCopilotQuota).mockResolvedValueOnce({
+			ok: true,
+			quota: { plan: "enterprise", unlimited: true, fetchedAt: 1, resetAt: 2 },
+		})
+		const [q] = await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never], {
+			force: true,
+		})
+		expect(q).toMatchObject({ ok: true, windows: [{ id: "premium", valueLabel: "Unlimited", resetAt: 2 }] })
+	})
+
+	it("falls back to a percent label when counts are missing", async () => {
+		const copilotMod = await import("../copilotQuota")
+		vi.mocked(copilotMod.getGitHubCopilotQuota).mockResolvedValueOnce({
+			ok: true,
+			quota: { unlimited: false, usedPercent: 60, fetchedAt: 1 },
+		})
+		const [q] = await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never], {
+			force: true,
+		})
+		expect(q).toMatchObject({ ok: true, windows: [{ valueLabel: "60% used", usedPercent: 60 }] })
 	})
 })

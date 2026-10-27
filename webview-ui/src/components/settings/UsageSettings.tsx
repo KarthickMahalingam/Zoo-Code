@@ -6,12 +6,15 @@ import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@src/lib/utils"
 import { vscode } from "@src/utils/vscode"
 import { formatLargeNumber, formatTimeAgo } from "@src/utils/format"
+import { providerLabel } from "@src/utils/providerLabel"
 import {
 	UNRECORDED,
 	USAGE_RANGES,
 	type UsageMetric,
 	type UsageRange,
 	modelIdFromKey,
+	bucketView,
+	metricTotal,
 	pickMetric,
 	primaryUsage,
 	summarizeUsage,
@@ -22,11 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SectionHeader } from "./SectionHeader"
 import { Section } from "./Section"
 import { SearchableSetting } from "./SearchableSetting"
-import { PROVIDERS } from "./constants"
 import { ProviderLimits } from "./ProviderLimits"
-
-const PROVIDER_LABELS = new Map(PROVIDERS.map((p) => [p.value, p.label]))
-const providerLabel = (id: string) => PROVIDER_LABELS.get(id) ?? id
 
 const formatCost = (cost: number) => `$${cost.toFixed(2)}`
 
@@ -74,16 +73,14 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 	const metric: UsageMetric = pickMetric(summary)
 	const value = (cost: number, tokens: number) => (metric === "cost" ? cost : tokens)
 	const fmt = (cost: number, tokens: number) => (metric === "cost" ? formatCost(cost) : formatLargeNumber(tokens))
-	const total = value(summary.totalCost, summary.totalTokens)
+	const total = metricTotal(summary, metric)
 
-	// While showing cost, a bucket with no priced usage shows its tokens and a
-	// "no price" tag instead of a misleading "$0.00 · 0%".
+	// Row view-model: the priced/unpriced rule lives in `bucketView` (pure, tested).
 	const bucketRow = (b: { cost: number; tokens: number; priced: boolean }) => {
-		const unpriced = metric === "cost" && !b.priced
+		const view = bucketView(b, metric, total)
 		return {
-			value: value(b.cost, b.tokens),
-			unpriced,
-			label: unpriced
+			...view,
+			label: view.unpriced
 				? `${formatLargeNumber(b.tokens)} ${t("settings:usage.tokensShort")} · ${t("settings:usage.noPrice")}`
 				: fmt(b.cost, b.tokens),
 		}
@@ -109,7 +106,7 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 
 			<Section>
 				<div className="flex flex-col gap-5">
-					<ProviderLimits providerLabel={providerLabel} />
+					<ProviderLimits />
 
 					<section className="flex flex-col gap-3">
 						<div className="flex items-center justify-between gap-2">
@@ -231,7 +228,17 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 												? t("settings:usage.dailyCost")
 												: t("settings:usage.dailyTokens")
 										}>
-										<div className="flex items-end gap-1 h-16" data-testid="usage-daily-chart">
+										<div
+											className="flex items-end gap-1 h-16"
+											role="img"
+											aria-label={t("settings:usage.chartLabel", {
+												metric:
+													metric === "cost"
+														? t("settings:usage.dailyCost")
+														: t("settings:usage.dailyTokens"),
+												total: fmt(summary.totalCost, summary.totalTokens),
+											})}
+											data-testid="usage-daily-chart">
 											{summary.daily.map((d) => {
 												const v = value(d.cost, d.tokens)
 												return (
@@ -275,7 +282,6 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 										name: providerName(b.key),
 										...bucketRow(b),
 									}))}
-									total={total}
 									testId="usage-by-provider"
 								/>
 								<Breakdown
@@ -286,7 +292,6 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 										subtitle: b.apiProvider ? providerLabel(b.apiProvider) : undefined,
 										...bucketRow(b),
 									}))}
-									total={total}
 									testId="usage-by-model"
 								/>
 								<p
@@ -381,18 +386,16 @@ const Stat = ({ value, label, hint }: { value: string; label: string; hint?: str
 const Breakdown = ({
 	title,
 	rows,
-	total,
 	testId,
 }: {
 	title: string
-	rows: { key: string; name: string; subtitle?: string; value: number; label: string; unpriced?: boolean }[]
-	total: number
+	rows: { key: string; name: string; subtitle?: string; label: string; percent: number; unpriced?: boolean }[]
 	testId: string
 }) => (
 	<Block title={title} testId={testId}>
 		<div className="flex flex-col gap-1.5">
 			{rows.slice(0, 5).map((row, i) => {
-				const pct = row.unpriced ? 0 : total > 0 ? Math.round((row.value / total) * 100) : 0
+				const pct = row.percent
 				const color = row.unpriced ? "var(--vscode-descriptionForeground)" : PALETTE[i % PALETTE.length]
 				return (
 					<div

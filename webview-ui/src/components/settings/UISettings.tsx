@@ -20,9 +20,9 @@ import { AppearancePreview } from "./AppearancePreview"
 
 const APPEARANCE_KEYS = Object.keys(APPEARANCE_SETTINGS) as AppearanceKey[]
 
-export const CHAT_FONT_SIZE_MIN = 8
-export const CHAT_FONT_SIZE_MAX = 32
-export const CHAT_FONT_SIZE_DEFAULT = 13
+const CHAT_FONT_SIZE_MIN = 8
+const CHAT_FONT_SIZE_MAX = 32
+const CHAT_FONT_SIZE_DEFAULT = 13
 
 interface UISettingsProps extends HTMLAttributes<HTMLDivElement> {
 	reasoningBlockCollapsed: boolean

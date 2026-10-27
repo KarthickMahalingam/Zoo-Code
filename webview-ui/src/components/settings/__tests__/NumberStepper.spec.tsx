@@ -94,6 +94,13 @@ describe("NumberStepper", () => {
 		expect(onChange).not.toHaveBeenCalledWith(NaN)
 	})
 
+	it("clamps a typed zero up to the minimum (a real 0, unlike an emptied box)", () => {
+		const { onChange, input } = setup({ value: 16 })
+		fireEvent.change(input, { target: { value: "0" } })
+		fireEvent.blur(input)
+		expect(onChange).toHaveBeenCalledWith(setting.min)
+	})
+
 	it("reset clears the override", () => {
 		const { onChange } = setup({ value: 20 })
 		fireEvent.click(screen.getByTestId("t-reset"))

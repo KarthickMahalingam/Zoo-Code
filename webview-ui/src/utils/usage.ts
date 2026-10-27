@@ -54,6 +54,41 @@ export function pickMetric(summary: Pick<UsageSummary, "totalCost" | "totalToken
 	return summary.totalCost > 0 || summary.totalTokens === 0 ? "cost" : "tokens"
 }
 
+/**
+ * What a breakdown row (provider / model / mode) should display for a bucket.
+ *
+ * Pure so the "priced vs unpriced" rule lives in one tested place instead of
+ * being re-derived by the component:
+ * - tokens mode:              value = tokens
+ * - cost mode, priced bucket: value = cost, share of total cost
+ * - cost mode, unpriced:      a subscription bucket (e.g. Copilot) has no price,
+ *                             not zero spend → value = tokens, `unpriced: true`,
+ *                             and no share (so no "$0.00 · 0%")
+ */
+export interface BucketView {
+	/** Numeric value the bar/share is computed from. */
+	value: number
+	/** True when the bucket should be shown as tokens with a "no price" tag and no share. */
+	unpriced: boolean
+	/** Whole-number share of the total, 0 for unpriced rows. */
+	percent: number
+}
+
+export function bucketView(
+	bucket: Pick<UsageBucket, "cost" | "tokens" | "priced">,
+	metric: UsageMetric,
+	total: number,
+): BucketView {
+	const unpriced = metric === "cost" && !bucket.priced
+	const value = metric === "cost" ? bucket.cost : bucket.tokens
+	return { value, unpriced, percent: unpriced || total <= 0 ? 0 : Math.round((value / total) * 100) }
+}
+
+/** The metric's headline value for a summary (cost or tokens). */
+export function metricTotal(summary: Pick<UsageSummary, "totalCost" | "totalTokens">, metric: UsageMetric): number {
+	return metric === "cost" ? summary.totalCost : summary.totalTokens
+}
+
 export interface UsageSummary {
 	totalCost: number
 	tokensIn: number

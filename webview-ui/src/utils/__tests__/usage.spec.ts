@@ -1,6 +1,16 @@
 import { providerIdentifiers, type HistoryItem } from "@roo-code/types"
 
-import { UNRECORDED, modelIdFromKey, pickMetric, primaryUsage, rangeStart, summarizeUsage, usageToCsv } from "../usage"
+import {
+	UNRECORDED,
+	bucketView,
+	metricTotal,
+	modelIdFromKey,
+	pickMetric,
+	primaryUsage,
+	rangeStart,
+	summarizeUsage,
+	usageToCsv,
+} from "../usage"
 
 // Fixed "now": Wed 2026-10-14 15:00 local time.
 const NOW = new Date(2026, 9, 14, 15, 0, 0).getTime()
@@ -182,6 +192,14 @@ describe("summarizeUsage", () => {
 		expect(s.topTasks.map((t) => t.totalCost)).toEqual([99, 2])
 	})
 
+	it("breaks cost ties by tokens so equal-priced tasks still rank meaningfully", () => {
+		const s = summarizeUsage(
+			[item({ id: "few", totalCost: 1, tokensIn: 10 }), item({ id: "many", totalCost: 1, tokensIn: 9_000 })],
+			{ range: "all", now: NOW },
+		)
+		expect(s.topTasks.map((t) => t.id)).toEqual(["many", "few"])
+	})
+
 	it("is safe on empty history", () => {
 		const s = summarizeUsage([], { range: "7d", now: NOW })
 		expect(s.taskCount).toBe(0)
@@ -243,6 +261,40 @@ describe("mixed priced and unpriced providers", () => {
 	it("keeps all-unpriced ranges on tokens and all-priced ranges on cost", () => {
 		const unpriced = summarizeUsage([item({ tokensIn: 5, usageByModel: [] })], { range: "all", now: NOW })
 		expect(pickMetric(unpriced)).toBe("tokens")
+	})
+})
+
+describe("bucketView", () => {
+	const priced = { cost: 3, tokens: 1000, priced: true }
+	const unpriced = { cost: 0, tokens: 16_000_000, priced: false }
+
+	it("cost mode: a priced bucket is its cost and its share of total cost", () => {
+		expect(bucketView(priced, "cost", 12)).toEqual({ value: 3, unpriced: false, percent: 25 })
+	})
+
+	it("cost mode: an unpriced bucket carries tokens, is flagged, and has no share (never 0%)", () => {
+		expect(bucketView(unpriced, "cost", 12)).toEqual({ value: 0, unpriced: true, percent: 0 })
+	})
+
+	it("tokens mode: everything is tokens and nothing is flagged unpriced", () => {
+		expect(bucketView(unpriced, "tokens", 32_000_000)).toEqual({ value: 16_000_000, unpriced: false, percent: 50 })
+		expect(bucketView(priced, "tokens", 2000)).toEqual({ value: 1000, unpriced: false, percent: 50 })
+	})
+
+	it("guards division by zero", () => {
+		expect(bucketView(priced, "cost", 0).percent).toBe(0)
+	})
+
+	it("rounds shares to whole numbers", () => {
+		expect(bucketView({ cost: 1, tokens: 0, priced: true }, "cost", 3).percent).toBe(33)
+	})
+})
+
+describe("metricTotal", () => {
+	it("selects the headline value for the metric", () => {
+		const s = { totalCost: 2.5, totalTokens: 900 }
+		expect(metricTotal(s, "cost")).toBe(2.5)
+		expect(metricTotal(s, "tokens")).toBe(900)
 	})
 })
 
