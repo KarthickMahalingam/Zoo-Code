@@ -580,5 +580,11 @@ describe("defaults and non-finite input", () => {
 
 		// The whole task cost is unattributed because the recorded model cost is unusable.
 		expect(summary.byProvider.find((b) => b.key === UNRECORDED)?.cost).toBe(3)
+		// The unusable cost never reaches the recorded buckets as NaN.
+		const recordedProvider = summary.byProvider.find((b) => b.key === providerIdentifiers.anthropic)
+		expect(recordedProvider).toMatchObject({ cost: 0, tokens: 2, priced: false })
+		expect(summary.byModel.find((b) => b.key !== UNRECORDED)).toMatchObject({ cost: 0, tokens: 2, priced: false })
+		expect(summary.byProvider.reduce((sum, b) => sum + b.cost, 0)).toBe(3)
+		expect(summary.byModel.reduce((sum, b) => sum + b.cost, 0)).toBe(3)
 	})
 })

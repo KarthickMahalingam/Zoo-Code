@@ -279,10 +279,28 @@ describe("getGitHubCopilotQuota", () => {
 			const cancelled = getGitHubCopilotQuota({ signal: controller.signal }, fetchSpy as never)
 			await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled())
 			controller.abort()
-			await expect(cancelled).rejects.toBeDefined()
+			await expect(cancelled).rejects.toMatchObject({ name: "AbortError" })
 
 			const good = vi.fn(async () => json(businessPayload))
 			await expect(getGitHubCopilotQuota({}, good as never)).resolves.toMatchObject({ ok: true })
+			expect(good).toHaveBeenCalledTimes(1)
+		})
+
+		it("starts a new request instead of joining one whose last caller already left", async () => {
+			let release: (session: { accessToken: string }) => void = () => {}
+			getSession.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+			const controller = new AbortController()
+			const first = getGitHubCopilotQuota({ signal: controller.signal }, vi.fn() as never)
+			await vi.waitFor(() => expect(getSession).toHaveBeenCalled())
+			controller.abort()
+			await expect(first).rejects.toMatchObject({ name: "AbortError" })
+
+			// The cancelled request is still waiting on the token; a new caller must not be handed its result.
+			const good = vi.fn(async () => json(businessPayload))
+			const second = getGitHubCopilotQuota({}, good as never)
+			release({ accessToken: "gho_token" })
+
+			await expect(second).resolves.toMatchObject({ ok: true })
 			expect(good).toHaveBeenCalledTimes(1)
 		})
 

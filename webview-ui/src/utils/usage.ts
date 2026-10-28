@@ -232,10 +232,11 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 
 		for (const e of entries) {
 			const entryTokens = e.tokensIn + e.tokensOut
+			const entryCost = Number.isFinite(e.cost) ? e.cost : 0
 			const providerKey = e.apiProvider || UNRECORDED
 			const modelKey = e.modelId ? `${e.apiProvider ?? ""}\u0000${e.modelId}` : UNRECORDED
-			addTo(providers, providerKey, e.cost, entryTokens, seenProviders)
-			addTo(models, modelKey, e.cost, entryTokens, seenModels, { apiProvider: e.apiProvider })
+			addTo(providers, providerKey, entryCost, entryTokens, seenProviders)
+			addTo(models, modelKey, entryCost, entryTokens, seenModels, { apiProvider: e.apiProvider })
 		}
 
 		const modeSeen = new Set<string>()

@@ -927,6 +927,54 @@ describe("getProviderQuotas", () => {
 		expect(ra).toEqual(rb)
 	})
 
+	it("starts a new request instead of joining one whose last caller already left", async () => {
+		const body = () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } }))
+		// A host that ignores cancellation: the first request is still pending after its caller left.
+		let finishFirst: () => void = () => {}
+		const fetchSpy = vi
+			.fn<typeof fetch>()
+			.mockImplementationOnce(() => new Promise<Response>((resolve) => (finishFirst = () => resolve(body()))))
+			.mockImplementation(async () => body())
+		const profiles = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never]
+		const controller = new AbortController()
+
+		const first = getProviderQuotas(profiles, { signal: controller.signal }, fetchSpy)
+		await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
+		controller.abort()
+		await expect(first).rejects.toMatchObject({ name: "AbortError" })
+
+		// A new caller must get its own fetch, not join the cancelled one.
+		const [q] = await getProviderQuotas(profiles, {}, fetchSpy)
+		expect(fetchSpy).toHaveBeenCalledTimes(2)
+		expect(q).toMatchObject({ providerId: providerIdentifiers.openrouter, ok: true })
+		finishFirst()
+	})
+
+	it("does not let a cancelled request wipe a cached success", async () => {
+		const ok = vi.fn(async () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
+		const profiles = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never]
+		await getProviderQuotas(profiles, {}, ok)
+
+		const hanging = vi.fn(
+			(_input: RequestInfo | URL, init?: RequestInit) =>
+				new Promise<Response>((_resolve, reject) =>
+					(init?.signal as AbortSignal).addEventListener("abort", () =>
+						reject(new DOMException("Aborted", "AbortError")),
+					),
+				),
+		)
+		const controller = new AbortController()
+		const refresh = getProviderQuotas(profiles, { force: true, signal: controller.signal }, hanging)
+		await vi.waitFor(() => expect(hanging).toHaveBeenCalled())
+		controller.abort()
+		await expect(refresh).rejects.toMatchObject({ name: "AbortError" })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+
+		// The earlier success is still served from the cache.
+		await getProviderQuotas(profiles, {}, ok)
+		expect(ok).toHaveBeenCalledTimes(1)
+	})
+
 	it("caches results for the same set of providers unless forced", async () => {
 		const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
 		const profiles = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never]

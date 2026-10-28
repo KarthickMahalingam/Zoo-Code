@@ -617,11 +617,14 @@ function quotaForKeyedProvider(
 		const controller = new AbortController()
 		const request: Promise<ProviderQuota> = fetchKeyed(provider, apiKey, urls, fetchImpl, controller.signal)
 			.then((result) => {
-				if (result.ok) {
-					cache.set(key, { at: Date.now(), apiKey, result })
-				} else {
-					// A failed refresh must not leave an older success to be served as if it were current.
-					cache.delete(key)
+				// A cancelled request says nothing about the account, so it leaves the cache as it is.
+				if (!controller.signal.aborted) {
+					if (result.ok) {
+						cache.set(key, { at: Date.now(), apiKey, result })
+					} else {
+						// A failed refresh must not leave an older success to be served as if it were current.
+						cache.delete(key)
+					}
 				}
 				return result
 			})
@@ -639,7 +642,11 @@ function quotaForKeyedProvider(
 		if (left) return
 		left = true
 		// Last one out cancels the network work; earlier leavers just stop waiting.
-		if (--shared.waiters === 0) shared.controller.abort()
+		if (--shared.waiters === 0) {
+			shared.controller.abort()
+			// Do not let a later caller join a request that is already cancelled.
+			if (inflight.get(key) === shared) inflight.delete(key)
+		}
 	}
 	return until(shared.request, signal, leave).finally(leave)
 }

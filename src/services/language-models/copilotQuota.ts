@@ -147,7 +147,8 @@ export function getGitHubCopilotQuota(
 			.then((result) => {
 				// One place for every outcome: a success is cached, and anything else (signed out, no Copilot, an
 				// HTTP error, a thrown or cancelled request) drops an older success so it is not served as current.
-				cache = result.ok ? { at: Date.now(), result } : undefined
+				// A cancelled request says nothing about the account, so it leaves the cache alone.
+				if (!controller.signal.aborted) cache = result.ok ? { at: Date.now(), result } : undefined
 				return result
 			})
 			.finally(() => {
@@ -163,7 +164,11 @@ export function getGitHubCopilotQuota(
 		if (left) return
 		left = true
 		// Last one out cancels the network work; earlier leavers just stop waiting.
-		if (--shared.waiters === 0) shared.controller.abort()
+		if (--shared.waiters === 0) {
+			shared.controller.abort()
+			// Do not let a later caller join a request that is already cancelled (it would only get "cancelled").
+			if (inFlight === shared) inFlight = undefined
+		}
 	}
 	return untilAborted(shared.request, signal, leave).finally(leave)
 }
