@@ -44,10 +44,19 @@ describe("NumberStepper", () => {
 		expect(onChange).toHaveBeenLastCalledWith(15)
 	})
 
-	it("clears the override when stepping back to the default", () => {
+	it("keeps an explicit value that equals the displayed default: only Reset clears an override", () => {
 		const { onChange } = setup({ value: 13 })
-		fireEvent.click(screen.getByTestId("t-decrement")) // 12 == fallback
-		expect(onChange).toHaveBeenLastCalledWith(undefined)
+		fireEvent.click(screen.getByTestId("t-decrement")) // 12 == the shown fallback, but the user chose it
+		expect(onChange).toHaveBeenLastCalledWith(12)
+		expect(onChange).not.toHaveBeenCalledWith(undefined)
+	})
+
+	it("stores a typed value that equals the displayed default as that number", () => {
+		const { onChange, input } = setup()
+		fireEvent.change(input, { target: { value: "12" } })
+		fireEvent.blur(input)
+		expect(onChange).toHaveBeenCalledTimes(1)
+		expect(onChange).toHaveBeenLastCalledWith(12)
 	})
 
 	it("disables the buttons at the limits", () => {
@@ -91,7 +100,7 @@ describe("NumberStepper", () => {
 		fireEvent.change(input, { target: { value: "" } })
 		fireEvent.blur(input)
 		expect(input.value).toBe("16")
-		expect(onChange).not.toHaveBeenCalledWith(NaN)
+		expect(onChange).not.toHaveBeenCalled()
 	})
 
 	it("clamps a typed zero up to the minimum (a real 0, unlike an emptied box)", () => {

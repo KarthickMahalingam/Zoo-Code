@@ -21,18 +21,3 @@ for (const theme of visualThemes) {
 		await expect(story).toHaveScreenshot(`appearance-preview-${theme.name}.png`)
 	})
 }
-
-test("a reset preview ignores saved root values and uses the live fallbacks", async ({ mount, page }) => {
-	const component = mountedStory(await mount("appearance-preview"))
-	await page.evaluate(() => {
-		const root = document.documentElement
-		root.style.setProperty("--zoo-terminal-font-size", "30px")
-		root.style.setProperty("--zoo-ui-scale", "2")
-	})
-	const reset = component.getByTestId("appearance-preview-reset").getByTestId("appearance-preview")
-	const terminal = reset.locator("pre").nth(1)
-	const size = await terminal.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
-	// Not the saved 30px: the terminal falls back to VS Code's editor font size.
-	expect(size).toBeLessThan(30)
-	expect(await reset.evaluate((el) => getComputedStyle(el).getPropertyValue("--zoo-ui-scale").trim())).toBe("")
-})

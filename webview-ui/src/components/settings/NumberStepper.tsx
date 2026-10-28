@@ -47,8 +47,10 @@ export const NumberStepper = ({
 		}
 		const clamped = Math.min(max, Math.max(min, Math.round(next)))
 		setDraft(String(clamped))
-		// Committing the default clears the override so VS Code changes still flow through.
-		onChange(clamped === fallback ? undefined : clamped)
+		// Always the number the user chose. `fallback` is only what the box shows while nothing is set; for
+		// the font sizes the real default is VS Code's own size, so a typed 12 must stay 12. Only Reset
+		// clears the override.
+		onChange(clamped)
 	}
 
 	const buttonClass =
