@@ -3936,6 +3936,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				"api_req_started",
 				JSON.stringify({
 					apiProtocol,
+					// Recorded now so Usage reflects what served this request, not the profile selected later.
+					apiProvider,
+					modelId,
 				}),
 			)
 
@@ -4013,6 +4016,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 			this.clineMessages[lastApiReqIndex].text = JSON.stringify({
 				apiProtocol,
+				apiProvider,
+				modelId,
 			} satisfies ClineApiReqInfo)
 
 			await this.saveClineMessages()

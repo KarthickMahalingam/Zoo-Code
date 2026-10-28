@@ -30,6 +30,7 @@ import {
 	RouterModelsMessageType,
 	VsCodeLmModelsMessageType,
 	isTelemetryOptedIn,
+	type ProviderQuota,
 } from "@roo-code/types"
 import { customToolRegistry } from "@roo-code/core"
 import { CloudService } from "@roo-code/cloud"
@@ -129,6 +130,9 @@ import {
 
 const handlerFor = (apiConfiguration: ProviderSettings, provider: RouterName): ApiHandler =>
 	buildApiHandler({ ...apiConfiguration, apiProvider: provider })
+
+/** In-flight `requestProviderQuotas` work by request id, so a cancel message can abort it. */
+const pendingProviderQuotaRequests = new Map<string, AbortController>()
 
 export const webviewMessageHandler = async (
 	provider: ClineProvider,
@@ -1567,6 +1571,47 @@ export const webviewMessageHandler = async (
 				})
 			} finally {
 				if (isLatest()) viewState.changes++
+			}
+			break
+		}
+		case VsCodeLmModelsMessageType.cancelProviderQuotas:
+			// The Usage tab was closed (or the request superseded): stop the profile load and any fetches.
+			if (message.requestId) pendingProviderQuotaRequests.get(message.requestId)?.abort()
+			break
+		case VsCodeLmModelsMessageType.requestProviderQuotas: {
+			// Always answer (unless cancelled): the webview shows a spinner until a response arrives and
+			// disables refresh while it waits, so a thrown error here would leave it stuck. The answer
+			// carries the request's id so the webview can ignore one that has been superseded.
+			const requestId = message.requestId
+			const controller = new AbortController()
+			if (requestId) pendingProviderQuotaRequests.set(requestId, controller)
+			let providerQuotas: ProviderQuota[] = []
+			try {
+				const { getProviderQuotas, loadProfiles } =
+					await import("../../services/language-models/providerQuotas")
+				const profiles = await loadProfiles(provider.providerSettingsManager)
+				if (!controller.signal.aborted) {
+					providerQuotas = await getProviderQuotas(profiles, {
+						force: message.bool === true,
+						signal: controller.signal,
+					})
+				}
+			} catch (error) {
+				if (!controller.signal.aborted) {
+					provider.log(
+						`[requestProviderQuotas] ${error instanceof Error ? error.message : "Failed to load provider limits"}`,
+					)
+				}
+			} finally {
+				if (requestId) pendingProviderQuotaRequests.delete(requestId)
+			}
+			// Nobody is waiting for a cancelled request: skip the post.
+			if (!controller.signal.aborted) {
+				await provider.postMessageToWebview({
+					type: VsCodeLmModelsMessageType.providerQuotas,
+					providerQuotas,
+					requestId,
+				})
 			}
 			break
 		}
