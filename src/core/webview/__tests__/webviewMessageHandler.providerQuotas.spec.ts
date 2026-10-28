@@ -222,6 +222,9 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 				type: "requestProviderQuotas",
 				requestId: "provider-quotas-1",
 			})
+			// Start them one after the other: two overlapping dynamic imports of the handler's service module can
+			// resolve to the real module instead of the mock, which would make a real network call.
+			await vi.waitFor(() => expect(releases).toHaveLength(1))
 			const second = webviewMessageHandler(editorTab, {
 				type: "requestProviderQuotas",
 				requestId: "provider-quotas-1",
@@ -240,7 +243,7 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 				expect.objectContaining({ type: "providerQuotas", requestId: "provider-quotas-1" }),
 			)
 			// Only the editor tab's request went on to the service; the sidebar's was stopped while loading.
-			expect(quotas.getProviderQuotas.mock.calls.length).toBeLessThanOrEqual(1)
+			expect(quotas.getProviderQuotas).toHaveBeenCalledTimes(1)
 		})
 
 		it("marks the answer as failed when the quotas could not be loaded, and not when there are simply none", async () => {
