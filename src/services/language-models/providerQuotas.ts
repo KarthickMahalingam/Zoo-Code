@@ -552,10 +552,18 @@ export interface ProfileSource {
  * load is skipped rather than failing the whole refresh. Keys never leave the
  * extension host: only formatted quota rows are posted to the webview.
  */
-export async function loadProfiles(source: ProfileSource): Promise<ProviderSettings[]> {
-	const entries = await source.listConfig()
-	const profiles = await Promise.all(
-		entries.map((entry) => source.getProfile({ id: entry.id }).catch(() => undefined)),
+export async function loadProfiles(source: ProfileSource, signal?: AbortSignal): Promise<ProviderSettings[]> {
+	// Stops waiting as soon as `signal` aborts. The reads themselves cannot be cancelled, but no further
+	// profile is requested once the caller has gone.
+	const entries = await until(source.listConfig(), signal, () => {})
+	const profiles = await until(
+		Promise.all(
+			entries.map((entry) =>
+				signal?.aborted ? undefined : source.getProfile({ id: entry.id }).catch(() => undefined),
+			),
+		),
+		signal,
+		() => {},
 	)
 	return profiles.filter((p): p is ProviderSettings => !!p)
 }

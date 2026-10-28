@@ -68,10 +68,24 @@ export function parseCopilotQuota(payload: unknown, now = Date.now()): GitHubCop
 	}
 }
 
-async function getGitHubToken(): Promise<string | undefined> {
+/** Rejects as soon as `signal` aborts. The pending work cannot be cancelled, but nobody waits for it any more. */
+function raceAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const abort = () => reject(new DOMException("Aborted", "AbortError"))
+		if (signal.aborted) return abort()
+		signal.addEventListener("abort", abort, { once: true })
+		work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort))
+	})
+}
+
+/** Each lookup is bounded by `signal`, so a session request that never settles cannot hold the quota request open. */
+async function getGitHubToken(signal: AbortSignal): Promise<string | undefined> {
 	const { authProviderId, authScopeSets } = githubCopilotLanguageModel
 	for (const scopes of authScopeSets) {
-		const session = await vscode.authentication.getSession(authProviderId, scopes, { silent: true })
+		const session = await raceAbort(
+			Promise.resolve(vscode.authentication.getSession(authProviderId, scopes, { silent: true })),
+			signal,
+		)
 		if (session) return session.accessToken
 	}
 	return undefined
@@ -116,7 +130,9 @@ export function getGitHubCopilotQuota(
 		const controller = new AbortController()
 		const fetchQuota = async (): Promise<GitHubCopilotQuotaResult> => {
 			try {
-				const token = await getGitHubToken()
+				const token = await getGitHubToken(
+					AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+				)
 				if (controller.signal.aborted) return { ok: false, reason: "error", message: "Request cancelled" }
 				if (!token) return { ok: false, reason: "signedOut" }
 

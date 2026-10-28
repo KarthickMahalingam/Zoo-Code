@@ -1599,13 +1599,11 @@ export const webviewMessageHandler = async (
 			try {
 				const { getProviderQuotas, loadProfiles } =
 					await import("../../services/language-models/providerQuotas")
-				const profiles = await loadProfiles(provider.providerSettingsManager)
-				if (!controller.signal.aborted) {
-					providerQuotas = await getProviderQuotas(profiles, {
-						force: message.bool === true,
-						signal: controller.signal,
-					})
-				}
+				const profiles = await loadProfiles(provider.providerSettingsManager, controller.signal)
+				providerQuotas = await getProviderQuotas(profiles, {
+					force: message.bool === true,
+					signal: controller.signal,
+				})
 			} catch (error) {
 				providerQuotasFailed = true
 				if (!controller.signal.aborted) {

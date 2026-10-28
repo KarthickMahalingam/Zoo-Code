@@ -7602,6 +7602,58 @@ describe("Cline", () => {
 			}
 		})
 
+		it("overwriteClineMessages sends an explicit empty usageByModel when the replacement records no usage", async () => {
+			// The history store merges onto the stored item, so a replacement with no recorded usage (for example
+			// after a rewind) must say so explicitly, or the earlier breakdown would stay on the stored item.
+			const taskDir = path.join(os.tmpdir(), "test-storage", "tasks", "00000000-0000-7000-8000-000000000000")
+			fsReal.mkdirSync(taskDir, { recursive: true })
+			const historySpy = vi.spyOn(mockProvider, "updateTaskHistory")
+			try {
+				const task = new Task({
+					provider: mockProvider,
+					apiConfiguration: mockApiConfig,
+					task: "test task",
+					startTask: false,
+				})
+				const say = (kind: ClineMessage["say"], text: string, ts: number): ClineMessage => ({
+					ts,
+					type: "say",
+					say: kind,
+					text,
+				})
+				const withUsage = [
+					say("text", "do it", 1),
+					say(
+						"api_req_started",
+						JSON.stringify({
+							apiProvider: providerIdentifiers.anthropic,
+							modelId: "claude-sonnet-5",
+							tokensIn: 10,
+							tokensOut: 5,
+							cost: 0.5,
+						}),
+						2,
+					),
+				]
+
+				await task.overwriteClineMessages(withUsage)
+				const first = historySpy.mock.calls.at(-1)?.[0]
+				expect(first?.usageByModel).toEqual([
+					expect.objectContaining({ apiProvider: providerIdentifiers.anthropic, requests: 1, cost: 0.5 }),
+				])
+
+				// A rewind to before the request: the replacement records nothing.
+				await task.overwriteClineMessages([say("text", "do it", 1)])
+				const second = historySpy.mock.calls.at(-1)?.[0]
+				expect(second).toBeDefined()
+				expect(second).toHaveProperty("usageByModel", undefined)
+				expect(second?.totalCost).toBe(0)
+			} finally {
+				fsReal.rmSync(path.join(taskDir, "ui_messages.json"), { force: true })
+				historySpy.mockRestore()
+			}
+		})
+
 		it("finalizePartialToolAsk skips the webview update when the message write itself fails", async () => {
 			// Complements the later-stage-failure test above by failing the first save
 			// stage: with the real task directory removed, safeWriteJson's fs.access

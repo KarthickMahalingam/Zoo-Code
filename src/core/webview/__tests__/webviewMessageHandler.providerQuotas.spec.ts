@@ -203,6 +203,22 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 			expect(provider.postMessageToWebview).not.toHaveBeenCalled()
 		})
 
+		it("releases the handler on cancel without waiting for a profile read that never settles", async () => {
+			const provider = makeProvider()
+			provider.providerSettingsManager.listConfig = vi.fn(() => new Promise(() => {})) as never
+
+			const running = webviewMessageHandler(provider, { type: "requestProviderQuotas", requestId: "req-stuck" })
+			await vi.waitFor(() => expect(provider.providerSettingsManager.listConfig).toHaveBeenCalled())
+			await webviewMessageHandler(provider, { type: "cancelProviderQuotas", requestId: "req-stuck" })
+
+			// Resolves although listConfig never does.
+			await running
+			expect(provider.providerSettingsManager.getProfile).not.toHaveBeenCalled()
+			expect(quotas.getProviderQuotas).not.toHaveBeenCalled()
+			expect(provider.postMessageToWebview).not.toHaveBeenCalled()
+			expect(provider.log).not.toHaveBeenCalled()
+		})
+
 		it("keeps two webviews apart: a cancel from one never aborts the other's request with the same id", async () => {
 			// Each webview has its own provider, and both number their requests from 1. Their loads are held open
 			// at the profile list, so both are pending at once when the cancel arrives.

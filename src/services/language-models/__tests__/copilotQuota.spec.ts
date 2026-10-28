@@ -304,6 +304,22 @@ describe("getGitHubCopilotQuota", () => {
 			expect(good).toHaveBeenCalledTimes(1)
 		})
 
+		it("stops waiting for a session request that never settles when the caller goes away", async () => {
+			getSession.mockImplementationOnce(() => new Promise(() => {}))
+			const fetchSpy = vi.fn()
+			const controller = new AbortController()
+
+			const result = getGitHubCopilotQuota({ signal: controller.signal }, fetchSpy as never)
+			await vi.waitFor(() => expect(getSession).toHaveBeenCalled())
+			controller.abort()
+
+			await expect(result).rejects.toMatchObject({ name: "AbortError" })
+			expect(fetchSpy).not.toHaveBeenCalled()
+			// The stuck lookup is not left holding the slot: the next call starts over.
+			const good = vi.fn(async () => json(businessPayload))
+			await expect(getGitHubCopilotQuota({}, good as never)).resolves.toMatchObject({ ok: true })
+		})
+
 		it("does not start the GitHub request when it was cancelled while the token was being fetched", async () => {
 			let release: (session: { accessToken: string }) => void = () => {}
 			getSession.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))

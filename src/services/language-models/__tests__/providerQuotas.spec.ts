@@ -1013,6 +1013,41 @@ describe("loadProfiles", () => {
 		expect(await loadProfiles(source)).toEqual([{ apiProvider: "x" }])
 	})
 
+	it("stops waiting for the profile list when the signal aborts, and reads no profile", async () => {
+		const source = { listConfig: vi.fn(() => new Promise<never>(() => {})), getProfile: vi.fn() }
+		const controller = new AbortController()
+		const loading = loadProfiles(source, controller.signal)
+		controller.abort()
+		await expect(loading).rejects.toMatchObject({ name: "AbortError" })
+		expect(source.getProfile).not.toHaveBeenCalled()
+	})
+
+	it("stops waiting for profile reads when the signal aborts", async () => {
+		const source = {
+			listConfig: vi.fn(async () => [{ id: "a" }]),
+			getProfile: vi.fn(() => new Promise<never>(() => {})),
+		}
+		const controller = new AbortController()
+		const loading = loadProfiles(source, controller.signal)
+		await vi.waitFor(() => expect(source.getProfile).toHaveBeenCalled())
+		controller.abort()
+		await expect(loading).rejects.toMatchObject({ name: "AbortError" })
+	})
+
+	it("requests no profile once the signal has aborted while the list was loading", async () => {
+		let release: (entries: { id: string }[]) => void = () => {}
+		const source = {
+			listConfig: vi.fn(() => new Promise<{ id: string }[]>((resolve) => (release = resolve))),
+			getProfile: vi.fn(),
+		}
+		const controller = new AbortController()
+		const loading = loadProfiles(source, controller.signal)
+		controller.abort()
+		release([{ id: "a" }])
+		await expect(loading).rejects.toMatchObject({ name: "AbortError" })
+		expect(source.getProfile).not.toHaveBeenCalled()
+	})
+
 	it("returns an empty list when there are no profiles", async () => {
 		expect(await loadProfiles({ listConfig: async () => [], getProfile: vi.fn() })).toEqual([])
 	})
