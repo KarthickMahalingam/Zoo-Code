@@ -1376,6 +1376,12 @@ export const ChatRowContent = ({
 									<SeeNewChangesButtons key={completionCheckpoint.ts} />
 								) : null}
 							</div>
+							{/* When the final result was sent. Held back while it streams, like other replies. */}
+							{!message.partial && (
+								<div className="ml-6 mt-1">
+									<MessageTimestamp ts={message.ts} timeFormat={timeFormat} dateFormat={dateFormat} />
+								</div>
+							)}
 						</div>
 					)
 				case "shell_integration_warning":

@@ -121,6 +121,38 @@ describe("ChatRow – message timestamp", () => {
 			expect(screen.getByTestId("message-timestamp")).toBeTruthy()
 		})
 
+		it("shows the time of a finished completion result, and waits while it streams", () => {
+			const { rerender } = renderRow({
+				ts: Date.now(),
+				type: "say",
+				say: "completion_result",
+				text: "all done",
+				partial: true,
+			})
+			expect(screen.queryByTestId("message-timestamp")).toBeNull()
+
+			rerender(
+				<ChatRowContent
+					message={{
+						ts: Date.now(),
+						type: "say",
+						say: "completion_result",
+						text: "all done",
+						partial: false,
+					}}
+					isExpanded={false}
+					isLast={false}
+					isStreaming={false}
+					onToggleExpand={() => {}}
+					onSuggestionClick={() => {}}
+					onBatchFileResponse={() => {}}
+					onFollowUpUnmount={() => {}}
+					isFollowUpAnswered={false}
+				/>,
+			)
+			expect(screen.getByTestId("message-timestamp").textContent).toContain("Today")
+		})
+
 		it("shows nothing for an assistant message with an invalid timestamp", () => {
 			renderRow({ ts: 0, type: "say", say: "text", text: "no time" })
 			expect(screen.queryByTestId("message-timestamp")).toBeNull()

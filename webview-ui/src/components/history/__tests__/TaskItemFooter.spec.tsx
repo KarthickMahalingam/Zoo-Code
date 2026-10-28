@@ -13,7 +13,11 @@ vi.mock("@src/i18n/TranslationContext", () => ({
 vi.mock("@/utils/format", () => ({
 	formatTimeAgo: vi.fn(() => "2 hours ago"),
 	formatDate: vi.fn(() => "January 15 at 2:30 PM"),
-	formatDateTime: vi.fn(() => "Jan 15, 2024, 2:30 PM"),
+	// Depends on its arguments, so a test can tell which formats were applied.
+	formatDateTime: vi.fn(
+		(_ts: number, timeFormat = "auto", dateFormat = "auto") =>
+			`${dateFormat === "ymd" ? "2024-01-15" : dateFormat === "dmy" ? "15/01/2024" : "Jan 15, 2024"}, ${timeFormat === "24h" ? "14:30" : "2:30 PM"}`,
+	),
 	formatLargeNumber: vi.fn((num: number) => num.toString()),
 }))
 
@@ -155,12 +159,20 @@ describe("TaskItemFooter", () => {
 		it("shows the absolute date/time instead when showRelativeTimes is off", () => {
 			renderWith({ showRelativeTimes: false, timeFormat: "24h", dateFormat: "ymd" })
 			expect(screen.queryByText("2 hours ago")).not.toBeInTheDocument()
+			// 24-hour clock and year-first date: the visible text carries both choices.
+			expect(screen.getByText("2024-01-15, 14:30")).toBeInTheDocument()
+			expect(screen.queryByText(/PM/)).not.toBeInTheDocument()
+		})
+
+		it("shows a 12-hour time when the clock is not set to 24-hour", () => {
+			renderWith({ showRelativeTimes: false, timeFormat: "12h", dateFormat: "auto" })
 			expect(screen.getByText("Jan 15, 2024, 2:30 PM")).toBeInTheDocument()
 		})
 
 		it("passes the chosen time and date formats to the formatter", () => {
 			renderWith({ showRelativeTimes: false, timeFormat: "24h", dateFormat: "dmy" })
 			expect(formatDateTime).toHaveBeenCalledWith(mockItem.ts, "24h", "dmy")
+			expect(screen.getByText("15/01/2024, 14:30")).toBeInTheDocument()
 		})
 	})
 })

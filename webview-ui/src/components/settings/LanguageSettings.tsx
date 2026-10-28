@@ -134,14 +134,19 @@ export const LanguageSettings = ({
 							section="language"
 							label={t("settings:language.dateFormat.label")}>
 							<div className="flex flex-col gap-1.5">
-								<label className="font-medium">{t("settings:language.dateFormat.label")}</label>
+								<label htmlFor="date-format-select" className="font-medium">
+									{t("settings:language.dateFormat.label")}
+								</label>
 								<div className="flex items-center gap-3">
 									<Select
 										value={dateFormat}
 										onValueChange={(value) =>
 											setCachedStateField("dateFormat", value as DateFormat)
 										}>
-										<SelectTrigger className="w-40" data-testid="date-format-select">
+										<SelectTrigger
+											id="date-format-select"
+											className="w-40"
+											data-testid="date-format-select">
 											<SelectValue />
 										</SelectTrigger>
 										<SelectContent>
