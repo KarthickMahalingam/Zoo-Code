@@ -214,6 +214,10 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		openRouterImageGenerationSelectedModel,
 		reasoningBlockCollapsed,
 		chatFontSize,
+		interfaceFontScale,
+		terminalFontSize,
+		editorFontSize,
+		spacingScale,
 		enterBehavior,
 		includeCurrentTime,
 		includeCurrentCost,
@@ -442,6 +446,11 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					includeTaskHistoryInEnhance: includeTaskHistoryInEnhance ?? true,
 					reasoningBlockCollapsed: reasoningBlockCollapsed ?? true,
 					chatFontSize: chatFontSize ?? null,
+					// null (not undefined) so a reset survives JSON and clears the stored value
+					interfaceFontScale: interfaceFontScale ?? null,
+					terminalFontSize: terminalFontSize ?? null,
+					editorFontSize: editorFontSize ?? null,
+					spacingScale: spacingScale ?? null,
 					enterBehavior: enterBehavior ?? "send",
 					includeCurrentTime: includeCurrentTime ?? true,
 					includeCurrentCost: includeCurrentCost ?? true,
@@ -944,6 +953,10 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 								reasoningBlockCollapsed={reasoningBlockCollapsed ?? true}
 								enterBehavior={enterBehavior ?? "send"}
 								chatFontSize={chatFontSize ?? undefined}
+								interfaceFontScale={interfaceFontScale ?? undefined}
+								terminalFontSize={terminalFontSize ?? undefined}
+								editorFontSize={editorFontSize ?? undefined}
+								spacingScale={spacingScale ?? undefined}
 								autoCloseZooOpenedFiles={autoCloseZooOpenedFiles}
 								autoCloseZooOpenedFilesAfterUserEdited={autoCloseZooOpenedFilesAfterUserEdited}
 								autoCloseZooOpenedNewFiles={autoCloseZooOpenedNewFiles}
