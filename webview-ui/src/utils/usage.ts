@@ -18,8 +18,6 @@ export const UNRECORDED = "__unrecorded__"
 export const USAGE_RANGES = ["today", "7d", "30d", "all"] as const
 export type UsageRange = (typeof USAGE_RANGES)[number]
 
-const DAY_MS = 24 * 60 * 60 * 1000
-
 export interface UsageBucket {
 	key: string
 	cost: number
