@@ -5,8 +5,6 @@ import {
 	type ProviderSettings,
 } from "@roo-code/types"
 
-import { createHash } from "node:crypto"
-
 import { getGitHubCopilotQuota } from "./copilotQuota"
 import {
 	QuotaHttpError,
@@ -554,19 +552,16 @@ export async function loadProfiles(source: ProfileSource): Promise<ProviderSetti
 	return profiles.filter((p): p is ProviderSettings => !!p)
 }
 
-// Successful results only, per provider and per credential set. A missing key, a
-// sign-out or a transient error is never pinned, so fixing it shows up on the
-// next open instead of after the TTL.
-const cache = new Map<string, { at: number; result: ProviderQuota }>()
-const inflight = new Map<string, Promise<ProviderQuota>>()
+// Successful results only, per provider and URL set. A missing key, a sign-out or a
+// transient error is never pinned, so fixing it shows up on the next open instead of
+// after the TTL. An entry is reused only for the exact key it was fetched with, so
+// switching keys refetches. The key is compared, never hashed or used in a map key.
+const cache = new Map<string, { at: number; apiKey: string; result: ProviderQuota }>()
+const inflight = new Map<string, { apiKey: string; request: Promise<ProviderQuota> }>()
 
-/** Identifies the key and URLs a result was fetched with, without keeping the key itself. */
-function fingerprint(provider: KeyedProvider, creds: KeyedCredentials): string {
-	const digest = createHash("sha256")
-		.update(`${creds.apiKey}\n${(creds.urls ?? []).join("\n")}`)
-		.digest("hex")
-		.slice(0, 16)
-	return `${provider.providerId}:${digest}`
+/** Identifies a provider and the URLs it is queried at (the credential itself is not part of it). */
+function cacheKey(provider: KeyedProvider, creds: KeyedCredentials): string {
+	return `${provider.providerId}|${(creds.urls ?? []).join(",")}`
 }
 
 function quotaForKeyedProvider(
@@ -580,21 +575,24 @@ function quotaForKeyedProvider(
 	if (skipped) return Promise.resolve(skipped)
 
 	const resolved = creds as KeyedCredentials
-	const key = fingerprint(provider, resolved)
+	const apiKey = resolved.apiKey as string
+	const key = cacheKey(provider, resolved)
 	const hit = cache.get(key)
-	if (!force && hit && Date.now() - hit.at < CACHE_TTL_MS) return Promise.resolve(hit.result)
+	if (!force && hit && hit.apiKey === apiKey && Date.now() - hit.at < CACHE_TTL_MS) return Promise.resolve(hit.result)
 
 	// Concurrent callers (e.g. a refresh while the first load is still running) share one request.
 	const pending = inflight.get(key)
-	if (pending) return pending
+	if (pending && pending.apiKey === apiKey) return pending.request
 
 	const request = fetchKeyed(provider, resolved, fetchImpl)
 		.then((result) => {
-			if (result.ok) cache.set(key, { at: Date.now(), result })
+			if (result.ok) cache.set(key, { at: Date.now(), apiKey, result })
 			return result
 		})
-		.finally(() => inflight.delete(key))
-	inflight.set(key, request)
+		.finally(() => {
+			if (inflight.get(key)?.request === request) inflight.delete(key)
+		})
+	inflight.set(key, { apiKey, request })
 	return request
 }
 

@@ -710,7 +710,7 @@ describe("getProviderQuotas", () => {
 		expect(fetchSpy).toHaveBeenCalledTimes(2)
 	})
 
-	it("refetches when the API key changes, without keeping the key in the cache key", async () => {
+	it("refetches when the API key changes", async () => {
 		const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
 		await getProviderQuotas(
 			[{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk-one" } as never],
@@ -722,6 +722,29 @@ describe("getProviderQuotas", () => {
 			{},
 			fetchSpy,
 		)
+		expect(fetchSpy).toHaveBeenCalledTimes(2)
+	})
+
+	it("does not hand a result fetched with one key to a caller using another, even while the first is in flight", async () => {
+		const releases: Array<(r: Response) => void> = []
+		const fetchSpy = vi.fn(() => new Promise<Response>((resolve) => releases.push(resolve)))
+		const ok = () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } }))
+
+		const first = getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk-one" } as never],
+			{},
+			fetchSpy,
+		)
+		const second = getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk-two" } as never],
+			{},
+			fetchSpy,
+		)
+		await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2))
+		releases.forEach((release) => release(ok()))
+		await Promise.all([first, second])
+
+		// Each key was fetched on its own; neither piggy-backed on the other's request.
 		expect(fetchSpy).toHaveBeenCalledTimes(2)
 	})
 
