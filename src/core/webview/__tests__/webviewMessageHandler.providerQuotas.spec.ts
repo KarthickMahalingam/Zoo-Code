@@ -22,6 +22,7 @@ const SECRET = "sk-super-secret"
 const makeProvider = (overrides: Record<string, unknown> = {}) =>
 	({
 		postMessageToWebview: vi.fn(),
+		log: vi.fn(),
 		providerSettingsManager: {
 			listConfig: vi.fn(async () => [{ id: "a" }, { id: "b" }]),
 			getProfile: vi.fn(async ({ id }: { id: string }) => ({
@@ -35,6 +36,7 @@ const makeProvider = (overrides: Record<string, unknown> = {}) =>
 
 describe("webviewMessageHandler – requestProviderQuotas", () => {
 	beforeEach(() => {
+		// mockReset clears an earlier test's mockImplementation too, so a pending-promise stub cannot leak.
 		quotas.getProviderQuotas.mockReset()
 		quotas.getProviderQuotas.mockResolvedValue([
 			{
@@ -57,6 +59,7 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 			providerQuotas: expect.arrayContaining([
 				expect.objectContaining({ providerId: providerIdentifiers.openrouter }),
 			]),
+			providerQuotasFailed: false,
 			requestId: undefined,
 		})
 	})
@@ -110,6 +113,7 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 		expect(provider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "providerQuotas",
 			providerQuotas: [],
+			providerQuotasFailed: true,
 			requestId: undefined,
 		})
 		expect(log).toHaveBeenCalledWith(expect.stringContaining("secret storage unavailable"))
@@ -125,6 +129,7 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 		expect(provider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "providerQuotas",
 			providerQuotas: [],
+			providerQuotasFailed: true,
 			requestId: undefined,
 		})
 		expect(log).toHaveBeenCalledWith(expect.stringContaining("Failed to load provider limits"))
@@ -139,6 +144,7 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 		expect(provider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "providerQuotas",
 			providerQuotas: [],
+			providerQuotasFailed: false,
 			requestId: undefined,
 		})
 	})
@@ -195,6 +201,64 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 
 			expect(quotas.getProviderQuotas).not.toHaveBeenCalled()
 			expect(provider.postMessageToWebview).not.toHaveBeenCalled()
+		})
+
+		it("keeps two webviews apart: a cancel from one never aborts the other's request with the same id", async () => {
+			// Each webview has its own provider, and both number their requests from 1. Their loads are held open
+			// at the profile list, so both are pending at once when the cancel arrives.
+			quotas.getProviderQuotas.mockResolvedValue([])
+			const releases: Array<(entries: { id: string }[]) => void> = []
+			const pendingProvider = () => {
+				const provider = makeProvider()
+				provider.providerSettingsManager.listConfig = vi.fn(
+					() => new Promise((resolve) => releases.push(resolve)),
+				) as never
+				return provider
+			}
+			const sidebar = pendingProvider()
+			const editorTab = pendingProvider()
+
+			const first = webviewMessageHandler(sidebar, {
+				type: "requestProviderQuotas",
+				requestId: "provider-quotas-1",
+			})
+			const second = webviewMessageHandler(editorTab, {
+				type: "requestProviderQuotas",
+				requestId: "provider-quotas-1",
+			})
+			await vi.waitFor(() => expect(releases).toHaveLength(2))
+
+			// Closing Settings in the sidebar cancels the sidebar's request only.
+			await webviewMessageHandler(sidebar, { type: "cancelProviderQuotas", requestId: "provider-quotas-1" })
+			releases.forEach((release) => release([{ id: "a" }]))
+			await Promise.all([first, second])
+
+			// The sidebar was cancelled and is not answered. The editor tab is still answered. With one shared
+			// map keyed by id alone, the cancel would have aborted the editor tab's request instead.
+			expect(sidebar.postMessageToWebview).not.toHaveBeenCalled()
+			expect(editorTab.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ type: "providerQuotas", requestId: "provider-quotas-1" }),
+			)
+			// Only the editor tab's request went on to the service; the sidebar's was stopped while loading.
+			expect(quotas.getProviderQuotas.mock.calls.length).toBeLessThanOrEqual(1)
+		})
+
+		it("marks the answer as failed when the quotas could not be loaded, and not when there are simply none", async () => {
+			const failing = makeProvider()
+			failing.providerSettingsManager.listConfig = vi.fn(async () => {
+				throw new Error("secret storage unavailable")
+			}) as never
+			await webviewMessageHandler(failing, { type: "requestProviderQuotas", requestId: "a" })
+			expect(failing.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ providerQuotas: [], providerQuotasFailed: true }),
+			)
+
+			quotas.getProviderQuotas.mockResolvedValue([])
+			const empty = makeProvider()
+			await webviewMessageHandler(empty, { type: "requestProviderQuotas", requestId: "b" })
+			expect(empty.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ providerQuotas: [], providerQuotasFailed: false }),
+			)
 		})
 
 		it("ignores a cancel for an unknown or missing id, and for a request that already finished", async () => {

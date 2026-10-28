@@ -308,9 +308,7 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 									className="m-0 text-xs text-vscode-descriptionForeground"
 									data-testid="usage-by-mode">
 									<span className="font-medium">{t("settings:usage.byMode")}:</span>{" "}
-									{summary.byMode
-										.map((m) => `${m.key} ${bucketRow(m).label.split(" · ")[0]}`)
-										.join(" · ")}
+									{summary.byMode.map((m) => `${m.key} ${bucketRow(m).label}`).join(" · ")}
 								</p>
 
 								<Block

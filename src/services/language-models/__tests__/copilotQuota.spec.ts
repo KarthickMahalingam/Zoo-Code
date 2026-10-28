@@ -192,6 +192,30 @@ describe("getGitHubCopilotQuota", () => {
 		expect(fail).toHaveBeenCalledTimes(2)
 	})
 
+	it.each([
+		["an HTTP error", async () => json({}, 500), { ok: false, reason: "error" }],
+		["a signed-out answer", async () => json({}, 401), { ok: false, reason: "signedOut" }],
+		["a missing Copilot plan", async () => json({}, 403), { ok: false, reason: "noCopilot" }],
+		[
+			"a thrown error",
+			async () => {
+				throw new Error("network down")
+			},
+			{ ok: false, reason: "error" },
+		],
+	])("drops an older success when a forced refresh fails with %s", async (_label, failure, expected) => {
+		const good = vi.fn(async () => json(businessPayload))
+		await getGitHubCopilotQuota({}, good as never)
+
+		const failed = await getGitHubCopilotQuota({ force: true }, failure as never)
+		expect(failed).toMatchObject(expected)
+
+		// The old success must not be served as if it were current: the next normal call fetches again.
+		const retry = vi.fn(async () => json(businessPayload))
+		await getGitHubCopilotQuota({}, retry as never)
+		expect(retry).toHaveBeenCalledTimes(1)
+	})
+
 	it("shares one in-flight request between concurrent callers", async () => {
 		const fetchSpy = vi.fn(async () => json(businessPayload))
 		const [a, b] = await Promise.all([

@@ -160,6 +160,8 @@ export interface ExtensionMessage {
 	}[]
 	githubCopilotAccount?: string | null
 	providerQuotas?: ProviderQuota[]
+	/** True when the quotas could not be loaded at all (as opposed to "no provider has a usage API"). */
+	providerQuotasFailed?: boolean
 	mcpServers?: McpServer[]
 	commits?: GitCommit[]
 	listApiConfig?: ProviderSettingsEntry[]

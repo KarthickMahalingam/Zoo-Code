@@ -258,8 +258,6 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 		}
 	}
 
-	const inputSide = tokensIn + cacheReads
-
 	return {
 		totalCost,
 		tokensIn,
@@ -267,7 +265,9 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 		cacheReads,
 		cacheWrites,
 		totalTokens: tokensIn + tokensOut,
-		cacheHitRate: inputSide > 0 ? cacheReads / inputSide : 0,
+		// `tokensIn` already counts the cached tokens (the cost helpers store the total input), so it is the
+		// whole input side. Adding the cache reads again would understate the rate.
+		cacheHitRate: tokensIn > 0 ? Math.min(1, cacheReads / tokensIn) : 0,
 		taskCount: items.length,
 		byProvider: [...providers.values()].sort(byCostDesc),
 		byModel: [...models.values()].sort(byCostDesc),

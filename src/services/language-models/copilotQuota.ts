@@ -91,7 +91,7 @@ export function getGitHubCopilotQuota(
 	if (!force && cache && Date.now() - cache.at < CACHE_TTL_MS) return Promise.resolve(cache.result)
 	if (inFlight) return inFlight
 
-	inFlight = (async (): Promise<GitHubCopilotQuotaResult> => {
+	const fetchQuota = async (): Promise<GitHubCopilotQuotaResult> => {
 		try {
 			const token = await getGitHubToken()
 			if (!token) return { ok: false, reason: "signedOut" }
@@ -112,15 +112,22 @@ export function getGitHubCopilotQuota(
 			if (!response.ok) return { ok: false, reason: "error", message: `GitHub API error ${response.status}` }
 
 			const quota = parseCopilotQuota(await response.json())
-			const result: GitHubCopilotQuotaResult = quota ? { ok: true, quota } : { ok: false, reason: "noCopilot" }
-			if (result.ok) cache = { at: Date.now(), result }
-			return result
+			return quota ? { ok: true, quota } : { ok: false, reason: "noCopilot" }
 		} catch (error) {
 			return { ok: false, reason: "error", message: safeErrorMessage(error) }
-		} finally {
-			inFlight = undefined
 		}
-	})()
+	}
+
+	inFlight = fetchQuota()
+		.then((result) => {
+			// One place for every outcome: a success is cached, and anything else (signed out, no Copilot, an
+			// HTTP error, a thrown error) drops an older success so it is not served as if it were current.
+			cache = result.ok ? { at: Date.now(), result } : undefined
+			return result
+		})
+		.finally(() => {
+			inFlight = undefined
+		})
 
 	return inFlight
 }

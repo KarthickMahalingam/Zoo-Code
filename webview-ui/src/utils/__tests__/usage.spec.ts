@@ -173,10 +173,20 @@ describe("summarizeUsage", () => {
 		expect(s.byMode[0].key).toBe("unknown")
 	})
 
-	it("computes cache hit rate over input-side tokens", () => {
-		const s = summarizeUsage(history, { range: "today", now: NOW })
-		// today: tokensIn 1000 + 10, cacheReads 3000
-		expect(s.cacheHitRate).toBeCloseTo(3000 / (1010 + 3000))
+	it("computes the cache hit rate against tokensIn, which already counts the cached tokens", () => {
+		const s = summarizeUsage(
+			[item({ tokensIn: 4000, cacheReads: 3000 }), item({ tokensIn: 1000, cacheReads: 0 })],
+			{ range: "all", now: NOW },
+		)
+		// 3000 of 5000 input tokens came from the cache: 60%, not 3000 / (5000 + 3000).
+		expect(s.cacheHitRate).toBeCloseTo(0.6)
+	})
+
+	it("never reports more than 100%, and 0 with no input", () => {
+		expect(
+			summarizeUsage([item({ tokensIn: 100, cacheReads: 250 })], { range: "all", now: NOW }).cacheHitRate,
+		).toBe(1)
+		expect(summarizeUsage([item({ tokensIn: 0, cacheReads: 0 })], { range: "all", now: NOW }).cacheHitRate).toBe(0)
 	})
 
 	it("produces a dense daily series for bounded ranges", () => {

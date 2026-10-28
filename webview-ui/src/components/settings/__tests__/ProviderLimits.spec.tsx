@@ -252,4 +252,64 @@ describe("ProviderLimits", () => {
 			expect(post).not.toHaveBeenCalledWith(expect.objectContaining({ type: "cancelProviderQuotas" }))
 		})
 	})
+
+	describe("a failed load", () => {
+		const respondFailed = () =>
+			act(() => {
+				window.dispatchEvent(
+					new MessageEvent("message", {
+						data: {
+							type: "providerQuotas",
+							providerQuotas: [],
+							providerQuotasFailed: true,
+							requestId: lastRequestId(),
+						},
+					}),
+				)
+			})
+
+		it("keeps the section and says so, instead of hiding it like 'no provider has a usage API'", () => {
+			render(<ProviderLimits />)
+			respondFailed()
+			expect(screen.getByTestId("provider-limits")).toBeTruthy()
+			expect(screen.getByTestId("provider-limits-failed").textContent).toContain("settings:usage.limits.error")
+		})
+
+		it("lets the user retry, and clears the failure when the retry works", () => {
+			render(<ProviderLimits />)
+			respondFailed()
+
+			const before = lastRequestId()
+			post.mockClear()
+			fireEvent.click(screen.getByTestId("provider-limits-refresh"))
+			expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: "requestProviderQuotas", bool: true }))
+			expect(lastRequestId()).not.toBe(before)
+
+			respond([
+				{
+					providerId: providerIdentifiers.deepseek,
+					ok: true,
+					fetchedAt: 1,
+					windows: [{ id: "b", valueLabel: "$1.00 left" }],
+				},
+			])
+			expect(screen.queryByTestId("provider-limits-failed")).toBeNull()
+			expect(screen.getByTestId(`provider-limit-${providerIdentifiers.deepseek}`)).toBeTruthy()
+		})
+
+		it("still hides the section when the load worked and nothing has a usage API", () => {
+			render(<ProviderLimits />)
+			respond([])
+			expect(screen.queryByTestId("provider-limits")).toBeNull()
+		})
+	})
+
+	it("never reuses a request id when the tab is closed and opened again", () => {
+		const first = render(<ProviderLimits />)
+		const firstId = lastRequestId()
+		first.unmount()
+
+		render(<ProviderLimits />)
+		expect(lastRequestId()).not.toBe(firstId)
+	})
 })

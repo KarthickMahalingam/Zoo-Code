@@ -9,6 +9,10 @@ import { vscode } from "@src/utils/vscode"
 import i18next from "i18next"
 import { providerLabel } from "@src/utils/providerLabel"
 
+// Module-level, so a component that is unmounted and mounted again never reuses an id that an older,
+// still-settling request carries.
+let quotaRequestCounter = 0
+
 const barColor = (pct: number) =>
 	pct >= 90 ? "bg-vscode-charts-red" : pct >= 75 ? "bg-vscode-charts-yellow" : "bg-vscode-charts-green"
 
@@ -22,11 +26,11 @@ export const ProviderLimits = () => {
 	const { t } = useAppTranslation()
 	const [quotas, setQuotas] = useState<ProviderQuota[] | undefined>()
 	const [loading, setLoading] = useState(true)
+	const [failed, setFailed] = useState(false)
 
 	// Only the newest request counts: an answer for an older one (a slow first load that a refresh
 	// overtook, or one that outlived this component) is ignored.
 	const latestRequestId = useRef<string | undefined>(undefined)
-	const counter = useRef(0)
 
 	const cancelLatest = useCallback(() => {
 		if (latestRequestId.current) {
@@ -41,7 +45,7 @@ export const ProviderLimits = () => {
 	const request = useCallback(
 		(force: boolean) => {
 			cancelLatest()
-			const requestId = `provider-quotas-${++counter.current}`
+			const requestId = `provider-quotas-${++quotaRequestCounter}`
 			latestRequestId.current = requestId
 			setLoading(true)
 			vscode.postMessage({ type: VsCodeLmModelsMessageType.requestProviderQuotas, bool: force, requestId })
@@ -55,6 +59,7 @@ export const ProviderLimits = () => {
 			if (event.data.requestId !== latestRequestId.current) return
 			latestRequestId.current = undefined
 			setQuotas(event.data.providerQuotas ?? [])
+			setFailed(event.data.providerQuotasFailed === true)
 			setLoading(false)
 		}
 		window.addEventListener("message", onMessage)
@@ -66,8 +71,9 @@ export const ProviderLimits = () => {
 		}
 	}, [request, cancelLatest])
 
-	// Nothing connected that has a usage API: hide the section entirely.
-	if (quotas && quotas.length === 0) return null
+	// Nothing connected that has a usage API: hide the section entirely. A failed load is different: keep
+	// the section so the user can press Refresh to try again.
+	if (quotas && quotas.length === 0 && !failed) return null
 
 	const fetchedAt = quotas?.reduce((max, q) => Math.max(max, q.fetchedAt), 0)
 
@@ -99,6 +105,13 @@ export const ProviderLimits = () => {
 			</div>
 
 			<div className="rounded-md border border-vscode-panel-border divide-y divide-vscode-panel-border">
+				{failed && (
+					<div
+						className="px-3 py-2.5 text-sm text-vscode-descriptionForeground"
+						data-testid="provider-limits-failed">
+						{t("settings:usage.limits.error")}
+					</div>
+				)}
 				{!quotas && (
 					<div className="px-3 py-2.5 text-sm text-vscode-descriptionForeground">
 						{t("settings:usage.limits.loading")}

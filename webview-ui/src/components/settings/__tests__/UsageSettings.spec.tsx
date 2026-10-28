@@ -188,6 +188,16 @@ describe("UsageSettings", () => {
 		})
 	})
 
+	describe("modes with and without a price", () => {
+		it("keeps 'no price' on an unpriced mode so it is not mistaken for a priced one", () => {
+			state.taskHistory = [priced(1, { mode: "code" }), copilot({ mode: "debug" })]
+			render(<UsageSettings />)
+			const line = screen.getByTestId("usage-by-mode").textContent!
+			expect(line).toContain("code $1.00")
+			expect(line).toMatch(/debug .*settings:usage\.noPrice/)
+		})
+	})
+
 	describe("filters", () => {
 		it("defaults to this workspace and can widen to all", () => {
 			state.taskHistory = [priced(1), priced(2, { workspace: "/ws/other" })]

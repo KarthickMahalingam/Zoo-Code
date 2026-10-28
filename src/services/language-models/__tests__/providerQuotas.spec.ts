@@ -438,6 +438,56 @@ describe("getProviderQuotas – Copilot window and misc", () => {
 	})
 })
 
+describe("Kimi Code authentication", () => {
+	beforeEach(() => resetProviderQuotaCache())
+
+	it("does not query an OAuth profile, even when an old API key is still stored in it", async () => {
+		const fetchSpy = vi.fn()
+		const [q] = await getProviderQuotas(
+			[
+				{
+					apiProvider: providerIdentifiers.kimiCode,
+					kimiCodeAuthMethod: "oauth",
+					kimiCodeApiKey: "stale-key",
+				} as never,
+			],
+			{},
+			fetchSpy,
+		)
+		expect(q).toMatchObject({ ok: false, reason: "noKey" })
+		expect(fetchSpy).not.toHaveBeenCalled()
+	})
+
+	it("queries an API-key profile with its key", async () => {
+		const fetchSpy = vi.fn(
+			async (_url: RequestInfo | URL, _init?: RequestInit) =>
+				new Response(JSON.stringify({ usage: { limit: 100, used: 10 } })),
+		)
+		await getProviderQuotas(
+			[
+				{
+					apiProvider: providerIdentifiers.kimiCode,
+					kimiCodeAuthMethod: "api-key",
+					kimiCodeApiKey: "real-key",
+				} as never,
+			],
+			{},
+			fetchSpy,
+		)
+		expect((fetchSpy.mock.calls[0][1]?.headers as Record<string, string>).Authorization).toBe("Bearer real-key")
+	})
+
+	it("treats a profile with no recorded method as an API-key profile", async () => {
+		const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ usage: { limit: 100, used: 10 } })))
+		await getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.kimiCode, kimiCodeApiKey: "k" } as never],
+			{},
+			fetchSpy,
+		)
+		expect(fetchSpy).toHaveBeenCalledTimes(1)
+	})
+})
+
 describe("getProviderQuotas – coding-plan providers", () => {
 	beforeEach(() => resetProviderQuotaCache())
 
