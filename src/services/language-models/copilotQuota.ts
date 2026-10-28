@@ -71,8 +71,8 @@ export function parseCopilotQuota(payload: unknown, now = Date.now()): GitHubCop
 /** Rejects as soon as `signal` aborts. The pending work cannot be cancelled, but nobody waits for it any more. */
 function raceAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
+		// The signal is never aborted before this is called (it combines a fresh controller and a timeout).
 		const abort = () => reject(new DOMException("Aborted", "AbortError"))
-		if (signal.aborted) return abort()
 		signal.addEventListener("abort", abort, { once: true })
 		work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort))
 	})
@@ -133,7 +133,6 @@ export function getGitHubCopilotQuota(
 				const token = await getGitHubToken(
 					AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
 				)
-				if (controller.signal.aborted) return { ok: false, reason: "error", message: "Request cancelled" }
 				if (!token) return { ok: false, reason: "signedOut" }
 
 				const response = await fetchImpl(COPILOT_USER_URL, {
