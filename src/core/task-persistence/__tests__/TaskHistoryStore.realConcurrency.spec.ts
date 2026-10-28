@@ -2,7 +2,7 @@ import * as fs from "fs/promises"
 import * as os from "os"
 import * as path from "path"
 
-import type { HistoryItem } from "@roo-code/types"
+import { providerIdentifiers, type HistoryItem } from "@roo-code/types"
 
 import { TaskHistoryStore } from "../TaskHistoryStore"
 
@@ -123,7 +123,14 @@ describe("TaskHistoryStore real cross-host locking", () => {
 		const storagePath = await fs.mkdtemp(path.join(os.tmpdir(), "task-history-usage-clear-"))
 		const store = new TaskHistoryStore(storagePath)
 		const usageByModel = [
-			{ apiProvider: "anthropic", modelId: "m", requests: 1, tokensIn: 5, tokensOut: 5, cost: 1 },
+			{
+				apiProvider: providerIdentifiers.anthropic,
+				modelId: "m",
+				requests: 1,
+				tokensIn: 5,
+				tokensOut: 5,
+				cost: 1,
+			},
 		]
 
 		try {
