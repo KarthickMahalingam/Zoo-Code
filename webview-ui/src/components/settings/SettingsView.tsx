@@ -406,7 +406,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	const isSettingValid = !errorMessage
 
 	const handleSubmit = () => {
-		if (isSettingValid && !pendingSaveId) {
+		if (isSettingValid) {
 			const saveId = `settings-save-${++saveCounter}`
 			pendingSaveRef.current = {
 				configName: currentApiConfigName,
