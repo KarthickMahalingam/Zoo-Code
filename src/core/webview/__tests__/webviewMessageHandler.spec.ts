@@ -2077,6 +2077,10 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 	})
 
 	describe("a stage that never settles", () => {
+		// The provider double has no `getMcpHub`; it is added here without a cast.
+		const useMcpHub = (handleMcpEnabledChange: (enabled: boolean) => Promise<void>) =>
+			Reflect.set(mockClineProvider, "getMcpHub", vi.fn().mockReturnValue({ handleMcpEnabledChange }))
+
 		beforeEach(() => vi.useFakeTimers())
 		afterEach(() => vi.useRealTimers())
 
@@ -2085,7 +2089,7 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 				.fn()
 				.mockImplementationOnce(() => new Promise(() => {}))
 				.mockResolvedValue(undefined)
-			;(mockClineProvider as any).getMcpHub = vi.fn().mockReturnValue({ handleMcpEnabledChange })
+			useMcpHub(handleMcpEnabledChange)
 			stored.mcpEnabled = true
 
 			const stuck = webviewMessageHandler(mockClineProvider, {
@@ -2143,7 +2147,7 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 
 		it("does not time out a stage that answers in time", async () => {
 			const handleMcpEnabledChange = vi.fn().mockResolvedValue(undefined)
-			;(mockClineProvider as any).getMcpHub = vi.fn().mockReturnValue({ handleMcpEnabledChange })
+			useMcpHub(handleMcpEnabledChange)
 
 			await webviewMessageHandler(mockClineProvider, {
 				type: "updateSettings",
