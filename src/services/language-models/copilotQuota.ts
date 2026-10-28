@@ -95,7 +95,6 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined, onAb
 			onAbort()
 			reject(new DOMException("Aborted", "AbortError"))
 		}
-		if (signal.aborted) return abort()
 		signal.addEventListener("abort", abort, { once: true })
 		work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort))
 	})

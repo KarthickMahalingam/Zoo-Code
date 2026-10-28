@@ -246,6 +246,31 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 			expect(quotas.getProviderQuotas).toHaveBeenCalledTimes(1)
 		})
 
+		it("lets a newer request with the same id keep its slot when the older one finishes first", async () => {
+			quotas.getProviderQuotas.mockResolvedValue([])
+			const releases: Array<(entries: { id: string }[]) => void> = []
+			const provider = makeProvider()
+			provider.providerSettingsManager.listConfig = vi.fn(
+				() => new Promise((resolve) => releases.push(resolve)),
+			) as never
+
+			// Start them one after the other: see the note in the test above.
+			const older = webviewMessageHandler(provider, { type: "requestProviderQuotas", requestId: "same-id" })
+			await vi.waitFor(() => expect(releases).toHaveLength(1))
+			const newer = webviewMessageHandler(provider, { type: "requestProviderQuotas", requestId: "same-id" })
+			await vi.waitFor(() => expect(releases).toHaveLength(2))
+
+			// The older one finishes and cleans up; it must not remove the newer one's entry.
+			releases[0]([{ id: "a" }])
+			await older
+			await webviewMessageHandler(provider, { type: "cancelProviderQuotas", requestId: "same-id" })
+			releases[1]([{ id: "a" }])
+			await newer
+
+			// The cancel reached the newer request, so only the older one was answered.
+			expect(provider.postMessageToWebview).toHaveBeenCalledTimes(1)
+		})
+
 		it("marks the answer as failed when the quotas could not be loaded, and not when there are simply none", async () => {
 			const failing = makeProvider()
 			failing.providerSettingsManager.listConfig = vi.fn(async () => {

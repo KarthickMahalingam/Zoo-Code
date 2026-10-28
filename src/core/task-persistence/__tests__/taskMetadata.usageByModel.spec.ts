@@ -69,14 +69,16 @@ describe("taskMetadata – usageByModel", () => {
 		expect(historyItem.totalCost).toBeCloseTo(0.2)
 	})
 
-	it("omits usageByModel entirely when nothing was recorded, keeping old items' shape", async () => {
+	it("leaves usageByModel undefined when nothing was recorded, so a stored breakdown is cleared", async () => {
 		const { historyItem } = await taskMetadata({ ...base, messages: [say("text", "hello", 1)] })
-		expect(historyItem).not.toHaveProperty("usageByModel")
+		expect(historyItem).toHaveProperty("usageByModel", undefined)
+		// Nothing is written for it: the stored shape of older tasks is unchanged.
+		expect(JSON.parse(JSON.stringify(historyItem))).not.toHaveProperty("usageByModel")
 	})
 
-	it("omits usageByModel for a task with no messages", async () => {
+	it("leaves usageByModel undefined for a task with no messages", async () => {
 		const { historyItem } = await taskMetadata({ ...base, messages: [] })
-		expect(historyItem).not.toHaveProperty("usageByModel")
+		expect(historyItem).toHaveProperty("usageByModel", undefined)
 		expect(historyItem.tokensIn).toBe(0)
 	})
 })

@@ -119,6 +119,32 @@ describe("TaskHistoryStore real cross-host locking", () => {
 		}
 	})
 
+	it("clears a stored usageByModel when the same task is saved again without one (e.g. after a rewind)", async () => {
+		const storagePath = await fs.mkdtemp(path.join(os.tmpdir(), "task-history-usage-clear-"))
+		const store = new TaskHistoryStore(storagePath)
+		const usageByModel = [
+			{ apiProvider: "anthropic", modelId: "m", requests: 1, tokensIn: 5, tokensOut: 5, cost: 1 },
+		]
+
+		try {
+			await store.initialize()
+			await store.upsert({ ...item("usage-task"), usageByModel })
+			expect(store.get("usage-task")?.usageByModel).toEqual(usageByModel)
+
+			// What taskMetadata emits when the replaced messages record no usage.
+			await store.upsert({ ...item("usage-task"), usageByModel: undefined })
+			expect(store.get("usage-task")?.usageByModel).toBeUndefined()
+
+			// ...and the stored file no longer carries the stale breakdown either.
+			await store.invalidate("usage-task")
+			expect(store.get("usage-task")).toBeDefined()
+			expect(store.get("usage-task")?.usageByModel).toBeUndefined()
+		} finally {
+			store.dispose()
+			await fs.rm(storagePath, { recursive: true, force: true })
+		}
+	})
+
 	it("reports a bounded error when one store never reaches the write barrier", async () => {
 		const storagePath = await fs.mkdtemp(path.join(os.tmpdir(), "task-history-missed-barrier-"))
 		const storeA = new TaskHistoryStore(storagePath)

@@ -110,8 +110,11 @@ export async function taskMetadata({
 		cacheWrites: tokenUsage.totalCacheWrites,
 		cacheReads: tokenUsage.totalCacheReads,
 		totalCost: tokenUsage.totalCost,
-		// Only emitted when something was recorded, so older tasks and empty tasks keep their exact shape.
-		...(usageByModel.length > 0 ? { usageByModel } : {}),
+		// Always present, as `undefined` when nothing was recorded: the history store merges onto the stored
+		// item, so omitting the key would keep a stale breakdown after the messages were replaced (e.g. a
+		// rewind). `undefined` overrides it and is dropped when the item is written, so the stored shape of
+		// older and empty tasks is unchanged.
+		usageByModel: usageByModel.length > 0 ? usageByModel : undefined,
 		size: taskDirSize,
 		workspace,
 		mode,
