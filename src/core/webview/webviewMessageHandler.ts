@@ -130,11 +130,31 @@ import {
 const handlerFor = (apiConfiguration: ProviderSettings, provider: RouterName): ApiHandler =>
 	buildApiHandler({ ...apiConfiguration, apiProvider: provider })
 
-export const webviewMessageHandler = async (
+/**
+ * Settings saves run one at a time, across every provider (the sidebar and editor tabs share one `ContextProxy`
+ * and one set of VS Code settings). A save snapshots what is stored, writes, and on failure restores the
+ * snapshot. A second save interleaved with it would snapshot the first one's half-written values, and either
+ * rollback could put stale values back over the other save's successful writes.
+ */
+let settingsSaveChain: Promise<unknown> = Promise.resolve()
+
+export const webviewMessageHandler = (
 	provider: ClineProvider,
 	message: WebviewMessage,
 	marketplaceManager?: MarketplaceManager,
-) => {
+): Promise<void> => {
+	if (message.type !== "updateSettings") return handleWebviewMessage(provider, message, marketplaceManager)
+
+	const run = settingsSaveChain.then(() => handleWebviewMessage(provider, message, marketplaceManager))
+	settingsSaveChain = run.catch(() => undefined)
+	return run
+}
+
+const handleWebviewMessage = async (
+	provider: ClineProvider,
+	message: WebviewMessage,
+	marketplaceManager?: MarketplaceManager,
+): Promise<void> => {
 	// Utility functions provided for concise get/update of global state via contextProxy API.
 	const getGlobalState = <K extends keyof GlobalState>(key: K) => provider.contextProxy.getValue(key)
 	const updateGlobalState = async <K extends keyof GlobalState>(key: K, value: GlobalState[K]) =>

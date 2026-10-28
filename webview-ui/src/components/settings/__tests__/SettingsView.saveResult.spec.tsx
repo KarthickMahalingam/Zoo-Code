@@ -113,7 +113,8 @@ describe("SettingsView – save acknowledgement", () => {
 	it("ignores a save result when nothing is being saved", async () => {
 		renderUiTab()
 		await screen.findByTestId("collapse-thinking-checkbox")
-		answerSave("settings-save-1", { success: true })
+		// An id no save was ever issued with (earlier tests may leave their own saves unanswered).
+		answerSave("settings-save-never-issued", { success: true })
 		expect(posted("upsertApiConfiguration")).toHaveLength(0)
 	})
 	it("keeps an edit made while the save was pending unsaved, so Save stays available for it", async () => {
@@ -150,12 +151,42 @@ describe("SettingsView – save acknowledgement", () => {
 		await waitFor(() => expect(posted("upsertApiConfiguration")).toHaveLength(1))
 		expect(posted("upsertApiConfiguration")[0]).toMatchObject({ text: "first-profile" })
 	})
-	it("never reuses a request id across mounts, so a late answer for an earlier save is ignored", async () => {
+	it("sends the rest of a save even when the view is gone before the host answers", async () => {
+		const view = renderUiTab()
+		await makeAnEdit()
+		fireEvent.click(screen.getByTestId("save-button"))
+		const id = lastSaveRequestId(postMessage)
+
+		// The user leaves Settings (and discards) while the host is still storing the settings.
+		view.unmount()
+		expect(posted("upsertApiConfiguration")).toHaveLength(0)
+
+		answerSave(id, { success: true })
+		expect(posted("upsertApiConfiguration")).toHaveLength(1)
+		expect(posted("telemetrySetting")).toHaveLength(1)
+		expect(posted("debugSetting")).toHaveLength(1)
+
+		// A second answer for the same save does nothing.
+		answerSave(id, { success: true })
+		expect(posted("upsertApiConfiguration")).toHaveLength(1)
+	})
+
+	it("sends nothing more when the host reports a failure after the view is gone", async () => {
+		const view = renderUiTab()
+		await makeAnEdit()
+		fireEvent.click(screen.getByTestId("save-button"))
+		const id = lastSaveRequestId(postMessage)
+		view.unmount()
+
+		answerSave(id, { success: false, error: "disk full" })
+		expect(posted("upsertApiConfiguration")).toHaveLength(0)
+	})
+
+	it("never reuses a request id across mounts, and answers each save for itself", async () => {
 		const first = renderUiTab()
 		await makeAnEdit()
 		fireEvent.click(screen.getByTestId("save-button"))
 		const earlierId = lastSaveRequestId(postMessage)
-		// Leaving settings drops the view while the host has not answered yet.
 		first.unmount()
 
 		renderUiTab()
@@ -164,12 +195,12 @@ describe("SettingsView – save acknowledgement", () => {
 		const laterId = lastSaveRequestId(postMessage)
 		expect(laterId).not.toBe(earlierId)
 
-		// The earlier save's answer arrives while the new save is pending: it must not complete it.
+		// The earlier save's answer completes the earlier save only: the new one is still pending.
 		answerSave(earlierId, { success: true })
-		expect(posted("upsertApiConfiguration")).toHaveLength(0)
+		expect(posted("upsertApiConfiguration")).toHaveLength(1)
 		expect(screen.getByTestId("save-button")).toBeDisabled()
 
 		answerSave(laterId, { success: true })
-		await waitFor(() => expect(posted("upsertApiConfiguration")).toHaveLength(1))
+		expect(posted("upsertApiConfiguration")).toHaveLength(2)
 	})
 })

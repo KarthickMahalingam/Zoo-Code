@@ -2076,6 +2076,91 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 		})
 	})
 
+	describe("concurrent saves", () => {
+		it("run one at a time across providers, so a rollback cannot undo another save's writes", async () => {
+			// Two providers (sidebar and editor tab) share one ContextProxy.
+			const editorTab = { ...mockClineProvider } as typeof mockClineProvider
+			let openGate!: () => void
+			const gate = new Promise<void>((resolve) => (openGate = resolve))
+			const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+			vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(
+				async (key: string, value: unknown) => {
+					if (key === "writeDelayMs" && value === 2000) {
+						await gate
+						throw new Error("storage unavailable")
+					}
+					return real(key as never, value as never)
+				},
+			)
+
+			const failing = webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				requestId: "save-a",
+				updatedSettings: { soundEnabled: true, writeDelayMs: 2000 },
+			})
+			await vi.waitFor(() => expect(stored.soundEnabled).toBe(true))
+
+			const later = webviewMessageHandler(editorTab, {
+				type: "updateSettings",
+				requestId: "save-b",
+				updatedSettings: { soundEnabled: true, terminalCommandDelay: 50 },
+			})
+			// The second save waits: it has not snapshotted or written anything while the first is in flight.
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			expect(stored).not.toHaveProperty("terminalCommandDelay")
+
+			openGate()
+			await Promise.all([failing, later])
+
+			// The first was rolled back completely before the second ran, so the second's values stand.
+			expect(stored).toMatchObject({ soundEnabled: true, writeDelayMs: 1000, terminalCommandDelay: 50 })
+			expect(editorTab.postMessageToWebview).toHaveBeenCalledWith({
+				type: "settingsSaveResult",
+				requestId: "save-b",
+				success: true,
+			})
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ requestId: "save-a", success: false }),
+			)
+		})
+
+		it("keeps saving after a save handler itself throws", async () => {
+			vi.mocked(mockClineProvider.postMessageToWebview).mockRejectedValueOnce(new Error("webview is gone"))
+			await expect(
+				webviewMessageHandler(mockClineProvider, {
+					type: "updateSettings",
+					requestId: "save-e",
+					updatedSettings: { soundEnabled: true },
+				}),
+			).rejects.toThrow("webview is gone")
+
+			await webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				requestId: "save-f",
+				updatedSettings: { writeDelayMs: 3000 },
+			})
+			expect(stored.writeDelayMs).toBe(3000)
+		})
+
+		it("keeps saving after a save has failed", async () => {
+			vi.mocked(mockClineProvider.contextProxy.setValue).mockRejectedValueOnce(new Error("boom"))
+			await webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				requestId: "save-c",
+				updatedSettings: { soundEnabled: true },
+			})
+			await webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				requestId: "save-d",
+				updatedSettings: { soundEnabled: true },
+			})
+			expect(stored.soundEnabled).toBe(true)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenLastCalledWith(
+				expect.objectContaining({ requestId: "save-d", success: true }),
+			)
+		})
+	})
+
 	describe("the command lists live in two stores", () => {
 		const failWriteDelay = () => {
 			const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
