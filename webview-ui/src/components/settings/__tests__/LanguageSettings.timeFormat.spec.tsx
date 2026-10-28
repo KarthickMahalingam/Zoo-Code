@@ -51,6 +51,35 @@ describe("LanguageSettings – date & time (design mock 2)", () => {
 		})
 	})
 
+	describe("display language (before Save)", () => {
+		it("previews 'auto' in the language chosen in the picker, not the saved one", () => {
+			// German writes 24-hour time, English 12-hour; the i18n language here is untouched.
+			setup({ language: "de" })
+			expect(clock()).toContain("14:41")
+			expect(clock()).not.toMatch(/\b(AM|PM)\b/i)
+		})
+
+		it("changes the 'auto' preview when the picked language changes", () => {
+			const setCachedStateField = vi.fn()
+			const { rerender } = render(<LanguageSettings language="en" setCachedStateField={setCachedStateField} />)
+			expect(clock()).toMatch(/2:41\s?PM/i)
+			rerender(<LanguageSettings language="de" setCachedStateField={setCachedStateField} />)
+			expect(clock()).toContain("14:41")
+		})
+
+		it("still honours an explicit 12-hour choice whatever language is picked", () => {
+			setup({ language: "de", timeFormat: "12h" })
+			expect(clock()).toMatch(/2:41\s?PM/i)
+		})
+
+		it("writes the date example in the picked language for 'auto'", () => {
+			setup({ language: "de", dateFormat: "auto" })
+			expect(screen.getByTestId("date-format-example").textContent).toContain(
+				new Date(2026, 9, 27).toLocaleDateString("de", { dateStyle: "medium" }),
+			)
+		})
+	})
+
 	describe("date format", () => {
 		it.each([
 			["mdy", "10/27/2026"],

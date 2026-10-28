@@ -41,11 +41,12 @@ export const LanguageSettings = ({
 }: LanguageSettingsProps) => {
 	const { t } = useAppTranslation()
 
-	// Three short Intl calls: computed on every render, so "auto" follows a language change too.
+	// Three short Intl calls, computed on every render. They use the language selected above, not the
+	// saved one, so "auto" previews the new language before Save.
 	const preview = {
-		chatTime: formatTimeOnly(SAMPLE_TS, timeFormat),
-		dateExample: formatDateOnly(SAMPLE_TS, dateFormat),
-		hover: formatDateTime(SAMPLE_TS, timeFormat, dateFormat),
+		chatTime: formatTimeOnly(SAMPLE_TS, timeFormat, language),
+		dateExample: formatDateOnly(SAMPLE_TS, dateFormat, language),
+		hover: formatDateTime(SAMPLE_TS, timeFormat, dateFormat, language),
 	}
 
 	return (

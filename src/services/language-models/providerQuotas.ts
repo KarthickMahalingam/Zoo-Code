@@ -524,7 +524,10 @@ async function fetchCopilot(force: boolean): Promise<ProviderQuota> {
 				valueLabel:
 					q.used !== undefined && q.entitlement !== undefined
 						? `${formatCredits(q.used)} / ${formatCredits(q.entitlement)} used`
-						: `${Math.round(q.usedPercent ?? 0)}% used`,
+						: q.usedPercent !== undefined
+							? `${Math.round(q.usedPercent)}% used`
+							: // Neither counts nor a percentage were reported: that is unknown, not a measured zero.
+								"Usage not reported",
 				usedPercent: q.usedPercent,
 				resetAt: q.resetAt,
 			}

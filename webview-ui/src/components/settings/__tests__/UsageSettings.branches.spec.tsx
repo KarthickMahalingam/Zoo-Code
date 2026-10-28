@@ -132,9 +132,16 @@ describe("UsageSettings – branches", () => {
 			}),
 		]
 		render(<UsageSettings />)
-		const rows = screen.getByTestId("usage-top-tasks").textContent!
-		expect(rows).toContain("$2.00")
-		expect(rows).toContain("settings:usage.tokensShort")
+		// Each task is one button; find it by its title and check that row on its own.
+		const rowFor = (title: string) => screen.getByText(title).closest("button")!.textContent!
+
+		const priced = rowFor("priced task")
+		expect(priced).toContain("$2.00")
+		expect(priced).not.toContain("settings:usage.tokensShort")
+
+		const unpriced = rowFor("unpriced task")
+		expect(unpriced).toContain("settings:usage.tokensShort")
+		expect(unpriced).not.toContain("$")
 	})
 
 	it("shows only the model when no provider was recorded, and nothing when no usage was recorded", () => {

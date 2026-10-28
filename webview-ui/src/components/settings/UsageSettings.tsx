@@ -1,4 +1,4 @@
-import { HTMLAttributes, useMemo, useState } from "react"
+import { HTMLAttributes, useEffect, useMemo, useState } from "react"
 import { Download } from "lucide-react"
 
 import { useAppTranslation } from "@/i18n/TranslationContext"
@@ -64,7 +64,19 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 	// Provider and model come from what each request recorded, never from the
 	// currently selected profile, so switching providers doesn't relabel history.
 	const history = useMemo(() => taskHistory ?? [], [taskHistory])
-	const summary = useMemo(() => summarizeUsage(history, { range, workspace }), [history, range, workspace])
+
+	// One "now" for the view and for the export, rolled over at the next local midnight. Without it a
+	// tab left open across midnight keeps yesterday's window while Export (computed at click time)
+	// would use today's, and the two would disagree.
+	const [now, setNow] = useState(() => Date.now())
+	useEffect(() => {
+		const nextMidnight = new Date(now)
+		nextMidnight.setHours(24, 0, 0, 0)
+		const timer = setTimeout(() => setNow(Date.now()), nextMidnight.getTime() - now + 1000)
+		return () => clearTimeout(timer)
+	}, [now])
+
+	const summary = useMemo(() => summarizeUsage(history, { range, workspace, now }), [history, range, workspace, now])
 
 	const providerName = (key: string) => (key === UNRECORDED ? t("settings:usage.notRecorded") : providerLabel(key))
 
@@ -89,7 +101,7 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 	const isEmpty = summary.taskCount === 0
 
 	const handleExport = () => {
-		const csv = usageToCsv(history, { range, workspace })
+		const csv = usageToCsv(history, { range, workspace, now })
 		const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }))
 		const a = document.createElement("a")
 		a.href = url

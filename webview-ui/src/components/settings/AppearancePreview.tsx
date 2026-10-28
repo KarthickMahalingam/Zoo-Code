@@ -18,16 +18,18 @@ interface AppearancePreviewProps {
 export const AppearancePreview = ({ values, chatFontSize }: AppearancePreviewProps) => {
 	const { t } = useAppTranslation()
 
-	// Only set what the user has set. An unset value must resolve through the same CSS fallback the
-	// live UI uses (e.g. the terminal falls back to VS Code's editor font size), so the preview
-	// never shows a size the chat would not.
+	// Custom properties inherit, and the saved values live on <html>. An unset value is therefore set
+	// to `initial` (the guaranteed-invalid value) rather than left out: leaving it out would inherit
+	// the saved value, so a reset would not show in the preview until after Save. `initial` makes
+	// var() fall through to the same fallback the live UI uses (e.g. the terminal follows VS Code's
+	// editor font size), so the preview never shows a size the chat would not.
 	const vars: Record<string, string> = {}
 	for (const key of Object.keys(APPEARANCE_SETTINGS) as AppearanceKey[]) {
 		const setting = APPEARANCE_SETTINGS[key]
 		const v = clampAppearance(key, values[key])
-		if (v !== undefined) vars[setting.cssVar] = setting.toCss(v)
+		vars[setting.cssVar] = v === undefined ? "initial" : setting.toCss(v)
 	}
-	if (chatFontSize) vars["--zoo-chat-font-size"] = `${chatFontSize}px`
+	vars["--zoo-chat-font-size"] = chatFontSize ? `${chatFontSize}px` : "initial"
 
 	const uiText: CSSProperties = {
 		fontSize: "calc(var(--zoo-chat-font-size, var(--vscode-font-size)) * var(--zoo-ui-scale, 1))",
@@ -72,7 +74,8 @@ export const AppearancePreview = ({ values, chatFontSize }: AppearancePreviewPro
 				</div>
 				<pre
 					className="bg-vscode-textCodeBlock-background mb-2"
-					style={{ ...mono, fontSize: "var(--zoo-editor-font-size, var(--vscode-editor-font-size, 13px))" }}>
+					// Same fallback as CodeBlock: relative to the chat text when no editor size is set.
+					style={{ ...mono, fontSize: "var(--zoo-editor-font-size, 0.95em)" }}>
 					{'const isLoading = status === "saving"'}
 				</pre>
 

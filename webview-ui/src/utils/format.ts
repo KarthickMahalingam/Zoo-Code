@@ -54,7 +54,11 @@ const pad = (n: number) => String(n).padStart(2, "0")
  * explicit orders use a fixed numeric form (e.g. 10/27/2026, 27/10/2026,
  * 2026-10-27) so the preview and the app agree regardless of locale.
  */
-export const formatDateOnly = (timestamp: number, dateFormat: DateFormat = "auto") => {
+export const formatDateOnly = (
+	timestamp: number,
+	dateFormat: DateFormat = "auto",
+	locale: string = i18next.language || "en",
+) => {
 	const date = new Date(timestamp)
 
 	switch (dateFormat) {
@@ -65,21 +69,32 @@ export const formatDateOnly = (timestamp: number, dateFormat: DateFormat = "auto
 		case "ymd":
 			return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 		default:
-			return date.toLocaleDateString(i18next.language || "en", { dateStyle: "medium" })
+			return date.toLocaleDateString(locale, { dateStyle: "medium" })
 	}
 }
 
-/** Clock time only, honouring the 12h/24h choice. */
-export const formatTimeOnly = (timestamp: number, timeFormat: TimeFormat = "auto") =>
-	new Date(timestamp).toLocaleTimeString(i18next.language || "en", {
+/**
+ * Clock time only, honouring the 12h/24h choice. `locale` defaults to the active display language;
+ * pass one to preview a language that has not been saved yet.
+ */
+export const formatTimeOnly = (
+	timestamp: number,
+	timeFormat: TimeFormat = "auto",
+	locale: string = i18next.language || "en",
+) =>
+	new Date(timestamp).toLocaleTimeString(locale, {
 		hour: "numeric",
 		minute: "2-digit",
 		...hourCycleOptions(timeFormat),
 	})
 
 /** Full date + time, used for tooltips on relative timestamps and for absolute task times. */
-export const formatDateTime = (timestamp: number, timeFormat: TimeFormat = "auto", dateFormat: DateFormat = "auto") =>
-	`${formatDateOnly(timestamp, dateFormat)}, ${formatTimeOnly(timestamp, timeFormat)}`
+export const formatDateTime = (
+	timestamp: number,
+	timeFormat: TimeFormat = "auto",
+	dateFormat: DateFormat = "auto",
+	locale: string = i18next.language || "en",
+) => `${formatDateOnly(timestamp, dateFormat, locale)}, ${formatTimeOnly(timestamp, timeFormat, locale)}`
 
 export const formatTimeAgo = (timestamp: number) => {
 	const now = Date.now()

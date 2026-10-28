@@ -384,7 +384,9 @@ describe("getProviderQuotas – Copilot window and misc", () => {
 		resetProviderQuotaCache()
 		mocked.mockResolvedValueOnce({ ok: true, quota: { unlimited: false, fetchedAt: 1 } })
 		const [none] = await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never])
-		expect(none).toMatchObject({ ok: true, windows: [{ valueLabel: "0% used" }] })
+		// Unknown usage is reported as unknown (no bar), never as a measured 0%.
+		expect(none).toMatchObject({ ok: true, windows: [{ valueLabel: "Usage not reported" }] })
+		expect((none as { windows: Array<{ usedPercent?: number }> }).windows[0].usedPercent).toBeUndefined()
 
 		resetProviderQuotaCache()
 		mocked.mockResolvedValueOnce({ ok: true, quota: { unlimited: true, resetAt: 7, fetchedAt: 1 } })

@@ -419,6 +419,11 @@ export const stories: Record<string, Story> = {
 		const { UISettingsStory } = await import("@/components/settings/__tests__/UISettings.visual.fixture")
 		return <UISettingsStory />
 	},
+	"appearance-preview": async () => {
+		const { AppearancePreviewStory } =
+			await import("@/components/settings/__tests__/AppearancePreview.visual.fixture")
+		return <AppearancePreviewStory />
+	},
 	"ui-settings-long-locale": async () => {
 		const [{ UISettingsStory }, { default: i18next }] = await Promise.all([
 			import("@/components/settings/__tests__/UISettings.visual.fixture"),

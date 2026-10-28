@@ -244,11 +244,15 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 	// (including zero-spend days). "all" stays sparse to avoid huge arrays.
 	const dailySeries: DailyUsage[] = []
 	if (start !== undefined) {
-		for (let day = start; day <= startOfLocalDay(now); day += DAY_MS) {
-			// Re-normalise each step to survive DST transitions.
-			const normalised = startOfLocalDay(day + DAY_MS / 2)
-			const entry = daily.get(normalised)
-			dailySeries.push({ day: normalised, cost: entry?.cost ?? 0, tokens: entry?.tokens ?? 0 })
+		// Step by calendar date, not by 24h: a 23h or 25h day (DST) would otherwise drift the
+		// cursor off local midnight and drop today's bar while today's tasks are still counted.
+		const cursor = new Date(start)
+		const last = startOfLocalDay(now)
+		for (let day = cursor.getTime(); day <= last; day = cursor.getTime()) {
+			const entry = daily.get(day)
+			dailySeries.push({ day, cost: entry?.cost ?? 0, tokens: entry?.tokens ?? 0 })
+			cursor.setDate(cursor.getDate() + 1)
+			cursor.setHours(0, 0, 0, 0)
 		}
 	} else {
 		for (const [day, entry] of [...daily.entries()].sort(([a], [b]) => a - b)) {

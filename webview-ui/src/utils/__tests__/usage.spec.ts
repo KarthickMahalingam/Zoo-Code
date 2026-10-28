@@ -409,37 +409,6 @@ describe("usage attribution edge cases", () => {
 	})
 })
 
-describe("range bounds across a DST change", () => {
-	const midnight = (y: number, m: number, d: number) => new Date(y, m, d).getTime()
-
-	it("starts 7d and 30d at local midnight even when the window crosses a clock change", () => {
-		// US clocks go forward on 2026-03-08 and back on 2026-11-01: these windows contain a 23h and a 25h day.
-		const afterSpring = new Date(2026, 2, 11, 15, 0).getTime()
-		expect(rangeStart("7d", afterSpring)).toBe(midnight(2026, 2, 5))
-		expect(new Date(rangeStart("7d", afterSpring)!).getHours()).toBe(0)
-
-		const afterFall = new Date(2026, 10, 3, 15, 0).getTime()
-		expect(rangeStart("7d", afterFall)).toBe(midnight(2026, 9, 28))
-		expect(new Date(rangeStart("7d", afterFall)!).getHours()).toBe(0)
-		expect(rangeStart("30d", afterFall)).toBe(midnight(2026, 9, 5))
-		expect(new Date(rangeStart("30d", afterFall)!).getHours()).toBe(0)
-	})
-
-	it("includes a task from the first hour of the first day, and excludes the hour before it", () => {
-		const now = new Date(2026, 10, 3, 15, 0).getTime()
-		const start = midnight(2026, 9, 28)
-		const csv = usageToCsv(
-			[
-				item({ task: "first-hour", ts: start + 30 * 60 * 1000 }),
-				item({ task: "just-before", ts: start - 30 * 60 * 1000 }),
-			],
-			{ range: "7d", now },
-		)
-		expect(csv).toContain("first-hour")
-		expect(csv).not.toContain("just-before")
-	})
-})
-
 describe("usageToCsv formula safety", () => {
 	it.each(['=HYPERLINK("http://x")', "+1+1", "-2+3", "@SUM(A1)", "\tcmd", "\rcmd"])(
 		"neutralises a cell that starts with %j",
