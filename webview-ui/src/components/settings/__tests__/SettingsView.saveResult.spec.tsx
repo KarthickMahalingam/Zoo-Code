@@ -150,4 +150,26 @@ describe("SettingsView – save acknowledgement", () => {
 		await waitFor(() => expect(posted("upsertApiConfiguration")).toHaveLength(1))
 		expect(posted("upsertApiConfiguration")[0]).toMatchObject({ text: "first-profile" })
 	})
+	it("never reuses a request id across mounts, so a late answer for an earlier save is ignored", async () => {
+		const first = renderUiTab()
+		await makeAnEdit()
+		fireEvent.click(screen.getByTestId("save-button"))
+		const earlierId = lastSaveRequestId(postMessage)
+		// Leaving settings drops the view while the host has not answered yet.
+		first.unmount()
+
+		renderUiTab()
+		await makeAnEdit()
+		fireEvent.click(screen.getByTestId("save-button"))
+		const laterId = lastSaveRequestId(postMessage)
+		expect(laterId).not.toBe(earlierId)
+
+		// The earlier save's answer arrives while the new save is pending: it must not complete it.
+		answerSave(earlierId, { success: true })
+		expect(posted("upsertApiConfiguration")).toHaveLength(0)
+		expect(screen.getByTestId("save-button")).toBeDisabled()
+
+		answerSave(laterId, { success: true })
+		await waitFor(() => expect(posted("upsertApiConfiguration")).toHaveLength(1))
+	})
 })

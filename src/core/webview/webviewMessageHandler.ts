@@ -877,18 +877,36 @@ export const webviewMessageHandler = async (
 				// Every key is snapshotted before it is written. If any write fails, the ones already applied are
 				// restored (stored value and side effect), so a save is all-or-nothing and the webview can keep
 				// the user's edits and let them retry.
-				const written: Array<{ key: string; previous: unknown }> = []
+				// The command lists are also written to VS Code's global configuration, which is a different store from
+				// the one `contextProxy` reads (the webview shows a union of both). Restoring them from `contextProxy`
+				// would overwrite configuration-only entries, so their configuration value is snapshotted separately.
+				const commandListKeys = new Set(["allowedCommands", "deniedCommands"])
+				const written: Array<{ key: string; previous: unknown; configGlobal?: { value: unknown } }> = []
 				let failure: string | undefined
 				try {
 					for (const [key, value] of Object.entries(updatedSettings)) {
-						written.push({ key, previous: provider.contextProxy.getValue(key as keyof RooCodeSettings) })
+						const entry: (typeof written)[number] = {
+							key,
+							previous: provider.contextProxy.getValue(key as keyof RooCodeSettings),
+						}
+						if (commandListKeys.has(key)) {
+							const inspected = vscode.workspace.getConfiguration(Package.name).inspect(key)
+							entry.configGlobal = { value: inspected?.globalValue }
+						}
+						written.push(entry)
 						await applySetting(key, value)
 					}
 				} catch (error) {
 					failure = error instanceof Error ? error.message : String(error)
-					for (const { key, previous } of written.reverse()) {
+					for (const { key, previous, configGlobal } of written.reverse()) {
 						try {
-							await applySetting(key, previous)
+							if (configGlobal) {
+								await vscode.workspace
+									.getConfiguration(Package.name)
+									.update(key, configGlobal.value, vscode.ConfigurationTarget.Global)
+							} else {
+								await applySetting(key, previous)
+							}
 							// Put back exactly what was stored, whatever defaulting the side effect applied.
 							await provider.contextProxy.setValue(key as keyof RooCodeSettings, previous as never)
 						} catch (rollbackError) {

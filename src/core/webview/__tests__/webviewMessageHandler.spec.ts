@@ -797,6 +797,7 @@ vi.mock("vscode", () => {
 		env: {
 			isTelemetryEnabled: true,
 		},
+		ConfigurationTarget: { Global: 1 },
 	}
 })
 
@@ -2073,6 +2074,93 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 			success: false,
 			error: "storage unavailable",
 		})
+	})
+
+	describe("the command lists live in two stores", () => {
+		const failWriteDelay = () => {
+			const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+			vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(
+				async (key: string, value: unknown) => {
+					if (key === "writeDelayMs" && value === 2000) throw new Error("storage unavailable")
+					return real(key as never, value as never)
+				},
+			)
+		}
+
+		it.each(["allowedCommands", "deniedCommands"])(
+			"restores %s in VS Code's global configuration from the configuration, not from global state",
+			async (key) => {
+				const update = vi.fn()
+				const inspect = vi.fn(() => ({ globalValue: ["from-config", "config-only"] }))
+				vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({ update, inspect } as never)
+				stored[key] = ["from-state"]
+				failWriteDelay()
+
+				await webviewMessageHandler(mockClineProvider, {
+					type: "updateSettings",
+					requestId: "save-9",
+					updatedSettings: { [key]: ["new"], writeDelayMs: 2000 },
+				})
+
+				expect(inspect).toHaveBeenCalledWith(key)
+				expect(update).toHaveBeenNthCalledWith(1, key, ["new"], vscode.ConfigurationTarget.Global)
+				// The rollback writes back what the configuration held, including the entry only it had.
+				expect(update).toHaveBeenLastCalledWith(
+					key,
+					["from-config", "config-only"],
+					vscode.ConfigurationTarget.Global,
+				)
+				expect(update).toHaveBeenCalledTimes(2)
+				// Global state is restored from its own snapshot.
+				expect(stored[key]).toEqual(["from-state"])
+			},
+		)
+
+		it("clears the configuration value again when it had none before the save", async () => {
+			const update = vi.fn()
+			vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+				update,
+				inspect: vi.fn(() => undefined),
+			} as never)
+			failWriteDelay()
+
+			await webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				requestId: "save-10",
+				updatedSettings: { deniedCommands: ["rm"], writeDelayMs: 2000 },
+			})
+
+			expect(update).toHaveBeenLastCalledWith("deniedCommands", undefined, vscode.ConfigurationTarget.Global)
+		})
+	})
+
+	it.each(["experiments", "customSupportPrompts"])("stores nothing for an empty %s value", async (key) => {
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			requestId: "save-11",
+			updatedSettings: { [key]: undefined, soundEnabled: true },
+		})
+
+		expect(stored).not.toHaveProperty(key)
+		expect(stored.soundEnabled).toBe(true)
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+			expect.objectContaining({ requestId: "save-11", success: true }),
+		)
+	})
+
+	it("logs a refresh failure that is not an Error", async () => {
+		vi.mocked(mockClineProvider.postStateToWebview).mockRejectedValueOnce("plain refresh failure")
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			requestId: "save-12",
+			updatedSettings: { soundEnabled: true },
+		})
+
+		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("plain refresh failure"))
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+			expect.objectContaining({ requestId: "save-12", success: true }),
+		)
 	})
 
 	it("does nothing when there are no settings to save", async () => {
