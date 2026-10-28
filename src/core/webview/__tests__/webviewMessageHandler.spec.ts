@@ -2038,6 +2038,43 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalled()
 	})
 
+	it("keeps a stored save and still reports success when the state refresh fails", async () => {
+		vi.mocked(mockClineProvider.postStateToWebview).mockRejectedValueOnce(new Error("state unavailable"))
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			requestId: "save-7",
+			updatedSettings: { soundEnabled: true, writeDelayMs: 2000 },
+		})
+
+		expect(stored).toMatchObject({ soundEnabled: true, writeDelayMs: 2000 })
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "settingsSaveResult",
+			requestId: "save-7",
+			success: true,
+		})
+		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("state unavailable"))
+		expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+	})
+
+	it("still reports a failed save when the state refresh also fails", async () => {
+		vi.mocked(mockClineProvider.contextProxy.setValue).mockRejectedValue(new Error("storage unavailable"))
+		vi.mocked(mockClineProvider.postStateToWebview).mockRejectedValueOnce(new Error("state unavailable"))
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			requestId: "save-8",
+			updatedSettings: { soundEnabled: true },
+		})
+
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "settingsSaveResult",
+			requestId: "save-8",
+			success: false,
+			error: "storage unavailable",
+		})
+	})
+
 	it("does nothing when there are no settings to save", async () => {
 		await webviewMessageHandler(mockClineProvider, { type: "updateSettings", requestId: "save-6" })
 		expect(mockClineProvider.contextProxy.setValue).not.toHaveBeenCalled()

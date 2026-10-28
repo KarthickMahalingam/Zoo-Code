@@ -133,16 +133,24 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	const { currentApiConfigName, listApiConfigMeta, uriScheme, settingsImportedAt, mode } = extensionState
 
 	const [isDiscardDialogShow, setDiscardDialogShow] = useState(false)
-	const [isChangeDetected, setChangeDetected] = useState(false)
+	const [isChangeDetected, setChangeDetectedState] = useState(false)
+	// Bumped on every edit, so a save can tell whether the user changed something after it was submitted.
+	const editRevision = useRef(0)
+	const setChangeDetected = useCallback((detected: boolean) => {
+		if (detected) editRevision.current++
+		setChangeDetectedState(detected)
+	}, [])
 	// The save currently waiting for the host's answer. The "unsaved changes" flag stays on until it succeeds.
 	const [pendingSaveId, setPendingSaveId] = useState<string | undefined>(undefined)
 	const saveCounter = useRef(0)
 	// What the pending save must send once its settings have been stored.
 	const pendingSaveRef = useRef<
 		| {
+				configName: typeof currentApiConfigName
 				apiConfiguration: typeof apiConfiguration
 				telemetrySetting: typeof telemetrySetting
 				debug: boolean | undefined
+				revision: number
 		  }
 		| undefined
 	>(undefined)
@@ -252,7 +260,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		prevApiConfigName.current = currentApiConfigName
 		prevMode.current = mode
 		setChangeDetected(false)
-	}, [currentApiConfigName, mode, extensionState])
+	}, [currentApiConfigName, mode, extensionState, setChangeDetected])
 
 	// Bust the cache when settings are imported.
 	useEffect(() => {
@@ -263,18 +271,21 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		handledSettingsImportedAt.current = settingsImportedAt
 		setCachedState((prevCachedState) => ({ ...prevCachedState, ...extensionState }))
 		setChangeDetected(false)
-	}, [settingsImportedAt, extensionState])
+	}, [settingsImportedAt, extensionState, setChangeDetected])
 
-	const setCachedStateField: SetCachedStateField<keyof ExtensionStateContextType> = useCallback((field, value) => {
-		setCachedState((prevState) => {
-			if (prevState[field] === value) {
-				return prevState
-			}
+	const setCachedStateField: SetCachedStateField<keyof ExtensionStateContextType> = useCallback(
+		(field, value) => {
+			setCachedState((prevState) => {
+				if (prevState[field] === value) {
+					return prevState
+				}
 
-			setChangeDetected(true)
-			return { ...prevState, [field]: value }
-		})
-	}, [])
+				setChangeDetected(true)
+				return { ...prevState, [field]: value }
+			})
+		},
+		[setChangeDetected],
+	)
 
 	const setApiConfigurationField = useCallback(
 		<K extends keyof ProviderSettings>(field: K, value: ProviderSettings[K], isUserAction: boolean = true) => {
@@ -314,92 +325,119 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 				return { ...prevState, apiConfiguration: { ...prevState.apiConfiguration, [field]: value } }
 			})
 		},
-		[],
+		[setChangeDetected],
 	)
 
-	const setExperimentEnabled: SetExperimentEnabled = useCallback((id: ExperimentId, enabled: boolean) => {
-		setCachedState((prevState) => {
-			if (prevState.experiments?.[id] === enabled) {
-				return prevState
-			}
+	const setExperimentEnabled: SetExperimentEnabled = useCallback(
+		(id: ExperimentId, enabled: boolean) => {
+			setCachedState((prevState) => {
+				if (prevState.experiments?.[id] === enabled) {
+					return prevState
+				}
 
-			setChangeDetected(true)
-			return { ...prevState, experiments: { ...prevState.experiments, [id]: enabled } }
-		})
-	}, [])
-
-	const setTelemetrySetting = useCallback((setting: TelemetrySetting) => {
-		setCachedState((prevState) => {
-			if (prevState.telemetrySetting === setting) {
-				return prevState
-			}
-
-			setChangeDetected(true)
-			return { ...prevState, telemetrySetting: setting }
-		})
-	}, [])
-
-	const setDebug = useCallback((debug: boolean) => {
-		setCachedState((prevState) => {
-			if (prevState.debug === debug) {
-				return prevState
-			}
-
-			setChangeDetected(true)
-			return { ...prevState, debug }
-		})
-	}, [])
-
-	const setImageGenerationProvider = useCallback((provider: ImageGenerationProvider) => {
-		setCachedState((prevState) => {
-			if (prevState.imageGenerationProvider !== provider) {
 				setChangeDetected(true)
-			}
+				return { ...prevState, experiments: { ...prevState.experiments, [id]: enabled } }
+			})
+		},
+		[setChangeDetected],
+	)
 
-			return { ...prevState, imageGenerationProvider: provider }
-		})
-	}, [])
+	const setTelemetrySetting = useCallback(
+		(setting: TelemetrySetting) => {
+			setCachedState((prevState) => {
+				if (prevState.telemetrySetting === setting) {
+					return prevState
+				}
 
-	const setOpenRouterImageApiKey = useCallback((apiKey: string) => {
-		setCachedState((prevState) => {
-			if (prevState.openRouterImageApiKey !== apiKey) {
 				setChangeDetected(true)
-			}
+				return { ...prevState, telemetrySetting: setting }
+			})
+		},
+		[setChangeDetected],
+	)
 
-			return { ...prevState, openRouterImageApiKey: apiKey }
-		})
-	}, [])
+	const setDebug = useCallback(
+		(debug: boolean) => {
+			setCachedState((prevState) => {
+				if (prevState.debug === debug) {
+					return prevState
+				}
 
-	const setImageGenerationSelectedModel = useCallback((model: string) => {
-		setCachedState((prevState) => {
-			if (prevState.openRouterImageGenerationSelectedModel !== model) {
 				setChangeDetected(true)
-			}
+				return { ...prevState, debug }
+			})
+		},
+		[setChangeDetected],
+	)
 
-			return { ...prevState, openRouterImageGenerationSelectedModel: model }
-		})
-	}, [])
+	const setImageGenerationProvider = useCallback(
+		(provider: ImageGenerationProvider) => {
+			setCachedState((prevState) => {
+				if (prevState.imageGenerationProvider !== provider) {
+					setChangeDetected(true)
+				}
 
-	const setCustomSupportPromptsField = useCallback((prompts: Record<string, string | undefined>) => {
-		setCachedState((prevState) => {
-			const previousStr = JSON.stringify(prevState.customSupportPrompts)
-			const newStr = JSON.stringify(prompts)
+				return { ...prevState, imageGenerationProvider: provider }
+			})
+		},
+		[setChangeDetected],
+	)
 
-			if (previousStr === newStr) {
-				return prevState
-			}
+	const setOpenRouterImageApiKey = useCallback(
+		(apiKey: string) => {
+			setCachedState((prevState) => {
+				if (prevState.openRouterImageApiKey !== apiKey) {
+					setChangeDetected(true)
+				}
 
-			setChangeDetected(true)
-			return { ...prevState, customSupportPrompts: prompts }
-		})
-	}, [])
+				return { ...prevState, openRouterImageApiKey: apiKey }
+			})
+		},
+		[setChangeDetected],
+	)
+
+	const setImageGenerationSelectedModel = useCallback(
+		(model: string) => {
+			setCachedState((prevState) => {
+				if (prevState.openRouterImageGenerationSelectedModel !== model) {
+					setChangeDetected(true)
+				}
+
+				return { ...prevState, openRouterImageGenerationSelectedModel: model }
+			})
+		},
+		[setChangeDetected],
+	)
+
+	const setCustomSupportPromptsField = useCallback(
+		(prompts: Record<string, string | undefined>) => {
+			setCachedState((prevState) => {
+				const previousStr = JSON.stringify(prevState.customSupportPrompts)
+				const newStr = JSON.stringify(prompts)
+
+				if (previousStr === newStr) {
+					return prevState
+				}
+
+				setChangeDetected(true)
+				return { ...prevState, customSupportPrompts: prompts }
+			})
+		},
+		[setChangeDetected],
+	)
 
 	const isSettingValid = !errorMessage
 
 	const handleSubmit = () => {
 		if (isSettingValid && !pendingSaveId) {
 			const saveId = `settings-save-${++saveCounter.current}`
-			pendingSaveRef.current = { apiConfiguration, telemetrySetting, debug: cachedState.debug }
+			pendingSaveRef.current = {
+				configName: currentApiConfigName,
+				apiConfiguration,
+				telemetrySetting,
+				debug: cachedState.debug,
+				revision: editRevision.current,
+			}
 			setPendingSaveId(saveId)
 			vscode.postMessage({
 				type: "updateSettings",
@@ -507,17 +545,18 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			// by the `updateSettings` message.
 			vscode.postMessage({
 				type: "upsertApiConfiguration",
-				text: currentApiConfigName,
+				text: saved.configName,
 				apiConfiguration: saved.apiConfiguration,
 			})
 			vscode.postMessage({ type: "telemetrySetting", text: saved.telemetrySetting })
 			vscode.postMessage({ type: "debugSetting", bool: saved.debug })
-			setChangeDetected(false)
+			// An edit made while the save was in flight is not in what was sent: it stays unsaved.
+			if (editRevision.current === saved.revision) setChangeDetected(false)
 		}
 
 		window.addEventListener("message", onResult)
 		return () => window.removeEventListener("message", onResult)
-	}, [pendingSaveId, currentApiConfigName])
+	}, [pendingSaveId, setChangeDetected])
 
 	const checkUnsaveChanges = useCallback(
 		(then: () => void) => {
@@ -543,7 +582,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			}
 			// If confirm is false (Cancel), do nothing, dialog closes automatically
 		},
-		[extensionState], // Depend on extensionState to get the latest original state
+		[extensionState, setChangeDetected], // extensionState is the latest original state
 	)
 
 	// Handle tab changes with unsaved changes check

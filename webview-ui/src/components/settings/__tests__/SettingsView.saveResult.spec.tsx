@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, screen, waitFor } from "@testing-library/react"
 import { QueryClient } from "@tanstack/react-query"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -115,5 +115,39 @@ describe("SettingsView – save acknowledgement", () => {
 		await screen.findByTestId("collapse-thinking-checkbox")
 		answerSave("settings-save-1", { success: true })
 		expect(posted("upsertApiConfiguration")).toHaveLength(0)
+	})
+	it("keeps an edit made while the save was pending unsaved, so Save stays available for it", async () => {
+		renderUiTab()
+		await makeAnEdit()
+		fireEvent.click(screen.getByTestId("save-button"))
+
+		// A second edit lands before the host answers; it is not in what was sent.
+		fireEvent.click(screen.getByTestId("enter-behavior-checkbox"))
+		answerSave(lastSaveRequestId(postMessage), { success: true })
+
+		await waitFor(() => expect(posted("upsertApiConfiguration")).toHaveLength(1))
+		await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
+	})
+
+	it("sends the API configuration under the profile name it was submitted with", async () => {
+		renderWithExtensionState(<SettingsView onDone={vi.fn()} targetSection="ui" />, {
+			state: { currentApiConfigName: "first-profile" },
+			queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+		})
+		await makeAnEdit()
+		fireEvent.click(screen.getByTestId("save-button"))
+
+		// The user switches profile before the host answers.
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: { type: "state", state: { currentApiConfigName: "other-profile" } },
+				}),
+			)
+		})
+		answerSave(lastSaveRequestId(postMessage), { success: true })
+
+		await waitFor(() => expect(posted("upsertApiConfiguration")).toHaveLength(1))
+		expect(posted("upsertApiConfiguration")[0]).toMatchObject({ text: "first-profile" })
 	})
 })

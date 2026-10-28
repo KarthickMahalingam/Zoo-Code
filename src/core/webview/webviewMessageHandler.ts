@@ -878,22 +878,14 @@ export const webviewMessageHandler = async (
 				// restored (stored value and side effect), so a save is all-or-nothing and the webview can keep
 				// the user's edits and let them retry.
 				const written: Array<{ key: string; previous: unknown }> = []
+				let failure: string | undefined
 				try {
 					for (const [key, value] of Object.entries(updatedSettings)) {
 						written.push({ key, previous: provider.contextProxy.getValue(key as keyof RooCodeSettings) })
 						await applySetting(key, value)
 					}
-
-					await provider.postStateToWebview()
-					if (saveRequestId) {
-						await provider.postMessageToWebview({
-							type: "settingsSaveResult",
-							requestId: saveRequestId,
-							success: true,
-						})
-					}
 				} catch (error) {
-					const reason = error instanceof Error ? error.message : String(error)
+					failure = error instanceof Error ? error.message : String(error)
 					for (const { key, previous } of written.reverse()) {
 						try {
 							await applySetting(key, previous)
@@ -905,17 +897,26 @@ export const webviewMessageHandler = async (
 							)
 						}
 					}
-					provider.log(`[updateSettings] Save failed and was rolled back: ${reason}`)
-					vscode.window.showErrorMessage(t("common:errors.settings_save_failed", { error: reason }))
+					provider.log(`[updateSettings] Save failed and was rolled back: ${failure}`)
+					vscode.window.showErrorMessage(t("common:errors.settings_save_failed", { error: failure }))
+				}
+
+				// Notification phase: the outcome is already decided by the writes above. A failed refresh must neither
+				// undo a stored save nor keep the webview from receiving the result (it waits on it to re-enable Save).
+				try {
 					await provider.postStateToWebview()
-					if (saveRequestId) {
-						await provider.postMessageToWebview({
-							type: "settingsSaveResult",
-							requestId: saveRequestId,
-							success: false,
-							error: reason,
-						})
-					}
+				} catch (error) {
+					provider.log(
+						`[updateSettings] Could not refresh the webview state: ${error instanceof Error ? error.message : String(error)}`,
+					)
+				}
+				if (saveRequestId) {
+					await provider.postMessageToWebview({
+						type: "settingsSaveResult",
+						requestId: saveRequestId,
+						success: failure === undefined,
+						...(failure === undefined ? {} : { error: failure }),
+					})
 				}
 			}
 			break
