@@ -343,7 +343,7 @@ describe("pickMetric", () => {
 
 describe("spend that has no provider or model (context condensing)", () => {
 	const entry = (cost: number) => ({
-		apiProvider: "anthropic",
+		apiProvider: providerIdentifiers.anthropic,
 		modelId: "claude-sonnet-5",
 		requests: 1,
 		tokensIn: 100,
@@ -367,7 +367,7 @@ describe("spend that has no provider or model (context condensing)", () => {
 		const unrecorded = s.byProvider.find((b) => b.key === UNRECORDED)!
 		expect(unrecorded.tokens).toBe(0)
 		// The one task is counted under its real provider; the remainder is a cost line, not another task.
-		expect(s.byProvider.find((b) => b.key === "anthropic")?.tasks).toBe(1)
+		expect(s.byProvider.find((b) => b.key === providerIdentifiers.anthropic)?.tasks).toBe(1)
 	})
 
 	it("ignores float noise: no spurious 'not recorded' row when the costs agree", () => {
