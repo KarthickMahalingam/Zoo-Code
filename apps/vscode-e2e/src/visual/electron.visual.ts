@@ -256,8 +256,11 @@ for (const scenario of scenarios) {
 			const tokenCountMask = webviewFrame
 				.frameLocator("iframe")
 				.locator('[data-testid="context-tokens-count"],[data-testid="context-window-size"]')
+			// The time under each message is the real send time, so it changes on every run. Mask it, as the
+			// token counters above, and keep the rest of the scene byte-stable.
+			const messageTimeMask = webviewFrame.frameLocator("iframe").locator('[data-testid="message-timestamp"]')
 			await expect(sidebar).toHaveScreenshot(`electron-${scenario.name}-sidebar.png`, {
-				mask: [tokenCountMask],
+				mask: [tokenCountMask, messageTimeMask],
 			})
 
 			if (scenario.webviewSnapshot) {
