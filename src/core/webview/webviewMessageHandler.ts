@@ -138,6 +138,24 @@ const handlerFor = (apiConfiguration: ProviderSettings, provider: RouterName): A
  */
 let settingsSaveChain: Promise<unknown> = Promise.resolve()
 
+/** Longest a save waits for the download and install of the destructive command guard. */
+const DCG_INSTALL_TIMEOUT_MS = 180_000
+/** Longest a save waits for the MCP hub to connect or disconnect its servers. */
+const MCP_ENABLE_TIMEOUT_MS = 30_000
+
+/**
+ * Stops waiting for `work` after `ms`, so one stage that never settles cannot hold the save queue (and so every
+ * later save, for every provider) forever. `work` itself cannot be cancelled: callers must only use this where a
+ * late completion cannot change a setting after the save has been decided.
+ */
+const withTimeout = <T>(work: Promise<T>, ms: number, what: string): Promise<T> => {
+	let timer: ReturnType<typeof setTimeout> | undefined
+	const timedOut = new Promise<never>((_resolve, reject) => {
+		timer = setTimeout(() => reject(new Error(`${what} timed out after ${Math.round(ms / 1000)}s`)), ms)
+	})
+	return Promise.race([work, timedOut]).finally(() => clearTimeout(timer))
+}
+
 export const webviewMessageHandler = (
 	provider: ClineProvider,
 	message: WebviewMessage,
@@ -764,7 +782,12 @@ const handleWebviewMessage = async (
 				if (updatedSettings.destructiveCommandGuardEnabled === true) {
 					try {
 						const { ensureDcgInstalled } = await import("../../services/destructive-command-guard")
-						const binaryPath = await ensureDcgInstalled(provider.context.globalStorageUri.fsPath)
+						// A late install cannot change a setting: on a timeout the guard is switched off below.
+						const binaryPath = await withTimeout(
+							ensureDcgInstalled(provider.context.globalStorageUri.fsPath),
+							DCG_INSTALL_TIMEOUT_MS,
+							"Installing the destructive command guard",
+						)
 						if (!binaryPath) {
 							updatedSettings.destructiveCommandGuardEnabled = false
 							vscode.window.showErrorMessage(t("common:errors.destructiveCommandGuard.unavailable"))
@@ -873,7 +896,12 @@ const handleWebviewMessage = async (
 						const mcpHub = provider.getMcpHub()
 
 						if (mcpHub) {
-							await mcpHub.handleMcpEnabledChange(newValue as boolean)
+							// A timeout fails the save, and the rollback asks the hub for the previous state.
+							await withTimeout(
+								mcpHub.handleMcpEnabledChange(newValue as boolean),
+								MCP_ENABLE_TIMEOUT_MS,
+								"Changing the MCP servers",
+							)
 						}
 					} else if (key === "experiments") {
 						if (!value) {

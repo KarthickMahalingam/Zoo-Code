@@ -2076,6 +2076,88 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 		})
 	})
 
+	describe("a stage that never settles", () => {
+		beforeEach(() => vi.useFakeTimers())
+		afterEach(() => vi.useRealTimers())
+
+		it("fails the save and rolls back when the MCP hub never answers, and the next save still runs", async () => {
+			const handleMcpEnabledChange = vi
+				.fn()
+				.mockImplementationOnce(() => new Promise(() => {}))
+				.mockResolvedValue(undefined)
+			;(mockClineProvider as any).getMcpHub = vi.fn().mockReturnValue({ handleMcpEnabledChange })
+			stored.mcpEnabled = true
+
+			const stuck = webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				requestId: "save-mcp",
+				updatedSettings: { soundEnabled: true, mcpEnabled: false },
+			})
+			await vi.advanceTimersByTimeAsync(30_000)
+			await stuck
+
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+				type: "settingsSaveResult",
+				requestId: "save-mcp",
+				success: false,
+				error: "Changing the MCP servers timed out after 30s",
+			})
+			expect(stored).toMatchObject({ soundEnabled: false, mcpEnabled: true })
+			// The rollback asked the hub for the previous state.
+			expect(handleMcpEnabledChange).toHaveBeenLastCalledWith(true)
+
+			// The queue was not left blocked.
+			await webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				requestId: "save-next",
+				updatedSettings: { writeDelayMs: 3000 },
+			})
+			expect(stored.writeDelayMs).toBe(3000)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenLastCalledWith(
+				expect.objectContaining({ requestId: "save-next", success: true }),
+			)
+		})
+
+		it("saves with the guard switched off when its install never finishes", async () => {
+			vi.mocked(ensureDcgInstalled).mockImplementation(() => new Promise(() => {}))
+
+			const stuck = webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				requestId: "save-dcg",
+				updatedSettings: { destructiveCommandGuardEnabled: true, soundEnabled: true },
+			})
+			await vi.advanceTimersByTimeAsync(180_000)
+			await stuck
+
+			// A late install cannot turn the guard on: it was stored as off.
+			expect(stored).toMatchObject({ destructiveCommandGuardEnabled: false, soundEnabled: true })
+			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+				"common:errors.destructiveCommandGuard.enableFailed",
+			)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+				type: "settingsSaveResult",
+				requestId: "save-dcg",
+				success: true,
+			})
+		})
+
+		it("does not time out a stage that answers in time", async () => {
+			const handleMcpEnabledChange = vi.fn().mockResolvedValue(undefined)
+			;(mockClineProvider as any).getMcpHub = vi.fn().mockReturnValue({ handleMcpEnabledChange })
+
+			await webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				requestId: "save-fast",
+				updatedSettings: { mcpEnabled: false },
+			})
+			// No timer is left running once the stage has answered.
+			expect(vi.getTimerCount()).toBe(0)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ requestId: "save-fast", success: true }),
+			)
+		})
+	})
+
 	describe("concurrent saves", () => {
 		it("run one at a time across providers, so a rollback cannot undo another save's writes", async () => {
 			// Two providers (sidebar and editor tab) share one ContextProxy.
