@@ -1227,6 +1227,13 @@ export const ChatRowContent = ({
 									</div>
 								)}
 							</div>
+							{/* When the reply was sent. Held back while it streams, so the line does not appear and
+							    shift as the text grows. */}
+							{!message.partial && (
+								<div className="ml-6 mt-1">
+									<MessageTimestamp ts={message.ts} timeFormat={timeFormat} dateFormat={dateFormat} />
+								</div>
+							)}
 						</div>
 					)
 				case "user_feedback":

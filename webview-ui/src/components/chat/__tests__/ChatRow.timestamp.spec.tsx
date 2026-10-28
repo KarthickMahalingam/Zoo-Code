@@ -79,9 +79,52 @@ describe("ChatRow – message timestamp", () => {
 		expect(screen.getByTestId("message-timestamp").textContent).toContain("14:41")
 	})
 
-	it("does not add a timestamp to assistant text", () => {
-		renderRow({ ts: Date.now(), type: "say", say: "text", text: "assistant reply" })
-		expect(screen.queryByTestId("message-timestamp")).toBeNull()
+	describe("assistant text", () => {
+		it("shows when the reply was sent, under the reply", () => {
+			const { container } = renderRow({ ts: Date.now(), type: "say", say: "text", text: "assistant reply" })
+			expect(screen.getByTestId("message-timestamp").textContent).toContain("Today")
+			const html = container.innerHTML
+			expect(html.indexOf("message-timestamp")).toBeGreaterThan(html.indexOf("assistant reply"))
+		})
+
+		it("uses the reply's own timestamp and the user's formats", () => {
+			const d = new Date()
+			d.setHours(14, 41, 0, 0)
+			mockState = { timeFormat: "24h", dateFormat: "ymd" }
+			renderRow({ ts: d.getTime(), type: "say", say: "text", text: "formatted reply" })
+			expect(screen.getByTestId("message-timestamp").textContent).toContain("14:41")
+		})
+
+		it("waits until the reply has finished streaming", () => {
+			const { rerender } = renderRow({
+				ts: Date.now(),
+				type: "say",
+				say: "text",
+				text: "still typing",
+				partial: true,
+			})
+			expect(screen.queryByTestId("message-timestamp")).toBeNull()
+
+			rerender(
+				<ChatRowContent
+					message={{ ts: Date.now(), type: "say", say: "text", text: "still typing", partial: false }}
+					isExpanded={false}
+					isLast={false}
+					isStreaming={false}
+					onToggleExpand={() => {}}
+					onSuggestionClick={() => {}}
+					onBatchFileResponse={() => {}}
+					onFollowUpUnmount={() => {}}
+					isFollowUpAnswered={false}
+				/>,
+			)
+			expect(screen.getByTestId("message-timestamp")).toBeTruthy()
+		})
+
+		it("shows nothing for an assistant message with an invalid timestamp", () => {
+			renderRow({ ts: 0, type: "say", say: "text", text: "no time" })
+			expect(screen.queryByTestId("message-timestamp")).toBeNull()
+		})
 	})
 
 	it("keeps the message visible while streaming", () => {

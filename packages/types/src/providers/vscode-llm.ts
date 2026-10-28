@@ -12,6 +12,7 @@ export const vsCodeLmModelsMessageTypes = [
 	"githubCopilotSignInResult",
 	"githubCopilotModels",
 	"requestProviderQuotas",
+	"cancelProviderQuotas",
 	"providerQuotas",
 ] as const
 

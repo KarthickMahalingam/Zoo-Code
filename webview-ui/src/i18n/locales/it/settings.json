@@ -1294,7 +1294,7 @@
 			"chat": "Messaggio della chat",
 			"history": "Cronologia delle attività",
 			"relative": "5 min fa",
-			"hover": "(hover: {{value}})"
+			"hover": "(al passaggio del mouse: {{value}})"
 		}
 	},
 	"usage": {

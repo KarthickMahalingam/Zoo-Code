@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { RefreshCw } from "lucide-react"
 
 import { VsCodeLmModelsMessageType, type ProviderQuota } from "@roo-code/types"
@@ -25,22 +25,48 @@ export const ProviderLimits = () => {
 	const [quotas, setQuotas] = useState<ProviderQuota[] | undefined>()
 	const [loading, setLoading] = useState(true)
 
-	const request = useCallback((force: boolean) => {
-		setLoading(true)
-		vscode.postMessage({ type: VsCodeLmModelsMessageType.requestProviderQuotas, bool: force })
+	// Only the newest request counts: an answer for an older one (a slow first load that a refresh
+	// overtook, or one that outlived this component) is ignored.
+	const latestRequestId = useRef<string | undefined>(undefined)
+	const counter = useRef(0)
+
+	const cancelLatest = useCallback(() => {
+		if (latestRequestId.current) {
+			vscode.postMessage({
+				type: VsCodeLmModelsMessageType.cancelProviderQuotas,
+				requestId: latestRequestId.current,
+			})
+			latestRequestId.current = undefined
+		}
 	}, [])
+
+	const request = useCallback(
+		(force: boolean) => {
+			cancelLatest()
+			const requestId = `provider-quotas-${++counter.current}`
+			latestRequestId.current = requestId
+			setLoading(true)
+			vscode.postMessage({ type: VsCodeLmModelsMessageType.requestProviderQuotas, bool: force, requestId })
+		},
+		[cancelLatest],
+	)
 
 	useEffect(() => {
 		const onMessage = (event: MessageEvent) => {
-			if (event.data?.type === VsCodeLmModelsMessageType.providerQuotas) {
-				setQuotas(event.data.providerQuotas ?? [])
-				setLoading(false)
-			}
+			if (event.data?.type !== VsCodeLmModelsMessageType.providerQuotas) return
+			if (event.data.requestId !== latestRequestId.current) return
+			latestRequestId.current = undefined
+			setQuotas(event.data.providerQuotas ?? [])
+			setLoading(false)
 		}
 		window.addEventListener("message", onMessage)
 		request(false)
-		return () => window.removeEventListener("message", onMessage)
-	}, [request])
+		return () => {
+			window.removeEventListener("message", onMessage)
+			// Tell the host nobody is waiting any more so it can stop the profile load and any fetches.
+			cancelLatest()
+		}
+	}, [request, cancelLatest])
 
 	// Nothing connected that has a usage API: hide the section entirely.
 	if (quotas && quotas.length === 0) return null

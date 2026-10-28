@@ -1294,7 +1294,7 @@
 			"chat": "Pesan chat",
 			"history": "Riwayat tugas",
 			"relative": "5 menit lalu",
-			"hover": "(hover: {{value}})"
+			"hover": "(arahkan kursor: {{value}})"
 		}
 	},
 	"usage": {

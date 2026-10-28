@@ -137,6 +137,18 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 
 	const [isDiscardDialogShow, setDiscardDialogShow] = useState(false)
 	const [isChangeDetected, setChangeDetected] = useState(false)
+	// The save currently waiting for the host's answer. The "unsaved changes" flag stays on until it succeeds.
+	const [pendingSaveId, setPendingSaveId] = useState<string | undefined>(undefined)
+	const saveCounter = useRef(0)
+	// What the pending save must send once its settings have been stored.
+	const pendingSaveRef = useRef<
+		| {
+				apiConfiguration: typeof apiConfiguration
+				telemetrySetting: typeof telemetrySetting
+				debug: boolean | undefined
+		  }
+		| undefined
+	>(undefined)
 	const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined)
 	const [activeTab, setActiveTab] = useState<SectionName>(
 		targetSection && sectionNames.includes(targetSection as SectionName)
@@ -391,9 +403,13 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	const isSettingValid = !errorMessage
 
 	const handleSubmit = () => {
-		if (isSettingValid) {
+		if (isSettingValid && !pendingSaveId) {
+			const saveId = `settings-save-${++saveCounter.current}`
+			pendingSaveRef.current = { apiConfiguration, telemetrySetting, debug: cachedState.debug }
+			setPendingSaveId(saveId)
 			vscode.postMessage({
 				type: "updateSettings",
+				requestId: saveId,
 				updatedSettings: {
 					language,
 					alwaysAllowReadOnly: alwaysAllowReadOnly ?? undefined,
@@ -477,15 +493,40 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 				},
 			})
 
-			// These have more complex logic so they aren't (yet) handled
-			// by the `updateSettings` message.
-			vscode.postMessage({ type: "upsertApiConfiguration", text: currentApiConfigName, apiConfiguration })
-			vscode.postMessage({ type: "telemetrySetting", text: telemetrySetting })
-			vscode.postMessage({ type: "debugSetting", bool: cachedState.debug })
-
-			setChangeDetected(false)
+			// The rest of the save (API configuration, telemetry, debug) is sent once the host confirms the
+			// settings were stored, and the "unsaved changes" flag is cleared only then: see the
+			// `settingsSaveResult` listener below. A failed save leaves the user's edits in place to retry.
 		}
 	}
+
+	useEffect(() => {
+		if (!pendingSaveId) return
+
+		const onResult = (event: MessageEvent) => {
+			const message = event.data
+			if (message?.type !== "settingsSaveResult" || message.requestId !== pendingSaveId) return
+
+			const saved = pendingSaveRef.current
+			pendingSaveRef.current = undefined
+			setPendingSaveId(undefined)
+
+			if (!message.success || !saved) return
+
+			// These have more complex logic so they aren't (yet) handled
+			// by the `updateSettings` message.
+			vscode.postMessage({
+				type: "upsertApiConfiguration",
+				text: currentApiConfigName,
+				apiConfiguration: saved.apiConfiguration,
+			})
+			vscode.postMessage({ type: "telemetrySetting", text: saved.telemetrySetting })
+			vscode.postMessage({ type: "debugSetting", bool: saved.debug })
+			setChangeDetected(false)
+		}
+
+		window.addEventListener("message", onResult)
+		return () => window.removeEventListener("message", onResult)
+	}, [pendingSaveId, currentApiConfigName])
 
 	const checkUnsaveChanges = useCallback(
 		(then: () => void) => {
@@ -715,7 +756,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 							variant={isSettingValid ? "primary" : "secondary"}
 							className={!isSettingValid ? "!border-vscode-errorForeground" : ""}
 							onClick={handleSubmit}
-							disabled={!isChangeDetected || !isSettingValid}
+							disabled={!isChangeDetected || !isSettingValid || !!pendingSaveId}
 							data-testid="save-button">
 							{t("settings:common.save")}
 						</Button>

@@ -21,9 +21,19 @@ vi.mock("@/i18n/TranslationContext", () => ({
 	}),
 }))
 
-const respond = (providerQuotas: ProviderQuota[]) =>
+/** The id the component put on its most recent request (the host echoes it back). */
+const lastRequestId = () => {
+	const requests = post.mock.calls.map((c) => c[0]).filter((m) => m.type === "requestProviderQuotas")
+	return requests.at(-1)?.requestId as string
+}
+
+/** Answers the most recent request, or the given id. Pass `null` to send an answer with no id at all. */
+const respond = (providerQuotas: ProviderQuota[], id?: string | null) =>
 	act(() => {
-		window.dispatchEvent(new MessageEvent("message", { data: { type: "providerQuotas", providerQuotas } }))
+		const requestId = id === null ? undefined : (id ?? lastRequestId())
+		window.dispatchEvent(
+			new MessageEvent("message", { data: { type: "providerQuotas", providerQuotas, requestId } }),
+		)
 	})
 
 describe("ProviderLimits", () => {
@@ -35,7 +45,11 @@ describe("ProviderLimits", () => {
 
 	it("asks the extension for quotas on mount without forcing", () => {
 		render(<ProviderLimits />)
-		expect(post).toHaveBeenCalledWith({ type: "requestProviderQuotas", bool: false })
+		expect(post).toHaveBeenCalledWith({
+			type: "requestProviderQuotas",
+			bool: false,
+			requestId: expect.stringMatching(/^provider-quotas-\d+$/),
+		})
 	})
 
 	it("shows a loading row until the first response", () => {
@@ -147,7 +161,9 @@ describe("ProviderLimits", () => {
 	it("treats a response without a providerQuotas list as empty", () => {
 		render(<ProviderLimits />)
 		act(() => {
-			window.dispatchEvent(new MessageEvent("message", { data: { type: "providerQuotas" } }))
+			window.dispatchEvent(
+				new MessageEvent("message", { data: { type: "providerQuotas", requestId: lastRequestId() } }),
+			)
 		})
 		expect(screen.queryByTestId("provider-limits")).toBeNull()
 	})
@@ -170,7 +186,11 @@ describe("ProviderLimits", () => {
 		])
 		post.mockClear()
 		fireEvent.click(screen.getByTestId("provider-limits-refresh"))
-		expect(post).toHaveBeenCalledWith({ type: "requestProviderQuotas", bool: true })
+		expect(post).toHaveBeenCalledWith({
+			type: "requestProviderQuotas",
+			bool: true,
+			requestId: expect.stringMatching(/^provider-quotas-\d+$/),
+		})
 	})
 
 	it("ignores unrelated messages", () => {
@@ -179,5 +199,65 @@ describe("ProviderLimits", () => {
 			window.dispatchEvent(new MessageEvent("message", { data: { type: "somethingElse" } }))
 		})
 		expect(screen.getByTestId("provider-limits")).toBeTruthy()
+	})
+
+	describe("request lifecycle", () => {
+		const ok = (providerId: string = providerIdentifiers.deepseek): ProviderQuota => ({
+			providerId,
+			ok: true,
+			fetchedAt: 1,
+			windows: [{ id: "b", valueLabel: "$1.00 left" }],
+		})
+
+		it("ignores an answer for a request that a refresh has overtaken", () => {
+			render(<ProviderLimits />)
+			const first = lastRequestId()
+			respond([ok(providerIdentifiers.deepseek)])
+			fireEvent.click(screen.getByTestId("provider-limits-refresh"))
+			const second = lastRequestId()
+			expect(second).not.toBe(first)
+
+			// A late answer to the first request must not replace the newer state or end the spinner.
+			respond([ok(providerIdentifiers.moonshot)], first)
+			expect(screen.queryByTestId(`provider-limit-${providerIdentifiers.moonshot}`)).toBeNull()
+			expect(screen.getByTestId("provider-limits-refresh").hasAttribute("disabled")).toBe(true)
+
+			respond([ok(providerIdentifiers.moonshot)], second)
+			expect(screen.getByTestId(`provider-limit-${providerIdentifiers.moonshot}`)).toBeTruthy()
+			expect(screen.getByTestId("provider-limits-refresh").hasAttribute("disabled")).toBe(false)
+		})
+
+		it("ignores an answer that carries no request id or an unknown one", () => {
+			render(<ProviderLimits />)
+			respond([ok()], null)
+			respond([ok()], "provider-quotas-999")
+			expect(screen.queryByTestId(`provider-limit-${providerIdentifiers.deepseek}`)).toBeNull()
+		})
+
+		it("does not offer a refresh while a request is pending, so a newer one never races an older one", () => {
+			render(<ProviderLimits />)
+			expect(screen.getByTestId("provider-limits-refresh").hasAttribute("disabled")).toBe(true)
+			post.mockClear()
+			fireEvent.click(screen.getByTestId("provider-limits-refresh"))
+			expect(post).not.toHaveBeenCalled()
+		})
+
+		it("cancels the in-flight request on unmount and ignores a late answer", () => {
+			const { unmount } = render(<ProviderLimits />)
+			const pending = lastRequestId()
+			post.mockClear()
+			unmount()
+			expect(post).toHaveBeenCalledWith({ type: "cancelProviderQuotas", requestId: pending })
+			// Must not throw or update state after unmount.
+			expect(() => respond([ok()], pending)).not.toThrow()
+		})
+
+		it("does not cancel a request that has already been answered", () => {
+			const { unmount } = render(<ProviderLimits />)
+			respond([ok()])
+			post.mockClear()
+			unmount()
+			expect(post).not.toHaveBeenCalledWith(expect.objectContaining({ type: "cancelProviderQuotas" }))
+		})
 	})
 })

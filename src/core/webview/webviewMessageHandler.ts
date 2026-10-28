@@ -131,6 +131,9 @@ import {
 const handlerFor = (apiConfiguration: ProviderSettings, provider: RouterName): ApiHandler =>
 	buildApiHandler({ ...apiConfiguration, apiProvider: provider })
 
+/** In-flight `requestProviderQuotas` work by request id, so a cancel message can abort it. */
+const pendingProviderQuotaRequests = new Map<string, AbortController>()
+
 export const webviewMessageHandler = async (
 	provider: ClineProvider,
 	message: WebviewMessage,
@@ -738,18 +741,21 @@ export const webviewMessageHandler = async (
 			}
 			break
 
-		case "updateSettings":
-			if (message.updatedSettings) {
-				if (message.updatedSettings.destructiveCommandGuardEnabled === true) {
+		case "updateSettings": {
+			const updatedSettings = message.updatedSettings
+			const saveRequestId = message.requestId
+			if (!updatedSettings) break
+			{
+				if (updatedSettings.destructiveCommandGuardEnabled === true) {
 					try {
 						const { ensureDcgInstalled } = await import("../../services/destructive-command-guard")
 						const binaryPath = await ensureDcgInstalled(provider.context.globalStorageUri.fsPath)
 						if (!binaryPath) {
-							message.updatedSettings.destructiveCommandGuardEnabled = false
+							updatedSettings.destructiveCommandGuardEnabled = false
 							vscode.window.showErrorMessage(t("common:errors.destructiveCommandGuard.unavailable"))
 						}
 					} catch (error) {
-						message.updatedSettings.destructiveCommandGuardEnabled = false
+						updatedSettings.destructiveCommandGuardEnabled = false
 						vscode.window.showErrorMessage(
 							t("common:errors.destructiveCommandGuard.enableFailed", {
 								error: error instanceof Error ? error.message : String(error),
@@ -758,7 +764,8 @@ export const webviewMessageHandler = async (
 					}
 				}
 
-				for (const [key, value] of Object.entries(message.updatedSettings)) {
+				/** Applies one setting (its side effect, then the stored value). Returns whether a value was stored. */
+				const applySetting = async (key: string, value: unknown): Promise<boolean> => {
 					let newValue = value
 
 					if (key === "language") {
@@ -855,7 +862,7 @@ export const webviewMessageHandler = async (
 						}
 					} else if (key === "experiments") {
 						if (!value) {
-							continue
+							return false
 						}
 
 						newValue = {
@@ -864,17 +871,60 @@ export const webviewMessageHandler = async (
 						}
 					} else if (key === "customSupportPrompts") {
 						if (!value) {
-							continue
+							return false
 						}
 					}
 
-					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
+					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue as never)
+					return true
 				}
 
-				await provider.postStateToWebview()
-			}
+				// Every key is snapshotted before it is written. If any write fails, the ones already applied are
+				// restored (stored value and side effect), so a save is all-or-nothing and the webview can keep
+				// the user's edits and let them retry.
+				const written: Array<{ key: string; previous: unknown }> = []
+				try {
+					for (const [key, value] of Object.entries(updatedSettings)) {
+						written.push({ key, previous: provider.contextProxy.getValue(key as keyof RooCodeSettings) })
+						await applySetting(key, value)
+					}
 
+					await provider.postStateToWebview()
+					if (saveRequestId) {
+						await provider.postMessageToWebview({
+							type: "settingsSaveResult",
+							requestId: saveRequestId,
+							success: true,
+						})
+					}
+				} catch (error) {
+					const reason = error instanceof Error ? error.message : String(error)
+					for (const { key, previous } of written.reverse()) {
+						try {
+							await applySetting(key, previous)
+							// Put back exactly what was stored, whatever defaulting the side effect applied.
+							await provider.contextProxy.setValue(key as keyof RooCodeSettings, previous as never)
+						} catch (rollbackError) {
+							provider.log(
+								`[updateSettings] Could not restore ${key}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+							)
+						}
+					}
+					provider.log(`[updateSettings] Save failed and was rolled back: ${reason}`)
+					vscode.window.showErrorMessage(t("common:errors.settings_save_failed", { error: reason }))
+					await provider.postStateToWebview()
+					if (saveRequestId) {
+						await provider.postMessageToWebview({
+							type: "settingsSaveResult",
+							requestId: saveRequestId,
+							success: false,
+							error: reason,
+						})
+					}
+				}
+			}
 			break
+		}
 
 		case "terminalOperation":
 			if (message.terminalOperation) {
@@ -1571,21 +1621,45 @@ export const webviewMessageHandler = async (
 			}
 			break
 		}
+		case VsCodeLmModelsMessageType.cancelProviderQuotas:
+			// The Usage tab was closed (or the request superseded): stop the profile load and any fetches.
+			if (message.requestId) pendingProviderQuotaRequests.get(message.requestId)?.abort()
+			break
 		case VsCodeLmModelsMessageType.requestProviderQuotas: {
-			// Always answer: the webview shows a spinner until a response arrives and disables
-			// refresh while it waits, so a thrown error here would leave it stuck.
+			// Always answer (unless cancelled): the webview shows a spinner until a response arrives and
+			// disables refresh while it waits, so a thrown error here would leave it stuck. The answer
+			// carries the request's id so the webview can ignore one that has been superseded.
+			const requestId = message.requestId
+			const controller = new AbortController()
+			if (requestId) pendingProviderQuotaRequests.set(requestId, controller)
 			let providerQuotas: ProviderQuota[] = []
 			try {
 				const { getProviderQuotas, loadProfiles } =
 					await import("../../services/language-models/providerQuotas")
 				const profiles = await loadProfiles(provider.providerSettingsManager)
-				providerQuotas = await getProviderQuotas(profiles, { force: message.bool === true })
+				if (!controller.signal.aborted) {
+					providerQuotas = await getProviderQuotas(profiles, {
+						force: message.bool === true,
+						signal: controller.signal,
+					})
+				}
 			} catch (error) {
-				provider.log(
-					`[requestProviderQuotas] ${error instanceof Error ? error.message : "Failed to load provider limits"}`,
-				)
+				if (!controller.signal.aborted) {
+					provider.log(
+						`[requestProviderQuotas] ${error instanceof Error ? error.message : "Failed to load provider limits"}`,
+					)
+				}
+			} finally {
+				if (requestId) pendingProviderQuotaRequests.delete(requestId)
 			}
-			await provider.postMessageToWebview({ type: VsCodeLmModelsMessageType.providerQuotas, providerQuotas })
+			// Nobody is waiting for a cancelled request: skip the post.
+			if (!controller.signal.aborted) {
+				await provider.postMessageToWebview({
+					type: VsCodeLmModelsMessageType.providerQuotas,
+					providerQuotas,
+					requestId,
+				})
+			}
 			break
 		}
 		case VsCodeLmModelsMessageType.githubCopilotManageAccount:

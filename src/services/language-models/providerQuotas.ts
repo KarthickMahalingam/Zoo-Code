@@ -316,11 +316,12 @@ export function parseOpenCodeGoUsage(payload: unknown): ProviderQuotaWindow[] | 
 
 type Fetch = typeof fetch
 
-async function getJson(fetchImpl: Fetch, url: string, apiKey: string): Promise<unknown> {
+async function getJson(fetchImpl: Fetch, url: string, apiKey: string, signal?: AbortSignal): Promise<unknown> {
+	const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
 	const response = await fetchImpl(url, {
 		method: "GET",
 		headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
 	})
 	if (response.status === 401 || response.status === 403) throw new AuthError()
 	if (!response.ok) throw new QuotaHttpError(response.status)
@@ -476,7 +477,12 @@ function unqueryable(provider: KeyedProvider, creds: KeyedCredentials | undefine
 	return undefined
 }
 
-async function fetchKeyed(provider: KeyedProvider, creds: KeyedCredentials, fetchImpl: Fetch): Promise<ProviderQuota> {
+async function fetchKeyed(
+	provider: KeyedProvider,
+	creds: KeyedCredentials,
+	fetchImpl: Fetch,
+	signal?: AbortSignal,
+): Promise<ProviderQuota> {
 	const now = Date.now()
 	if (!creds.apiKey || !creds.urls?.length) {
 		return { providerId: provider.providerId, ok: false, reason: "unsupported", fetchedAt: now }
@@ -488,7 +494,7 @@ async function fetchKeyed(provider: KeyedProvider, creds: KeyedCredentials, fetc
 		let lastError: unknown
 		for (const [index, url] of creds.urls.entries()) {
 			try {
-				windows = provider.parse(await getJson(fetchImpl, url, creds.apiKey), index)
+				windows = provider.parse(await getJson(fetchImpl, url, creds.apiKey, signal), index)
 				if (windows?.length) break
 			} catch (error) {
 				if (error instanceof AuthError) throw error
@@ -560,11 +566,32 @@ export async function loadProfiles(source: ProfileSource): Promise<ProviderSetti
 // after the TTL. An entry is reused only for the exact key it was fetched with, so
 // switching keys refetches. The key is compared, never hashed or used in a map key.
 const cache = new Map<string, { at: number; apiKey: string; result: ProviderQuota }>()
-const inflight = new Map<string, { apiKey: string; request: Promise<ProviderQuota> }>()
+interface Inflight {
+	apiKey: string
+	request: Promise<ProviderQuota>
+	/** Callers still waiting on this request. The shared fetch is aborted only when the last one leaves. */
+	waiters: number
+	controller: AbortController
+}
+const inflight = new Map<string, Inflight>()
 
 /** Identifies a provider and the URLs it is queried at (the credential itself is not part of it). */
 function cacheKey(provider: KeyedProvider, creds: KeyedCredentials): string {
 	return `${provider.providerId}|${(creds.urls ?? []).join(",")}`
+}
+
+/** Rejects as soon as `signal` aborts, without cancelling `work` (which other callers may still be using). */
+function until<T>(work: Promise<T>, signal: AbortSignal | undefined, onAbort: () => void): Promise<T> {
+	if (!signal) return work
+	return new Promise<T>((resolve, reject) => {
+		const abort = () => {
+			onAbort()
+			reject(new DOMException("Aborted", "AbortError"))
+		}
+		if (signal.aborted) return abort()
+		signal.addEventListener("abort", abort, { once: true })
+		work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort))
+	})
 }
 
 function quotaForKeyedProvider(
@@ -572,6 +599,7 @@ function quotaForKeyedProvider(
 	profiles: ProviderSettings[],
 	force: boolean,
 	fetchImpl: Fetch,
+	signal?: AbortSignal,
 ): Promise<ProviderQuota> {
 	const creds = pickCredentials(provider, profiles)
 	const skipped = unqueryable(provider, creds)
@@ -584,19 +612,36 @@ function quotaForKeyedProvider(
 	if (!force && hit && hit.apiKey === apiKey && Date.now() - hit.at < CACHE_TTL_MS) return Promise.resolve(hit.result)
 
 	// Concurrent callers (e.g. a refresh while the first load is still running) share one request.
-	const pending = inflight.get(key)
-	if (pending && pending.apiKey === apiKey) return pending.request
+	let entry = inflight.get(key)
+	if (!entry || entry.apiKey !== apiKey) {
+		const controller = new AbortController()
+		const request: Promise<ProviderQuota> = fetchKeyed(provider, resolved, fetchImpl, controller.signal)
+			.then((result) => {
+				if (result.ok) {
+					cache.set(key, { at: Date.now(), apiKey, result })
+				} else {
+					// A failed refresh must not leave an older success to be served as if it were current.
+					cache.delete(key)
+				}
+				return result
+			})
+			.finally(() => {
+				if (inflight.get(key)?.request === request) inflight.delete(key)
+			})
+		entry = { apiKey, request, waiters: 0, controller }
+		inflight.set(key, entry)
+	}
 
-	const request = fetchKeyed(provider, resolved, fetchImpl)
-		.then((result) => {
-			if (result.ok) cache.set(key, { at: Date.now(), apiKey, result })
-			return result
-		})
-		.finally(() => {
-			if (inflight.get(key)?.request === request) inflight.delete(key)
-		})
-	inflight.set(key, { apiKey, request })
-	return request
+	const shared = entry
+	shared.waiters++
+	let left = false
+	const leave = () => {
+		if (left) return
+		left = true
+		// Last one out cancels the network work; earlier leavers just stop waiting.
+		if (--shared.waiters === 0) shared.controller.abort()
+	}
+	return until(shared.request, signal, leave).finally(leave)
 }
 
 /**
@@ -605,7 +650,7 @@ function quotaForKeyedProvider(
  */
 export async function getProviderQuotas(
 	profiles: ProviderSettings[],
-	{ force = false }: { force?: boolean } = {},
+	{ force = false, signal }: { force?: boolean; signal?: AbortSignal } = {},
 	fetchImpl: Fetch = fetch,
 ): Promise<ProviderQuota[]> {
 	const connected = new Set(profiles.map((p) => p.apiProvider).filter(Boolean) as string[])
@@ -613,7 +658,9 @@ export async function getProviderQuotas(
 	const tasks: Promise<ProviderQuota>[] = []
 	if (connected.has(providerIdentifiers.githubCopilot)) tasks.push(fetchCopilot(force))
 	for (const provider of KEYED_PROVIDERS) {
-		if (connected.has(provider.providerId)) tasks.push(quotaForKeyedProvider(provider, profiles, force, fetchImpl))
+		if (connected.has(provider.providerId)) {
+			tasks.push(quotaForKeyedProvider(provider, profiles, force, fetchImpl, signal))
+		}
 	}
 
 	return Promise.all(tasks)

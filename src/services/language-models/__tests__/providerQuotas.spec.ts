@@ -728,9 +728,15 @@ describe("getProviderQuotas", () => {
 	})
 
 	it("does not hand a result fetched with one key to a caller using another, even while the first is in flight", async () => {
-		const releases: Array<(r: Response) => void> = []
-		const fetchSpy = vi.fn(() => new Promise<Response>((resolve) => releases.push(resolve)))
-		const ok = () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } }))
+		const pending = new Map<string, (r: Response) => void>()
+		const fetchSpy = vi.fn(
+			(_url: RequestInfo | URL, init?: RequestInit) =>
+				new Promise<Response>((resolve) => {
+					pending.set(String((init?.headers as Record<string, string>).Authorization), resolve)
+				}),
+		)
+		const body = (remaining: number) =>
+			new Response(JSON.stringify({ data: { limit: 10, limit_remaining: remaining } }))
 
 		const first = getProviderQuotas(
 			[{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk-one" } as never],
@@ -743,11 +749,99 @@ describe("getProviderQuotas", () => {
 			fetchSpy,
 		)
 		await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2))
-		releases.forEach((release) => release(ok()))
-		await Promise.all([first, second])
+		// Each request went out with its own key, and nothing else.
+		expect([...pending.keys()].sort()).toEqual(["Bearer sk-one", "Bearer sk-two"])
 
-		// Each key was fetched on its own; neither piggy-backed on the other's request.
-		expect(fetchSpy).toHaveBeenCalledTimes(2)
+		// Answer them with different data, in the opposite order, so a mix-up would show.
+		pending.get("Bearer sk-two")!(body(2))
+		pending.get("Bearer sk-one")!(body(9))
+
+		const [[a], [b]] = await Promise.all([first, second])
+		expect(a).toMatchObject({ ok: true, windows: [{ usedPercent: 10 }] })
+		expect(b).toMatchObject({ ok: true, windows: [{ usedPercent: 80 }] })
+	})
+
+	it("drops a cached success when a forced refresh fails, so the next normal call retries", async () => {
+		const ok = () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } }))
+		const fetchSpy = vi
+			.fn()
+			.mockResolvedValueOnce(ok())
+			.mockResolvedValueOnce(new Response("", { status: 500 }))
+			.mockResolvedValueOnce(ok())
+		const profiles = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never]
+
+		await getProviderQuotas(profiles, {}, fetchSpy)
+		const [failed] = await getProviderQuotas(profiles, { force: true }, fetchSpy)
+		expect(failed).toMatchObject({ ok: false, reason: "error" })
+
+		// The old success must not be served as if it were current.
+		const [retry] = await getProviderQuotas(profiles, {}, fetchSpy)
+		expect(retry).toMatchObject({ ok: true })
+		expect(fetchSpy).toHaveBeenCalledTimes(3)
+	})
+
+	it("aborts the network request when the only caller goes away", async () => {
+		let seen: AbortSignal | undefined
+		const fetchSpy = vi.fn(
+			(_url: RequestInfo | URL, init?: RequestInit) =>
+				new Promise<Response>((_resolve, reject) => {
+					seen = init?.signal ?? undefined
+					seen?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))
+				}),
+		)
+		const controller = new AbortController()
+		const result = getProviderQuotas(
+			[{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never],
+			{ signal: controller.signal },
+			fetchSpy,
+		)
+		await vi.waitFor(() => expect(seen).toBeDefined())
+		expect(seen!.aborted).toBe(false)
+
+		controller.abort()
+		await expect(result).rejects.toMatchObject({ name: "AbortError" })
+		expect(seen!.aborted).toBe(true)
+	})
+
+	it("keeps the shared request running until its last caller leaves", async () => {
+		let seen: AbortSignal | undefined
+		let release: (r: Response) => void = () => {}
+		const fetchSpy = vi.fn(
+			(_url: RequestInfo | URL, init?: RequestInit) =>
+				new Promise<Response>((resolve) => {
+					seen = init?.signal ?? undefined
+					release = resolve
+				}),
+		)
+		const profiles = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never]
+		const leaver = new AbortController()
+
+		const staying = getProviderQuotas(profiles, {}, fetchSpy)
+		const leaving = getProviderQuotas(profiles, { signal: leaver.signal }, fetchSpy)
+		await vi.waitFor(() => expect(seen).toBeDefined())
+
+		leaver.abort()
+		await expect(leaving).rejects.toMatchObject({ name: "AbortError" })
+		// Someone is still waiting, so the shared fetch must keep going.
+		expect(seen!.aborted).toBe(false)
+
+		release(new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
+		const [quota] = await staying
+		expect(quota).toMatchObject({ ok: true })
+		expect(fetchSpy).toHaveBeenCalledTimes(1)
+	})
+
+	it("rejects at once with an already-aborted signal, without keeping a request alive", async () => {
+		const fetchSpy = vi.fn(() => new Promise<Response>(() => {}))
+		const controller = new AbortController()
+		controller.abort()
+		await expect(
+			getProviderQuotas(
+				[{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never],
+				{ signal: controller.signal },
+				fetchSpy,
+			),
+		).rejects.toMatchObject({ name: "AbortError" })
 	})
 
 	it("shares one request between concurrent callers for the same credentials", async () => {

@@ -1294,7 +1294,7 @@
 			"chat": "Chatbericht",
 			"history": "Takengeschiedenis",
 			"relative": "5 min geleden",
-			"hover": "(hover: {{value}})"
+			"hover": "(bij aanwijzen: {{value}})"
 		}
 	},
 	"usage": {

@@ -51,6 +51,7 @@ export interface ExtensionMessage {
 		| typeof VsCodeLmModelsMessageType.githubCopilotModels
 		| typeof VsCodeLmModelsMessageType.githubCopilotSignInResult
 		| typeof VsCodeLmModelsMessageType.providerQuotas
+		| "settingsSaveResult"
 		| "vsCodeLmApiAvailable"
 		| "updatePrompt"
 		| "systemPrompt"
@@ -526,6 +527,7 @@ export interface WebviewMessage {
 		| typeof VsCodeLmModelsMessageType.githubCopilotReconnect
 		| typeof VsCodeLmModelsMessageType.githubCopilotManageAccount
 		| typeof VsCodeLmModelsMessageType.requestProviderQuotas
+		| typeof VsCodeLmModelsMessageType.cancelProviderQuotas
 		| "openImage"
 		| "saveImage"
 		| "openFile"

@@ -57,16 +57,23 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 			providerQuotas: expect.arrayContaining([
 				expect.objectContaining({ providerId: providerIdentifiers.openrouter }),
 			]),
+			requestId: undefined,
 		})
 	})
 
 	it("does not force a refresh by default, and forces when the user presses refresh", async () => {
 		const provider = makeProvider()
 		await webviewMessageHandler(provider, { type: "requestProviderQuotas" })
-		expect(quotas.getProviderQuotas).toHaveBeenLastCalledWith(expect.any(Array), { force: false })
+		expect(quotas.getProviderQuotas).toHaveBeenLastCalledWith(expect.any(Array), {
+			force: false,
+			signal: expect.any(AbortSignal),
+		})
 
 		await webviewMessageHandler(provider, { type: "requestProviderQuotas", bool: true })
-		expect(quotas.getProviderQuotas).toHaveBeenLastCalledWith(expect.any(Array), { force: true })
+		expect(quotas.getProviderQuotas).toHaveBeenLastCalledWith(expect.any(Array), {
+			force: true,
+			signal: expect.any(AbortSignal),
+		})
 	})
 
 	it("passes API keys to the host service but never posts them to the webview", async () => {
@@ -100,7 +107,11 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 
 		await webviewMessageHandler(provider, { type: "requestProviderQuotas" })
 
-		expect(provider.postMessageToWebview).toHaveBeenCalledWith({ type: "providerQuotas", providerQuotas: [] })
+		expect(provider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "providerQuotas",
+			providerQuotas: [],
+			requestId: undefined,
+		})
 		expect(log).toHaveBeenCalledWith(expect.stringContaining("secret storage unavailable"))
 	})
 
@@ -111,7 +122,11 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 
 		await webviewMessageHandler(provider, { type: "requestProviderQuotas" })
 
-		expect(provider.postMessageToWebview).toHaveBeenCalledWith({ type: "providerQuotas", providerQuotas: [] })
+		expect(provider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "providerQuotas",
+			providerQuotas: [],
+			requestId: undefined,
+		})
 		expect(log).toHaveBeenCalledWith(expect.stringContaining("Failed to load provider limits"))
 	})
 
@@ -121,6 +136,80 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 		provider.providerSettingsManager.listConfig = vi.fn(async () => []) as never
 
 		await webviewMessageHandler(provider, { type: "requestProviderQuotas" })
-		expect(provider.postMessageToWebview).toHaveBeenCalledWith({ type: "providerQuotas", providerQuotas: [] })
+		expect(provider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "providerQuotas",
+			providerQuotas: [],
+			requestId: undefined,
+		})
+	})
+
+	describe("request lifecycle", () => {
+		it("echoes the request id on the answer", async () => {
+			const provider = makeProvider()
+			await webviewMessageHandler(provider, { type: "requestProviderQuotas", requestId: "req-1" })
+			expect(provider.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ type: "providerQuotas", requestId: "req-1" }),
+			)
+		})
+
+		it("passes an abort signal to the quota service", async () => {
+			const provider = makeProvider()
+			await webviewMessageHandler(provider, { type: "requestProviderQuotas", requestId: "req-2" })
+			expect(quotas.getProviderQuotas).toHaveBeenLastCalledWith(expect.any(Array), {
+				force: false,
+				signal: expect.any(AbortSignal),
+			})
+		})
+
+		it("aborts the work and posts nothing when the request is cancelled while it is running", async () => {
+			let signal: AbortSignal | undefined
+			let finish: (value: never[]) => void = () => {}
+			quotas.getProviderQuotas.mockImplementation((_profiles, options: { signal: AbortSignal }) => {
+				signal = options.signal
+				return new Promise((resolve) => (finish = resolve))
+			})
+			const provider = makeProvider()
+
+			const running = webviewMessageHandler(provider, { type: "requestProviderQuotas", requestId: "req-3" })
+			await vi.waitFor(() => expect(signal).toBeDefined())
+			await webviewMessageHandler(provider, { type: "cancelProviderQuotas", requestId: "req-3" })
+
+			expect(signal!.aborted).toBe(true)
+			finish([])
+			await running
+			expect(provider.postMessageToWebview).not.toHaveBeenCalled()
+		})
+
+		it("does not post when the request was cancelled before the profiles finished loading", async () => {
+			const provider = makeProvider()
+			let release: (entries: { id: string }[]) => void = () => {}
+			provider.providerSettingsManager.listConfig = vi.fn(
+				() => new Promise((resolve) => (release = resolve)),
+			) as never
+
+			const running = webviewMessageHandler(provider, { type: "requestProviderQuotas", requestId: "req-4" })
+			await vi.waitFor(() => expect(provider.providerSettingsManager.listConfig).toHaveBeenCalled())
+			await webviewMessageHandler(provider, { type: "cancelProviderQuotas", requestId: "req-4" })
+			release([{ id: "a" }])
+			await running
+
+			expect(quotas.getProviderQuotas).not.toHaveBeenCalled()
+			expect(provider.postMessageToWebview).not.toHaveBeenCalled()
+		})
+
+		it("ignores a cancel for an unknown or missing id, and for a request that already finished", async () => {
+			const provider = makeProvider()
+			await webviewMessageHandler(provider, { type: "requestProviderQuotas", requestId: "req-5" })
+			provider.postMessageToWebview.mockClear()
+
+			await expect(
+				webviewMessageHandler(provider, { type: "cancelProviderQuotas", requestId: "req-5" }),
+			).resolves.not.toThrow()
+			await expect(
+				webviewMessageHandler(provider, { type: "cancelProviderQuotas", requestId: "nope" }),
+			).resolves.not.toThrow()
+			await expect(webviewMessageHandler(provider, { type: "cancelProviderQuotas" })).resolves.not.toThrow()
+			expect(provider.postMessageToWebview).not.toHaveBeenCalled()
+		})
 	})
 })

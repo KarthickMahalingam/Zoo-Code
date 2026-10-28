@@ -7,6 +7,7 @@ import { QueryClient } from "@tanstack/react-query"
 import React from "react"
 
 import SettingsView from "../SettingsView"
+import { saveAndConfirm } from "./saveAcknowledgement"
 import { vscode } from "@src/utils/vscode"
 
 const postMessage = vi.spyOn(vscode, "postMessage").mockImplementation(() => {})
@@ -664,7 +665,7 @@ describe("SettingsView - Unsaved Changes Detection", () => {
 		})
 		expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "upsertApiConfiguration" }))
 
-		fireEvent.click(screen.getByTestId("save-button"))
+		saveAndConfirm(postMessage)
 
 		expect(postMessage).toHaveBeenCalledWith({
 			type: "upsertApiConfiguration",
@@ -717,7 +718,7 @@ describe("SettingsView - Unsaved Changes Detection", () => {
 		expect(configuration.openAiCustomModelInfo?.reasoningEffort).toBe("low")
 		expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "upsertApiConfiguration" }))
 
-		fireEvent.click(screen.getByTestId("save-button"))
+		saveAndConfirm(postMessage)
 		expect(postMessage).toHaveBeenCalledWith({
 			type: "upsertApiConfiguration",
 			text: "default",
@@ -798,7 +799,7 @@ describe("SettingsView - Unsaved Changes Detection", () => {
 		})
 		expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "upsertApiConfiguration" }))
 
-		fireEvent.click(screen.getByTestId("save-button"))
+		saveAndConfirm(postMessage)
 
 		expect(postMessage).toHaveBeenCalledWith({
 			type: "upsertApiConfiguration",

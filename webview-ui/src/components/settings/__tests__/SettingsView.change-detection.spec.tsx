@@ -5,6 +5,7 @@ import { renderWithExtensionState } from "@/utils/test-utils"
 import { vi, describe, it, expect, beforeEach, beforeAll } from "vitest"
 import { QueryClient } from "@tanstack/react-query"
 import React from "react"
+import { saveAndConfirm } from "./saveAcknowledgement"
 
 // Increase timeout for slow CI environments
 configure({ asyncUtilTimeout: 10000 })
@@ -505,7 +506,7 @@ describe("SettingsView - Change Detection Fix", () => {
 		fireEvent.click(screen.getByTestId("set-reasoning-default"))
 		expect(screen.getByTestId("save-button")).toBeEnabled()
 
-		fireEvent.click(screen.getByTestId("save-button"))
+		saveAndConfirm(mockPostMessage)
 		expect(mockPostMessage).toHaveBeenCalledWith({
 			type: "upsertApiConfiguration",
 			text: "default",
@@ -557,7 +558,7 @@ describe("SettingsView - Change Detection Fix", () => {
 		expect(screen.getByTestId("provider-value")).toHaveTextContent("baseten")
 
 		mockPostMessage.mockClear()
-		fireEvent.click(screen.getByTestId("save-button"))
+		saveAndConfirm(mockPostMessage)
 		expect(mockPostMessage).toHaveBeenCalledWith({
 			type: "upsertApiConfiguration",
 			text: "default",
@@ -594,7 +595,7 @@ describe("SettingsView - Change Detection Fix", () => {
 		expect(screen.getByTestId("provider-value")).toHaveTextContent("deepseek")
 
 		mockPostMessage.mockClear()
-		fireEvent.click(screen.getByTestId("save-button"))
+		saveAndConfirm(mockPostMessage)
 
 		expect(mockPostMessage).toHaveBeenCalledWith({
 			type: "upsertApiConfiguration",
