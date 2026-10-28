@@ -316,12 +316,12 @@ export function parseOpenCodeGoUsage(payload: unknown): ProviderQuotaWindow[] | 
 
 type Fetch = typeof fetch
 
-async function getJson(fetchImpl: Fetch, url: string, apiKey: string, signal?: AbortSignal): Promise<unknown> {
+async function getJson(fetchImpl: Fetch, url: string, apiKey: string, signal: AbortSignal): Promise<unknown> {
 	const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
 	const response = await fetchImpl(url, {
 		method: "GET",
 		headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-		signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+		signal: AbortSignal.any([signal, timeout]),
 	})
 	if (response.status === 401 || response.status === 403) throw new AuthError()
 	if (!response.ok) throw new QuotaHttpError(response.status)
@@ -480,22 +480,20 @@ function unqueryable(provider: KeyedProvider, creds: KeyedCredentials | undefine
 
 async function fetchKeyed(
 	provider: KeyedProvider,
-	creds: KeyedCredentials,
+	apiKey: string,
+	urls: string[],
 	fetchImpl: Fetch,
-	signal?: AbortSignal,
+	signal: AbortSignal,
 ): Promise<ProviderQuota> {
 	const now = Date.now()
-	if (!creds.apiKey || !creds.urls?.length) {
-		return { providerId: provider.providerId, ok: false, reason: "unsupported", fetchedAt: now }
-	}
 
 	try {
 		// Try each URL in order; a failing fallback only matters if no URL yields data.
 		let windows: ProviderQuotaWindow[] | undefined
 		let lastError: unknown
-		for (const [index, url] of creds.urls.entries()) {
+		for (const [index, url] of urls.entries()) {
 			try {
-				windows = provider.parse(await getJson(fetchImpl, url, creds.apiKey, signal), index)
+				windows = provider.parse(await getJson(fetchImpl, url, apiKey, signal), index)
 				if (windows?.length) break
 			} catch (error) {
 				if (error instanceof AuthError) throw error
@@ -517,8 +515,8 @@ async function fetchKeyed(
 	}
 }
 
-async function fetchCopilot(force: boolean): Promise<ProviderQuota> {
-	const result = await getGitHubCopilotQuota({ force })
+async function fetchCopilot(force: boolean, signal?: AbortSignal): Promise<ProviderQuota> {
+	const result = await getGitHubCopilotQuota({ force, signal })
 	const providerId = providerIdentifiers.githubCopilot
 	if (!result.ok)
 		return { providerId, ok: false, reason: result.reason, message: result.message, fetchedAt: Date.now() }
@@ -577,8 +575,8 @@ interface Inflight {
 const inflight = new Map<string, Inflight>()
 
 /** Identifies a provider and the URLs it is queried at (the credential itself is not part of it). */
-function cacheKey(provider: KeyedProvider, creds: KeyedCredentials): string {
-	return `${provider.providerId}|${(creds.urls ?? []).join(",")}`
+function cacheKey(provider: KeyedProvider, urls: string[]): string {
+	return `${provider.providerId}|${urls.join(",")}`
 }
 
 /** Rejects as soon as `signal` aborts, without cancelling `work` (which other callers may still be using). */
@@ -606,9 +604,10 @@ function quotaForKeyedProvider(
 	const skipped = unqueryable(provider, creds)
 	if (skipped) return Promise.resolve(skipped)
 
-	const resolved = creds as KeyedCredentials
-	const apiKey = resolved.apiKey as string
-	const key = cacheKey(provider, resolved)
+	// `unqueryable` returned early unless there is a key and at least one URL.
+	const apiKey = creds?.apiKey as string
+	const urls = creds?.urls as string[]
+	const key = cacheKey(provider, urls)
 	const hit = cache.get(key)
 	if (!force && hit && hit.apiKey === apiKey && Date.now() - hit.at < CACHE_TTL_MS) return Promise.resolve(hit.result)
 
@@ -616,7 +615,7 @@ function quotaForKeyedProvider(
 	let entry = inflight.get(key)
 	if (!entry || entry.apiKey !== apiKey) {
 		const controller = new AbortController()
-		const request: Promise<ProviderQuota> = fetchKeyed(provider, resolved, fetchImpl, controller.signal)
+		const request: Promise<ProviderQuota> = fetchKeyed(provider, apiKey, urls, fetchImpl, controller.signal)
 			.then((result) => {
 				if (result.ok) {
 					cache.set(key, { at: Date.now(), apiKey, result })
@@ -657,7 +656,7 @@ export async function getProviderQuotas(
 	const connected = new Set(profiles.map((p) => p.apiProvider).filter(Boolean) as string[])
 
 	const tasks: Promise<ProviderQuota>[] = []
-	if (connected.has(providerIdentifiers.githubCopilot)) tasks.push(fetchCopilot(force))
+	if (connected.has(providerIdentifiers.githubCopilot)) tasks.push(fetchCopilot(force, signal))
 	for (const provider of KEYED_PROVIDERS) {
 		if (connected.has(provider.providerId)) {
 			tasks.push(quotaForKeyedProvider(provider, profiles, force, fetchImpl, signal))

@@ -2110,6 +2110,39 @@ describe("Cline", () => {
 				await loop
 				await vi.waitFor(() => expect(oldDispose).toHaveBeenCalledOnce())
 			})
+
+			it.each([
+				{ name: "fills in the serving model when the profile named none", profile: undefined, expected: "served-model" },
+				{ name: "keeps the model the profile named", profile: "profile-model", expected: "profile-model" },
+			])("finalized api_req_started $name", async ({ profile, expected }) => {
+				const task = await createTaskWithManualRetries()
+				task.apiConfiguration = {
+					...task.apiConfiguration,
+					apiProvider: providerIdentifiers.anthropic,
+					apiModelId: profile,
+				}
+				disposableApi(task)
+				vi.spyOn(task.api, "getModel").mockReturnValue({
+					id: "served-model",
+					info: { supportsPromptCache: true, contextWindow: 200_000, maxTokens: 4096 } as ModelInfo,
+				})
+				vi.spyOn(getTaskTestAccess(task), "attemptApiRequestWithActiveApi").mockImplementation(
+					async function* () {
+						yield { type: "text", text: "a" }
+						yield { type: "usage", inputTokens: 1, outputTokens: 1 }
+					},
+				)
+				realRequestsThenStop(task)
+				vi.spyOn(console, "error").mockImplementation(() => {})
+
+				await task.recursivelyMakeClineRequests([{ type: "text", text: "go" }])
+
+				const started = task.clineMessages.find((m) => m.say === "api_req_started")
+				const payload = JSON.parse(started?.text ?? "{}")
+				expect(payload.apiProvider).toBe(providerIdentifiers.anthropic)
+				expect(payload.modelId).toBe(expected)
+				expect(payload.tokensIn).toBe(1)
+			})
 		})
 
 		it("disposes the current handler exactly once even when dispose is called twice", async () => {
@@ -3483,6 +3516,76 @@ describe("Cline", () => {
 				await task.recursivelyMakeClineRequests([{ type: "text", text: "run /commit" }]).catch(() => {})
 
 				expect(handleModeSwitchSpy).toHaveBeenCalledWith("code", null)
+			})
+		})
+
+		describe("api_req_started usage attribution", () => {
+			/** Runs the request setup and returns the JSON the first api_req_started message was written with. */
+			const firstApiReqPayload = async (
+				apiConfiguration: ProviderSettings,
+				servedModelId?: string,
+			): Promise<Record<string, unknown>> => {
+				const task = new Task({
+					provider: mockProvider,
+					apiConfiguration,
+					task: "test task",
+					startTask: false,
+				})
+
+				Object.assign(task.api, { ensureModelFetched: vi.fn().mockResolvedValue(undefined) })
+				vi.spyOn(task.api, "getModel").mockReturnValue({
+					id: servedModelId ?? "served-model",
+					info: {
+						supportsImages: false,
+						supportsPromptCache: true,
+						contextWindow: 200_000,
+						maxTokens: 4096,
+					} as ModelInfo,
+				})
+				vi.mocked(processUserContentMentions).mockResolvedValueOnce({
+					content: [{ type: "text", text: "hello" }],
+					mode: undefined,
+				})
+				vi.spyOn(getTaskTestAccess(task), "saveClineMessages").mockResolvedValue(true)
+				vi.spyOn(getTaskTestAccess(task), "addToApiConversationHistory").mockResolvedValue(undefined)
+				vi.spyOn(task.diffViewProvider, "reset").mockResolvedValue(undefined as never)
+				vi.spyOn(task, "attemptApiRequest").mockImplementation(() => {
+					throw new Error("stop after the request message is written")
+				})
+
+				const payloads: string[] = []
+				vi.spyOn(task, "say").mockImplementation(async (type, text) => {
+					if (type === "api_req_started") payloads.push(String(text))
+					return undefined as never
+				})
+				task.clineMessages = [{ ts: Date.now(), type: "say", say: "api_req_started", text: "{}" }]
+
+				await task.recursivelyMakeClineRequests([{ type: "text", text: "hello" }]).catch(() => {})
+				return JSON.parse(payloads[0] ?? "{}")
+			}
+
+			it("records the provider and model that serve the request", async () => {
+				const payload = await firstApiReqPayload({
+					apiProvider: providerIdentifiers.anthropic,
+					apiKey: "k",
+					apiModelId: "claude-sonnet-5",
+				})
+				expect(payload).toMatchObject({
+					apiProvider: providerIdentifiers.anthropic,
+					modelId: "claude-sonnet-5",
+				})
+			})
+
+			it("leaves the model unset when the profile names none, and records the provider", async () => {
+				const payload = await firstApiReqPayload({ apiProvider: providerIdentifiers.anthropic, apiKey: "k" })
+				expect(payload.apiProvider).toBe(providerIdentifiers.anthropic)
+				// The first write cannot know the served model; the finalized message fills it in (below).
+				expect(payload.modelId).toBeUndefined()
+			})
+
+			it("records neither provider nor model when the profile sets no provider", async () => {
+				const payload = await firstApiReqPayload({} as ProviderSettings)
+				expect(payload.apiProvider).toBeUndefined()
 			})
 		})
 

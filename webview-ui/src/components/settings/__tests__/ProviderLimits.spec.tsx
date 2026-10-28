@@ -23,6 +23,14 @@ const lastRequestId = () => {
 }
 
 /** Answers the most recent request, or the given id. Pass `null` to send an answer with no id at all. */
+const lastRequestIdAfterRender = (Component: typeof ProviderLimits = ProviderLimits) => {
+	post.mockClear()
+	const view = render(<Component />)
+	const id = lastRequestId()
+	view.unmount()
+	return id
+}
+
 const respond = (providerQuotas: ProviderQuota[], id?: string | null) =>
 	act(() => {
 		const requestId = id === null ? undefined : (id ?? lastRequestId())
@@ -41,7 +49,7 @@ describe("ProviderLimits", () => {
 		expect(post).toHaveBeenCalledWith({
 			type: "requestProviderQuotas",
 			bool: false,
-			requestId: expect.stringMatching(/^provider-quotas-\d+$/),
+			requestId: expect.stringMatching(/^provider-quotas-[a-z0-9]+-\d+$/),
 		})
 	})
 
@@ -181,7 +189,7 @@ describe("ProviderLimits", () => {
 		expect(post).toHaveBeenCalledWith({
 			type: "requestProviderQuotas",
 			bool: true,
-			requestId: expect.stringMatching(/^provider-quotas-\d+$/),
+			requestId: expect.stringMatching(/^provider-quotas-[a-z0-9]+-\d+$/),
 		})
 	})
 
@@ -302,6 +310,21 @@ describe("ProviderLimits", () => {
 			respond([])
 			expect(screen.queryByTestId("provider-limits")).toBeNull()
 		})
+	})
+
+	it("makes ids that differ between webviews, not just between requests", async () => {
+		// Each webview loads its own copy of the module and starts counting again from 1.
+		vi.resetModules()
+		const { ProviderLimits: First } = await import("../ProviderLimits")
+		const first = lastRequestIdAfterRender(First)
+		vi.resetModules()
+		const { ProviderLimits: Second } = await import("../ProviderLimits")
+		const second = lastRequestIdAfterRender(Second)
+
+		expect(first).toMatch(/^provider-quotas-[a-z0-9]+-1$/)
+		expect(second).toMatch(/^provider-quotas-[a-z0-9]+-1$/)
+		// Same counter value, still different ids: the session part tells the webviews apart.
+		expect(first).not.toBe(second)
 	})
 
 	it("never reuses a request id when the tab is closed and opened again", () => {

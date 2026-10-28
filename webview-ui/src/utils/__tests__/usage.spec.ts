@@ -542,3 +542,43 @@ describe("usageToCsv", () => {
 		expect(lines[1].endsWith(",0.1235")).toBe(true)
 	})
 })
+
+describe("defaults and non-finite input", () => {
+	afterEach(() => {
+		vi.useRealTimers()
+	})
+
+	it("uses the current time when no `now` is given", () => {
+		vi.useFakeTimers()
+		vi.setSystemTime(NOW)
+		const recent = item({ ts: NOW - 1000, totalCost: 1 })
+		const old = item({ ts: NOW - 3 * DAY, totalCost: 2 })
+
+		expect(summarizeUsage([recent, old], { range: "today" }).totalCost).toBe(1)
+		expect(usageToCsv([recent, old], { range: "today" }).split("\n")).toHaveLength(2)
+	})
+
+	it("ignores a non-finite per-model cost when reconciling the task cost", () => {
+		const summary = summarizeUsage(
+			[
+				item({
+					totalCost: 3,
+					usageByModel: [
+						{
+							apiProvider: providerIdentifiers.anthropic,
+							modelId: "m",
+							requests: 1,
+							tokensIn: 1,
+							tokensOut: 1,
+							cost: Number.NaN,
+						},
+					],
+				}),
+			],
+			{ range: "all", now: NOW },
+		)
+
+		// The whole task cost is unattributed because the recorded model cost is unusable.
+		expect(summary.byProvider.find((b) => b.key === UNRECORDED)?.cost).toBe(3)
+	})
+})

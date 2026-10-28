@@ -78,58 +78,94 @@ async function getGitHubToken(): Promise<string | undefined> {
 }
 
 let cache: { at: number; result: GitHubCopilotQuotaResult } | undefined
-let inFlight: Promise<GitHubCopilotQuotaResult> | undefined
+let inFlight:
+	| {
+			request: Promise<GitHubCopilotQuotaResult>
+			/** Callers still waiting. The shared fetch is aborted only when the last one leaves. */
+			waiters: number
+			controller: AbortController
+	  }
+	| undefined
+
+/** Rejects when `signal` aborts, without cancelling `work` (other callers may still be using it). */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined, onAbort: () => void): Promise<T> {
+	if (!signal) return work
+	return new Promise<T>((resolve, reject) => {
+		const abort = () => {
+			onAbort()
+			reject(new DOMException("Aborted", "AbortError"))
+		}
+		if (signal.aborted) return abort()
+		signal.addEventListener("abort", abort, { once: true })
+		work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort))
+	})
+}
 
 /**
  * Fetches the quota. Concurrent callers share one request; successful results
- * are cached briefly unless `force` is set (the Refresh button).
+ * are cached briefly unless `force` is set (the Refresh button). `signal` lets a caller stop waiting; the
+ * network work itself stops when the last waiting caller has gone.
  */
 export function getGitHubCopilotQuota(
-	{ force = false }: { force?: boolean } = {},
+	{ force = false, signal }: { force?: boolean; signal?: AbortSignal } = {},
 	fetchImpl: typeof fetch = fetch,
 ): Promise<GitHubCopilotQuotaResult> {
+	if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"))
 	if (!force && cache && Date.now() - cache.at < CACHE_TTL_MS) return Promise.resolve(cache.result)
-	if (inFlight) return inFlight
 
-	const fetchQuota = async (): Promise<GitHubCopilotQuotaResult> => {
-		try {
-			const token = await getGitHubToken()
-			if (!token) return { ok: false, reason: "signedOut" }
+	if (!inFlight) {
+		const controller = new AbortController()
+		const fetchQuota = async (): Promise<GitHubCopilotQuotaResult> => {
+			try {
+				const token = await getGitHubToken()
+				if (controller.signal.aborted) return { ok: false, reason: "error", message: "Request cancelled" }
+				if (!token) return { ok: false, reason: "signedOut" }
 
-			const response = await fetchImpl(COPILOT_USER_URL, {
-				method: "GET",
-				headers: {
-					Authorization: `token ${token}`,
-					Accept: "application/json",
-					"Editor-Version": `vscode/${vscode.version}`,
-					"X-Github-Api-Version": "2025-04-01",
-				},
-				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-			})
+				const response = await fetchImpl(COPILOT_USER_URL, {
+					method: "GET",
+					headers: {
+						Authorization: `token ${token}`,
+						Accept: "application/json",
+						"Editor-Version": `vscode/${vscode.version}`,
+						"X-Github-Api-Version": "2025-04-01",
+					},
+					signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+				})
 
-			if (response.status === 401) return { ok: false, reason: "signedOut" }
-			if (response.status === 403 || response.status === 404) return { ok: false, reason: "noCopilot" }
-			if (!response.ok) return { ok: false, reason: "error", message: `GitHub API error ${response.status}` }
+				if (response.status === 401) return { ok: false, reason: "signedOut" }
+				if (response.status === 403 || response.status === 404) return { ok: false, reason: "noCopilot" }
+				if (!response.ok) return { ok: false, reason: "error", message: `GitHub API error ${response.status}` }
 
-			const quota = parseCopilotQuota(await response.json())
-			return quota ? { ok: true, quota } : { ok: false, reason: "noCopilot" }
-		} catch (error) {
-			return { ok: false, reason: "error", message: safeErrorMessage(error) }
+				const quota = parseCopilotQuota(await response.json())
+				return quota ? { ok: true, quota } : { ok: false, reason: "noCopilot" }
+			} catch (error) {
+				return { ok: false, reason: "error", message: safeErrorMessage(error) }
+			}
 		}
+
+		const request: Promise<GitHubCopilotQuotaResult> = fetchQuota()
+			.then((result) => {
+				// One place for every outcome: a success is cached, and anything else (signed out, no Copilot, an
+				// HTTP error, a thrown or cancelled request) drops an older success so it is not served as current.
+				cache = result.ok ? { at: Date.now(), result } : undefined
+				return result
+			})
+			.finally(() => {
+				if (inFlight?.request === request) inFlight = undefined
+			})
+		inFlight = { request, waiters: 0, controller }
 	}
 
-	inFlight = fetchQuota()
-		.then((result) => {
-			// One place for every outcome: a success is cached, and anything else (signed out, no Copilot, an
-			// HTTP error, a thrown error) drops an older success so it is not served as if it were current.
-			cache = result.ok ? { at: Date.now(), result } : undefined
-			return result
-		})
-		.finally(() => {
-			inFlight = undefined
-		})
-
-	return inFlight
+	const shared = inFlight
+	shared.waiters++
+	let left = false
+	const leave = () => {
+		if (left) return
+		left = true
+		// Last one out cancels the network work; earlier leavers just stop waiting.
+		if (--shared.waiters === 0) shared.controller.abort()
+	}
+	return untilAborted(shared.request, signal, leave).finally(leave)
 }
 
 /** @internal test hook */

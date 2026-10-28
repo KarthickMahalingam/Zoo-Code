@@ -77,6 +77,13 @@ describe("parseDeepSeekBalance", () => {
 })
 
 describe("parseDeepSeekBalance – fallbacks", () => {
+	it("treats a USD or CNY row without a balance as zero when choosing a row", () => {
+		const result = parseDeepSeekBalance({
+			balance_infos: [{ currency: "USD" }, { currency: "CNY" }, { currency: "CNY", total_balance: "5" }],
+		})
+		expect(result).toEqual([{ id: "balance", valueLabel: "¥5.00 left" }])
+	})
+
 	it("falls back to a zero USD balance, then to the first row", () => {
 		expect(
 			parseDeepSeekBalance({
@@ -392,6 +399,17 @@ describe("getProviderQuotas – Copilot window and misc", () => {
 		mocked.mockResolvedValueOnce({ ok: true, quota: { unlimited: true, resetAt: 7, fetchedAt: 1 } })
 		const [unl] = await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never])
 		expect(unl).toMatchObject({ ok: true, windows: [{ valueLabel: "Unlimited", resetAt: 7 }] })
+	})
+
+	it("hands the caller's abort signal to the Copilot lookup", async () => {
+		const { getGitHubCopilotQuota } = await import("../copilotQuota")
+		const mocked = vi.mocked(getGitHubCopilotQuota)
+		mocked.mockResolvedValueOnce({ ok: true, quota: { unlimited: true, fetchedAt: 1 } })
+		const controller = new AbortController()
+		await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never], {
+			signal: controller.signal,
+		})
+		expect(mocked).toHaveBeenLastCalledWith({ force: false, signal: controller.signal })
 	})
 
 	it("passes Copilot failures through with their reason and message", async () => {

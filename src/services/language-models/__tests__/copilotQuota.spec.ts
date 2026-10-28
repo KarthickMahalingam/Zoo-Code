@@ -216,6 +216,92 @@ describe("getGitHubCopilotQuota", () => {
 		expect(retry).toHaveBeenCalledTimes(1)
 	})
 
+	describe("cancellation", () => {
+		/** A fetch that never answers on its own and records the signal it was given. */
+		const hangingFetch = () => {
+			let seen: AbortSignal | undefined
+			const fetchSpy = vi.fn(
+				(_url: string, init?: RequestInit) =>
+					new Promise<Response>((_resolve, reject) => {
+						seen = init?.signal ?? undefined
+						seen?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))
+					}),
+			)
+			return { fetchSpy, signal: () => seen }
+		}
+
+		it("stops the GitHub request when the only caller goes away", async () => {
+			const { fetchSpy, signal } = hangingFetch()
+			const controller = new AbortController()
+			const result = getGitHubCopilotQuota({ signal: controller.signal }, fetchSpy as never)
+			await vi.waitFor(() => expect(signal()).toBeDefined())
+			expect(signal()!.aborted).toBe(false)
+
+			controller.abort()
+			await expect(result).rejects.toMatchObject({ name: "AbortError" })
+			expect(signal()!.aborted).toBe(true)
+		})
+
+		it("keeps the shared request running until its last caller leaves", async () => {
+			const { fetchSpy, signal } = hangingFetch()
+			const leaving = new AbortController()
+			const staying = new AbortController()
+
+			const a = getGitHubCopilotQuota({ signal: staying.signal }, fetchSpy as never)
+			const b = getGitHubCopilotQuota({ signal: leaving.signal }, fetchSpy as never)
+			await vi.waitFor(() => expect(signal()).toBeDefined())
+			expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+			leaving.abort()
+			await expect(b).rejects.toMatchObject({ name: "AbortError" })
+			expect(signal()!.aborted).toBe(false)
+
+			staying.abort()
+			await expect(a).rejects.toMatchObject({ name: "AbortError" })
+			expect(signal()!.aborted).toBe(true)
+		})
+
+		it("rejects at once with a signal that is already aborted, and makes no request", async () => {
+			const fetchSpy = vi.fn()
+			const controller = new AbortController()
+			controller.abort()
+			await expect(getGitHubCopilotQuota({ signal: controller.signal }, fetchSpy as never)).rejects.toMatchObject(
+				{
+					name: "AbortError",
+				},
+			)
+			expect(fetchSpy).not.toHaveBeenCalled()
+		})
+
+		it("does not cache a cancelled request, so the next call fetches again", async () => {
+			const { fetchSpy } = hangingFetch()
+			const controller = new AbortController()
+			const cancelled = getGitHubCopilotQuota({ signal: controller.signal }, fetchSpy as never)
+			await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+			controller.abort()
+			await expect(cancelled).rejects.toBeDefined()
+
+			const good = vi.fn(async () => json(businessPayload))
+			await expect(getGitHubCopilotQuota({}, good as never)).resolves.toMatchObject({ ok: true })
+			expect(good).toHaveBeenCalledTimes(1)
+		})
+
+		it("does not start the GitHub request when it was cancelled while the token was being fetched", async () => {
+			let release: (session: { accessToken: string }) => void = () => {}
+			getSession.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+			const fetchSpy = vi.fn()
+			const controller = new AbortController()
+
+			const result = getGitHubCopilotQuota({ signal: controller.signal }, fetchSpy as never)
+			await vi.waitFor(() => expect(getSession).toHaveBeenCalled())
+			controller.abort()
+			release({ accessToken: "gho_token" })
+
+			await expect(result).rejects.toMatchObject({ name: "AbortError" })
+			expect(fetchSpy).not.toHaveBeenCalled()
+		})
+	})
+
 	it("shares one in-flight request between concurrent callers", async () => {
 		const fetchSpy = vi.fn(async () => json(businessPayload))
 		const [a, b] = await Promise.all([

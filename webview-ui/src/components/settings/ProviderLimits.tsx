@@ -10,8 +10,11 @@ import i18next from "i18next"
 import { providerLabel } from "@src/utils/providerLabel"
 
 // Module-level, so a component that is unmounted and mounted again never reuses an id that an older,
-// still-settling request carries.
+// still-settling request carries. The random part separates this webview from any other one (sidebar and
+// editor tab each load their own copy of this module), so an id is unique across webviews too.
 let quotaRequestCounter = 0
+const quotaRequestSession = Math.random().toString(36).slice(2, 10)
+const nextQuotaRequestId = () => `provider-quotas-${quotaRequestSession}-${++quotaRequestCounter}`
 
 const barColor = (pct: number) =>
 	pct >= 90 ? "bg-vscode-charts-red" : pct >= 75 ? "bg-vscode-charts-yellow" : "bg-vscode-charts-green"
@@ -45,7 +48,7 @@ export const ProviderLimits = () => {
 	const request = useCallback(
 		(force: boolean) => {
 			cancelLatest()
-			const requestId = `provider-quotas-${++quotaRequestCounter}`
+			const requestId = nextQuotaRequestId()
 			latestRequestId.current = requestId
 			setLoading(true)
 			vscode.postMessage({ type: VsCodeLmModelsMessageType.requestProviderQuotas, bool: force, requestId })
