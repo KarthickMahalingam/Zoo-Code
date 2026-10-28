@@ -1,4 +1,6 @@
 import { render, screen } from "@/utils/test-utils"
+import { ExtensionStateContext } from "@/context/ExtensionStateContext"
+import { formatDateTime } from "@/utils/format"
 
 import TaskItemFooter from "../TaskItemFooter"
 
@@ -11,6 +13,7 @@ vi.mock("@src/i18n/TranslationContext", () => ({
 vi.mock("@/utils/format", () => ({
 	formatTimeAgo: vi.fn(() => "2 hours ago"),
 	formatDate: vi.fn(() => "January 15 at 2:30 PM"),
+	formatDateTime: vi.fn(() => "Jan 15, 2024, 2:30 PM"),
 	formatLargeNumber: vi.fn((num: number) => num.toString()),
 }))
 
@@ -129,5 +132,35 @@ describe("TaskItemFooter", () => {
 		render(<TaskItemFooter item={mockItem} {...props} />)
 
 		expect(screen.queryByTestId("rename-task-button")).not.toBeInTheDocument()
+	})
+
+	describe("time display settings", () => {
+		const renderWith = (state: Record<string, unknown>) =>
+			render(
+				<ExtensionStateContext.Provider value={state as never}>
+					<TaskItemFooter item={mockItem} variant="compact" />
+				</ExtensionStateContext.Provider>,
+			)
+
+		it("shows a relative time by default", () => {
+			renderWith({})
+			expect(screen.getByText("2 hours ago")).toBeInTheDocument()
+		})
+
+		it("shows a relative time when showRelativeTimes is on", () => {
+			renderWith({ showRelativeTimes: true })
+			expect(screen.getByText("2 hours ago")).toBeInTheDocument()
+		})
+
+		it("shows the absolute date/time instead when showRelativeTimes is off", () => {
+			renderWith({ showRelativeTimes: false, timeFormat: "24h", dateFormat: "ymd" })
+			expect(screen.queryByText("2 hours ago")).not.toBeInTheDocument()
+			expect(screen.getByText("Jan 15, 2024, 2:30 PM")).toBeInTheDocument()
+		})
+
+		it("passes the chosen time and date formats to the formatter", () => {
+			renderWith({ showRelativeTimes: false, timeFormat: "24h", dateFormat: "dmy" })
+			expect(formatDateTime).toHaveBeenCalledWith(mockItem.ts, "24h", "dmy")
+		})
 	})
 })

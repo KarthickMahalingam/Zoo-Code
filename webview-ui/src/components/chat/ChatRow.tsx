@@ -38,6 +38,7 @@ import WarningRow from "./WarningRow"
 import McpResourceRow from "../mcp/McpResourceRow"
 
 import { Mention } from "./Mention"
+import { MessageTimestamp } from "./MessageTimestamp"
 import { CheckpointSaved } from "./checkpoints/CheckpointSaved"
 import { FollowUpSuggest } from "./FollowUpSuggest"
 import { BatchFilePermission } from "./BatchFilePermission"
@@ -196,6 +197,8 @@ export const ChatRowContent = ({
 		clineMessages,
 		currentTaskItem,
 		enableCheckpoints,
+		timeFormat,
+		dateFormat,
 	} = useExtensionState()
 	const { info: model } = useSelectedModel(apiConfiguration)
 	const [isEditing, setIsEditing] = useState(false)
@@ -1224,6 +1227,13 @@ export const ChatRowContent = ({
 									</div>
 								)}
 							</div>
+							{/* When the reply was sent. Held back while it streams, so the line does not appear and
+							    shift as the text grows. */}
+							{!message.partial && (
+								<div className="ml-6 mt-1">
+									<MessageTimestamp ts={message.ts} timeFormat={timeFormat} dateFormat={dateFormat} />
+								</div>
+							)}
 						</div>
 					)
 				case "user_feedback":
@@ -1299,6 +1309,12 @@ export const ChatRowContent = ({
 									<Thumbnails images={message.images} style={{ marginTop: "8px" }} />
 								)}
 							</div>
+							{/* When the message was sent. Hidden while editing: the edit box replaces the bubble. */}
+							{!isEditing && (
+								<div className="ml-6 mt-1">
+									<MessageTimestamp ts={message.ts} timeFormat={timeFormat} dateFormat={dateFormat} />
+								</div>
+							)}
 						</div>
 					)
 				case "user_feedback_diff":
