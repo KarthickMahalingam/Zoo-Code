@@ -737,18 +737,20 @@ export const webviewMessageHandler = async (
 			}
 			break
 
-		case "updateSettings":
-			if (message.updatedSettings) {
-				if (message.updatedSettings.destructiveCommandGuardEnabled === true) {
+		case "updateSettings": {
+			const updatedSettings = message.updatedSettings
+			const saveRequestId = message.requestId
+			if (updatedSettings) {
+				if (updatedSettings.destructiveCommandGuardEnabled === true) {
 					try {
 						const { ensureDcgInstalled } = await import("../../services/destructive-command-guard")
 						const binaryPath = await ensureDcgInstalled(provider.context.globalStorageUri.fsPath)
 						if (!binaryPath) {
-							message.updatedSettings.destructiveCommandGuardEnabled = false
+							updatedSettings.destructiveCommandGuardEnabled = false
 							vscode.window.showErrorMessage(t("common:errors.destructiveCommandGuard.unavailable"))
 						}
 					} catch (error) {
-						message.updatedSettings.destructiveCommandGuardEnabled = false
+						updatedSettings.destructiveCommandGuardEnabled = false
 						vscode.window.showErrorMessage(
 							t("common:errors.destructiveCommandGuard.enableFailed", {
 								error: error instanceof Error ? error.message : String(error),
@@ -757,7 +759,8 @@ export const webviewMessageHandler = async (
 					}
 				}
 
-				for (const [key, value] of Object.entries(message.updatedSettings)) {
+				/** Applies one setting (its side effect, then the stored value). Returns whether a value was stored. */
+				const applySetting = async (key: string, value: unknown): Promise<boolean> => {
 					let newValue = value
 
 					if (key === "language") {
@@ -854,7 +857,7 @@ export const webviewMessageHandler = async (
 						}
 					} else if (key === "experiments") {
 						if (!value) {
-							continue
+							return false
 						}
 
 						newValue = {
@@ -863,17 +866,60 @@ export const webviewMessageHandler = async (
 						}
 					} else if (key === "customSupportPrompts") {
 						if (!value) {
-							continue
+							return false
 						}
 					}
 
-					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
+					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue as never)
+					return true
 				}
 
-				await provider.postStateToWebview()
-			}
+				// Every key is snapshotted before it is written. If any write fails, the ones already applied are
+				// restored (stored value and side effect), so a save is all-or-nothing and the webview can keep
+				// the user's edits and let them retry.
+				const written: Array<{ key: string; previous: unknown }> = []
+				try {
+					for (const [key, value] of Object.entries(updatedSettings)) {
+						written.push({ key, previous: provider.contextProxy.getValue(key as keyof RooCodeSettings) })
+						await applySetting(key, value)
+					}
 
+					await provider.postStateToWebview()
+					if (saveRequestId) {
+						await provider.postMessageToWebview({
+							type: "settingsSaveResult",
+							requestId: saveRequestId,
+							success: true,
+						})
+					}
+				} catch (error) {
+					const reason = error instanceof Error ? error.message : String(error)
+					for (const { key, previous } of written.reverse()) {
+						try {
+							await applySetting(key, previous)
+							// Put back exactly what was stored, whatever defaulting the side effect applied.
+							await provider.contextProxy.setValue(key as keyof RooCodeSettings, previous as never)
+						} catch (rollbackError) {
+							provider.log(
+								`[updateSettings] Could not restore ${key}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+							)
+						}
+					}
+					provider.log(`[updateSettings] Save failed and was rolled back: ${reason}`)
+					vscode.window.showErrorMessage(t("common:errors.settings_save_failed", { error: reason }))
+					await provider.postStateToWebview()
+					if (saveRequestId) {
+						await provider.postMessageToWebview({
+							type: "settingsSaveResult",
+							requestId: saveRequestId,
+							success: false,
+							error: reason,
+						})
+					}
+				}
+			}
 			break
+		}
 
 		case "terminalOperation":
 			if (message.terminalOperation) {

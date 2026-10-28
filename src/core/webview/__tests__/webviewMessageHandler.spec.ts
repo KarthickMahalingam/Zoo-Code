@@ -1905,6 +1905,146 @@ describe("webviewMessageHandler - mcpEnabled", () => {
 	})
 })
 
+describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
+	const stored: Record<string, unknown> = {}
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		for (const key of Object.keys(stored)) delete stored[key]
+		Object.assign(stored, { soundEnabled: false, writeDelayMs: 1000, language: "en" })
+		vi.mocked(mockClineProvider.contextProxy.getValue).mockImplementation((key: string) => stored[key] as never)
+		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
+			stored[key] = value
+		})
+	})
+
+	it("stores every setting and confirms the save by request id", async () => {
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			requestId: "save-1",
+			updatedSettings: { soundEnabled: true, writeDelayMs: 2000 },
+		})
+
+		expect(stored).toMatchObject({ soundEnabled: true, writeDelayMs: 2000 })
+		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "settingsSaveResult",
+			requestId: "save-1",
+			success: true,
+		})
+		expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+	})
+
+	it("restores the settings already written when a later one fails, and reports the failure", async () => {
+		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
+			if (key === "writeDelayMs" && value === 2000) throw new Error("storage unavailable")
+			return real(key as never, value as never)
+		})
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			requestId: "save-2",
+			updatedSettings: { soundEnabled: true, writeDelayMs: 2000 },
+		})
+
+		// soundEnabled was written first, then rolled back; writeDelayMs never changed.
+		expect(stored).toMatchObject({ soundEnabled: false, writeDelayMs: 1000 })
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "settingsSaveResult",
+			requestId: "save-2",
+			success: false,
+			error: "storage unavailable",
+		})
+		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith(
+			expect.objectContaining({ success: true }),
+		)
+		expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("common:errors.settings_save_failed")
+		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("rolled back"))
+		// The webview is re-synced with what is really stored.
+		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+	})
+
+	it("rolls back in reverse order, so the first-written value is restored last", async () => {
+		const order: string[] = []
+		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
+			order.push(`${key}=${String(value)}`)
+			if (key === "terminalCommandDelay" && value === 50) throw new Error("boom")
+			return real(key as never, value as never)
+		})
+		stored.terminalCommandDelay = 0
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			requestId: "save-3",
+			updatedSettings: { soundEnabled: true, writeDelayMs: 2000, terminalCommandDelay: 50 },
+		})
+
+		expect(stored).toMatchObject({ soundEnabled: false, writeDelayMs: 1000, terminalCommandDelay: 0 })
+
+		// Writes go forward in order; restores come back in the opposite order.
+		const failedAt = order.indexOf("terminalCommandDelay=50")
+		const restoreOrder = order
+			.slice(failedAt + 1)
+			.map((entry) => entry.split("=")[0])
+			.filter((key, index, all) => all.indexOf(key) === index)
+		expect(restoreOrder.indexOf("writeDelayMs")).toBeGreaterThanOrEqual(0)
+		expect(restoreOrder.indexOf("soundEnabled")).toBeGreaterThan(restoreOrder.indexOf("writeDelayMs"))
+	})
+
+	it("keeps going and still reports the failure when a restore itself fails", async () => {
+		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
+			if (key === "writeDelayMs") throw new Error("writeDelayMs is broken")
+			if (key === "soundEnabled" && value === false) throw new Error("cannot restore")
+			return real(key as never, value as never)
+		})
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			requestId: "save-4",
+			updatedSettings: { soundEnabled: true, writeDelayMs: 2000 },
+		})
+
+		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("Could not restore soundEnabled"))
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+			expect.objectContaining({ type: "settingsSaveResult", requestId: "save-4", success: false }),
+		)
+	})
+
+	it("reports a non-Error failure by its text", async () => {
+		vi.mocked(mockClineProvider.contextProxy.setValue).mockRejectedValue("plain string failure")
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			requestId: "save-5",
+			updatedSettings: { soundEnabled: true },
+		})
+
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+			expect.objectContaining({ success: false, error: "plain string failure" }),
+		)
+	})
+
+	it("still saves and re-syncs, without a result message, when the request has no id", async () => {
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			updatedSettings: { soundEnabled: true },
+		})
+
+		expect(stored.soundEnabled).toBe(true)
+		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalled()
+	})
+
+	it("does nothing when there are no settings to save", async () => {
+		await webviewMessageHandler(mockClineProvider, { type: "updateSettings", requestId: "save-6" })
+		expect(mockClineProvider.contextProxy.setValue).not.toHaveBeenCalled()
+		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalled()
+	})
+})
+
 describe("webviewMessageHandler - destructiveCommandGuardEnabled", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
