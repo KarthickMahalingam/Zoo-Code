@@ -2112,7 +2112,11 @@ describe("Cline", () => {
 			})
 
 			it.each([
-				{ name: "fills in the serving model when the profile named none", profile: undefined, expected: "served-model" },
+				{
+					name: "fills in the serving model when the profile named none",
+					profile: undefined,
+					expected: "served-model",
+				},
 				{ name: "keeps the model the profile named", profile: "profile-model", expected: "profile-model" },
 			])("finalized api_req_started $name", async ({ profile, expected }) => {
 				const task = await createTaskWithManualRetries()
