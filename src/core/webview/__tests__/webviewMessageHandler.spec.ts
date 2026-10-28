@@ -2076,6 +2076,64 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 		})
 	})
 
+	describe("the live terminal after a failed save", () => {
+		const cases: Array<[string, () => unknown, unknown]> = [
+			["terminalShellIntegrationTimeout", () => Terminal.getShellIntegrationTimeout(), 9_000],
+			["terminalShellIntegrationDisabled", () => Terminal.getShellIntegrationDisabled(), false],
+			["terminalCommandDelay", () => Terminal.getCommandDelay(), 50],
+			["terminalPowershellCounter", () => Terminal.getPowershellCounter(), true],
+			["terminalZshClearEolMark", () => Terminal.getTerminalZshClearEolMark(), false],
+			["terminalZshOhMy", () => Terminal.getTerminalZshOhMy(), true],
+			["terminalZshP10k", () => Terminal.getTerminalZshP10k(), true],
+			["terminalZdotdir", () => Terminal.getTerminalZdotdir(), true],
+		]
+
+		it.each(cases)(
+			"puts the running value of %s back when it was never stored",
+			async (key, liveValue, newValue) => {
+				const before = liveValue()
+				// Precondition: the new value really differs from what is running, so a stale value would show.
+				expect(newValue).not.toBe(before)
+				const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+				vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(
+					async (k: string, value: unknown) => {
+						if (k === "writeDelayMs" && value === 2000) throw new Error("storage unavailable")
+						return real(k as never, value as never)
+					},
+				)
+				expect(stored).not.toHaveProperty(key)
+
+				await webviewMessageHandler(mockClineProvider, {
+					type: "updateSettings",
+					requestId: "save-terminal",
+					updatedSettings: { [key]: newValue, writeDelayMs: 2000 },
+				})
+
+				expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+					expect.objectContaining({ requestId: "save-terminal", success: false }),
+				)
+				// Storage is restored to "never stored"...
+				expect(stored[key]).toBeUndefined()
+				// ...and so is the live terminal.
+				expect(liveValue()).toBe(before)
+			},
+		)
+
+		it("applies the new value to the live terminal when the save succeeds", async () => {
+			const before = Terminal.getCommandDelay()
+			try {
+				await webviewMessageHandler(mockClineProvider, {
+					type: "updateSettings",
+					requestId: "save-terminal-ok",
+					updatedSettings: { terminalCommandDelay: before + 75 },
+				})
+				expect(Terminal.getCommandDelay()).toBe(before + 75)
+			} finally {
+				Terminal.setCommandDelay(before)
+			}
+		})
+	})
+
 	describe("a stage that never settles", () => {
 		// The provider double has no `getMcpHub`; it is added here without a cast.
 		const useMcpHub = (handleMcpEnabledChange: (enabled: boolean) => Promise<void>) =>

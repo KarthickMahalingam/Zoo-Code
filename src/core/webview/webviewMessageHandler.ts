@@ -929,7 +929,25 @@ const handleWebviewMessage = async (
 				// the one `contextProxy` reads (the webview shows a union of both). Restoring them from `contextProxy`
 				// would overwrite configuration-only entries, so their configuration value is snapshotted separately.
 				const commandListKeys = new Set(["allowedCommands", "deniedCommands"])
-				const written: Array<{ key: string; previous: unknown; configGlobal?: { value: unknown } }> = []
+				// The terminal settings are also applied to the live terminal, and their setters skip an unset value.
+				// A setting that was never stored therefore cannot be undone by restoring `undefined`: the value the
+				// terminal was running with is snapshotted and put back instead.
+				const liveTerminalValues: Record<string, () => unknown> = {
+					terminalShellIntegrationTimeout: () => Terminal.getShellIntegrationTimeout(),
+					terminalShellIntegrationDisabled: () => Terminal.getShellIntegrationDisabled(),
+					terminalCommandDelay: () => Terminal.getCommandDelay(),
+					terminalPowershellCounter: () => Terminal.getPowershellCounter(),
+					terminalZshClearEolMark: () => Terminal.getTerminalZshClearEolMark(),
+					terminalZshOhMy: () => Terminal.getTerminalZshOhMy(),
+					terminalZshP10k: () => Terminal.getTerminalZshP10k(),
+					terminalZdotdir: () => Terminal.getTerminalZdotdir(),
+				}
+				const written: Array<{
+					key: string
+					previous: unknown
+					configGlobal?: { value: unknown }
+					liveTerminal?: { value: unknown }
+				}> = []
 				let failure: string | undefined
 				try {
 					for (const [key, value] of Object.entries(updatedSettings)) {
@@ -941,19 +959,23 @@ const handleWebviewMessage = async (
 							const inspected = vscode.workspace.getConfiguration(Package.name).inspect(key)
 							entry.configGlobal = { value: inspected?.globalValue }
 						}
+						if (key in liveTerminalValues) entry.liveTerminal = { value: liveTerminalValues[key]() }
 						written.push(entry)
 						await applySetting(key, value)
 					}
 				} catch (error) {
 					failure = error instanceof Error ? error.message : String(error)
-					for (const { key, previous, configGlobal } of written.reverse()) {
+					for (const { key, previous, configGlobal, liveTerminal } of written.reverse()) {
 						try {
 							if (configGlobal) {
 								await vscode.workspace
 									.getConfiguration(Package.name)
 									.update(key, configGlobal.value, vscode.ConfigurationTarget.Global)
 							} else {
-								await applySetting(key, previous)
+								await applySetting(
+									key,
+									previous === undefined && liveTerminal ? liveTerminal.value : previous,
+								)
 							}
 							// Put back exactly what was stored, whatever defaulting the side effect applied.
 							await provider.contextProxy.setValue(key as keyof RooCodeSettings, previous as never)
