@@ -279,12 +279,22 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 			// The older one finishes and cleans up; it must not remove the newer one's entry.
 			releases[0]([{ id: "a" }])
 			await older
+			// The older request is answered, with a successful (empty) result.
+			expect(provider.postMessageToWebview).toHaveBeenCalledTimes(1)
+			expect(provider.postMessageToWebview).toHaveBeenLastCalledWith({
+				type: "providerQuotas",
+				providerQuotas: [],
+				providerQuotasFailed: false,
+				requestId: "same-id",
+			})
+
 			await webviewMessageHandler(provider, { type: "cancelProviderQuotas", requestId: "same-id" })
 			releases[1]([{ id: "a" }])
 			await newer
 
-			// The cancel reached the newer request, so only the older one was answered.
+			// The cancel reached the newer request, so it posts nothing and the count stays at one.
 			expect(provider.postMessageToWebview).toHaveBeenCalledTimes(1)
+			expect(quotas.getProviderQuotas).toHaveBeenCalledTimes(1)
 		})
 
 		it("marks the answer as failed when the quotas could not be loaded, and not when there are simply none", async () => {

@@ -1768,8 +1768,12 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 * to replace the stored messages outright.
 	 */
 	private async saveClineMessages(merge = true): Promise<boolean> {
+		// What was actually persisted: with `merge`, newer messages another host wrote are folded in. The metadata
+		// (including the usage breakdown) is computed from it, so a stale local snapshot cannot clear usage that
+		// the stored messages still contain.
+		let persistedMessages: ClineMessage[] | undefined
 		try {
-			await saveTaskMessages({
+			persistedMessages = await saveTaskMessages({
 				messages: structuredClone(this.clineMessages),
 				taskId: this.taskId,
 				globalStoragePath: this.globalStoragePath,
@@ -1790,7 +1794,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				rootTaskId: this.rootTaskId,
 				parentTaskId: this.parentTaskId,
 				taskNumber: this.taskNumber,
-				messages: this.clineMessages,
+				messages: persistedMessages ?? this.clineMessages,
 				globalStoragePath: this.globalStoragePath,
 				workspace: this.cwd,
 				mode: this._taskMode || defaultModeSlug, // Use the task's own mode, not the current provider mode.

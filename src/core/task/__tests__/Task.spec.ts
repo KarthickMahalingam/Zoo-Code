@@ -7654,6 +7654,52 @@ describe("Cline", () => {
 			}
 		})
 
+		it("computes the usage breakdown from the merged persisted messages, not a stale local snapshot", async () => {
+			// Another host appended a request that records usage. This host's snapshot does not have that message;
+			// saving merges the stored one in, and the metadata must follow what was persisted.
+			const taskDir = path.join(os.tmpdir(), "test-storage", "tasks", "00000000-0000-7000-8000-000000000000")
+			fsReal.mkdirSync(taskDir, { recursive: true })
+			// The mocked fs.readFile serves `mockMessages` as the stored ui_messages.json.
+			const originalStored = mockMessages.splice(0)
+			const historySpy = vi.spyOn(mockProvider, "updateTaskHistory")
+			try {
+				const task = new Task({
+					provider: mockProvider,
+					apiConfiguration: mockApiConfig,
+					task: "test task",
+					startTask: false,
+				})
+				const recorded = JSON.stringify({
+					apiProvider: providerIdentifiers.anthropic,
+					modelId: "claude-sonnet-5",
+					tokensIn: 10,
+					tokensOut: 5,
+					cost: 0.5,
+				})
+				const message = (text: string, messageId: string) => ({
+					ts: 2,
+					type: "say" as const,
+					say: "api_req_started" as const,
+					text,
+					messageId,
+				})
+				const first = { ts: 1, type: "say" as const, say: "text" as const, text: "do it", messageId: "m1" }
+				mockMessages.push(first, message(recorded, "m2"))
+
+				task.clineMessages = [first]
+				await getTaskTestAccess(task).saveClineMessages()
+
+				const saved = historySpy.mock.calls.at(-1)?.[0]
+				expect(saved?.usageByModel).toEqual([
+					expect.objectContaining({ apiProvider: providerIdentifiers.anthropic, requests: 1, cost: 0.5 }),
+				])
+			} finally {
+				mockMessages.splice(0, mockMessages.length, ...originalStored)
+				fsReal.rmSync(path.join(taskDir, "ui_messages.json"), { force: true })
+				historySpy.mockRestore()
+			}
+		})
+
 		it("finalizePartialToolAsk skips the webview update when the message write itself fails", async () => {
 			// Complements the later-stage-failure test above by failing the first save
 			// stage: with the real task directory removed, safeWriteJson's fs.access
