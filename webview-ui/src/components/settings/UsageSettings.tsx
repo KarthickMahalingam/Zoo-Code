@@ -330,9 +330,9 @@ export const UsageSettings = ({ className, ...props }: HTMLAttributes<HTMLDivEle
 													vscode.postMessage({ type: "showTaskWithId", text: task.id })
 												}>
 												<span className="min-w-0">
-													<span className="block truncate">{task.task}</span>
+													<span className="block break-words">{task.task}</span>
 													{primaryUsage(task) && (
-														<span className="block truncate text-xs text-vscode-descriptionForeground">
+														<span className="block break-words text-xs text-vscode-descriptionForeground">
 															{[
 																primaryUsage(task)?.apiProvider
 																	? providerLabel(primaryUsage(task)!.apiProvider!)
@@ -387,9 +387,11 @@ const Block = ({ title, children, testId }: { title: string; children: React.Rea
 
 const Stat = ({ value, label, hint }: { value: string; label: string; hint?: string }) => (
 	<div className="min-w-0 rounded-md border border-vscode-panel-border bg-vscode-input-background px-2.5 py-2">
-		<div className="text-lg font-semibold leading-tight text-vscode-foreground tabular-nums truncate">{value}</div>
+		<div className="text-lg font-semibold leading-tight text-vscode-foreground tabular-nums break-words">
+			{value}
+		</div>
 		<div className="text-[11px] text-vscode-descriptionForeground">{label}</div>
-		{hint && <div className="mt-0.5 text-[11px] text-vscode-descriptionForeground truncate">{hint}</div>}
+		{hint && <div className="mt-0.5 text-[11px] text-vscode-descriptionForeground break-words">{hint}</div>}
 	</div>
 )
 
@@ -413,7 +415,7 @@ const Breakdown = ({
 						className="grid grid-cols-[8px_minmax(0,1fr)_auto_minmax(40px,25%)_30px] items-center gap-2 text-xs"
 						title={row.subtitle ? `${row.name} · ${row.subtitle}` : row.name}>
 						<span className="size-2 rounded-full" style={{ background: color }} />
-						<span className="truncate text-sm">
+						<span className="min-w-0 break-words text-sm">
 							{row.name}
 							{row.subtitle && (
 								<span className="ml-1.5 text-vscode-descriptionForeground text-xs">{row.subtitle}</span>
