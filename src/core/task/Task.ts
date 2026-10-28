@@ -123,6 +123,7 @@ import {
 	saveTaskMessages,
 	taskMetadata,
 } from "../task-persistence"
+import { resolveRecordedModelId } from "../task-persistence/usageByModel"
 import { getEnvironmentDetails } from "../environment/getEnvironmentDetails"
 import { checkContextWindowExceededError } from "../context/context-management/context-error-handling"
 import {
@@ -4071,6 +4072,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 					this.clineMessages[lastApiReqIndex].text = JSON.stringify({
 						...existingData,
+						modelId: resolveRecordedModelId(existingData.modelId, this.cachedStreamingModel?.id),
 						tokensIn: costResult.totalInputTokens,
 						tokensOut: costResult.totalOutputTokens,
 						cacheWrites: cacheWriteTokens,

@@ -49,3 +49,13 @@ export function summarizeUsageByModel(messages: ClineMessage[]): UsageByModelEnt
 
 	return [...byKey.values()]
 }
+
+/**
+ * The model to record for a finished request. The first write (before the request starts) only knows the
+ * model the profile names; a profile that names none leaves it empty. By the time the request is done the
+ * model that actually served it is known, so use that rather than leave the usage unattributed. A model
+ * recorded earlier is never overwritten.
+ */
+export function resolveRecordedModelId(recorded: unknown, served: string | undefined): string | undefined {
+	return typeof recorded === "string" && recorded.length > 0 ? recorded : served
+}

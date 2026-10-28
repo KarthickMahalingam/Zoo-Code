@@ -341,6 +341,56 @@ describe("pickMetric", () => {
 	})
 })
 
+describe("spend that has no provider or model (context condensing)", () => {
+	const entry = (cost: number) => ({
+		apiProvider: "anthropic",
+		modelId: "claude-sonnet-5",
+		requests: 1,
+		tokensIn: 100,
+		tokensOut: 10,
+		cost,
+	})
+
+	it("puts the unattributed remainder in the 'not recorded' rows so the rows add up to the total", () => {
+		// The task cost 5.00, but its recorded requests only account for 4.00: 1.00 was condensing.
+		const s = summarizeUsage([item({ totalCost: 5, usageByModel: [entry(4)] })], { range: "all", now: NOW })
+
+		expect(s.totalCost).toBe(5)
+		expect(s.byProvider.reduce((sum, b) => sum + b.cost, 0)).toBeCloseTo(5)
+		expect(s.byModel.reduce((sum, b) => sum + b.cost, 0)).toBeCloseTo(5)
+		expect(s.byProvider.find((b) => b.key === UNRECORDED)?.cost).toBeCloseTo(1)
+		expect(s.byModel.find((b) => b.key === UNRECORDED)?.cost).toBeCloseTo(1)
+	})
+
+	it("does not add a token count or a task to the 'not recorded' rows for that remainder", () => {
+		const s = summarizeUsage([item({ totalCost: 5, usageByModel: [entry(4)] })], { range: "all", now: NOW })
+		const unrecorded = s.byProvider.find((b) => b.key === UNRECORDED)!
+		expect(unrecorded.tokens).toBe(0)
+		// The one task is counted under its real provider; the remainder is a cost line, not another task.
+		expect(s.byProvider.find((b) => b.key === "anthropic")?.tasks).toBe(1)
+	})
+
+	it("ignores float noise: no spurious 'not recorded' row when the costs agree", () => {
+		const s = summarizeUsage([item({ totalCost: 0.1 + 0.2, usageByModel: [entry(0.1), entry(0.2)] })], {
+			range: "all",
+			now: NOW,
+		})
+		expect(s.byProvider.find((b) => b.key === UNRECORDED)).toBeUndefined()
+		expect(s.byModel.find((b) => b.key === UNRECORDED)).toBeUndefined()
+	})
+
+	it("adds nothing when the recorded requests cost more than the task total", () => {
+		const s = summarizeUsage([item({ totalCost: 3, usageByModel: [entry(4)] })], { range: "all", now: NOW })
+		expect(s.byProvider.find((b) => b.key === UNRECORDED)).toBeUndefined()
+	})
+
+	it("leaves tasks with no usage record exactly as before", () => {
+		const s = summarizeUsage([item({ totalCost: 2, tokensIn: 50 })], { range: "all", now: NOW })
+		expect(s.byProvider).toHaveLength(1)
+		expect(s.byProvider[0]).toMatchObject({ key: UNRECORDED, cost: 2 })
+	})
+})
+
 describe("modelIdFromKey", () => {
 	it("returns undefined for the unrecorded bucket, the id after the provider separator, or a bare key", () => {
 		expect(modelIdFromKey(UNRECORDED)).toBeUndefined()

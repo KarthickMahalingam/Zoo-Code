@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { providerIdentifiers, type ClineMessage } from "@roo-code/types"
 
-import { summarizeUsageByModel } from "../usageByModel"
+import { resolveRecordedModelId, summarizeUsageByModel } from "../usageByModel"
 
 const req = (data: Record<string, unknown>, ts = 1): ClineMessage => ({
 	ts,
@@ -109,5 +109,25 @@ describe("summarizeUsageByModel", () => {
 
 	it("returns an empty list for no messages", () => {
 		expect(summarizeUsageByModel([])).toEqual([])
+	})
+})
+
+describe("resolveRecordedModelId", () => {
+	it("keeps a model that was recorded when the request started", () => {
+		expect(resolveRecordedModelId("gpt-5", "gpt-5-mini")).toBe("gpt-5")
+	})
+
+	it("uses the model that served the request when the profile named none", () => {
+		expect(resolveRecordedModelId(undefined, "claude-sonnet-5")).toBe("claude-sonnet-5")
+		expect(resolveRecordedModelId("", "claude-sonnet-5")).toBe("claude-sonnet-5")
+		expect(resolveRecordedModelId(null, "claude-sonnet-5")).toBe("claude-sonnet-5")
+	})
+
+	it("stays unrecorded when neither is known", () => {
+		expect(resolveRecordedModelId(undefined, undefined)).toBeUndefined()
+	})
+
+	it("ignores a recorded value that is not a string", () => {
+		expect(resolveRecordedModelId(42, "claude-sonnet-5")).toBe("claude-sonnet-5")
 	})
 })

@@ -15,6 +15,9 @@ import type { HistoryItem } from "@roo-code/types"
 /** Bucket key for usage whose provider/model was not recorded (older tasks). */
 export const UNRECORDED = "__unrecorded__"
 
+/** Cost below this (in dollars) is float noise, not unattributed spend. */
+const REMAINDER_EPSILON = 1e-6
+
 export const USAGE_RANGES = ["today", "7d", "30d", "all"] as const
 export type UsageRange = (typeof USAGE_RANGES)[number]
 
@@ -212,13 +215,20 @@ export function summarizeUsage(history: HistoryItem[], options: UsageOptions): U
 		// (created before this was tracked) goes to a single "unrecorded" bucket.
 		const seenProviders = new Set<string>()
 		const seenModels = new Set<string>()
-		const entries = item.usageByModel?.length
-			? item.usageByModel
-			: [
-					{ requests: 0, tokensIn: tIn, tokensOut: tOut, cost } as NonNullable<
-						HistoryItem["usageByModel"]
-					>[number],
-				]
+		type Entry = NonNullable<HistoryItem["usageByModel"]>[number]
+		const entries: Entry[] = item.usageByModel?.length
+			? [...item.usageByModel]
+			: [{ requests: 0, tokensIn: tIn, tokensOut: tOut, cost }]
+
+		// The task's cost also covers work that has no provider or model of its own (condensing the context).
+		// Without this, the provider and model rows would add up to less than the headline total. The
+		// remainder goes to the "not recorded" rows. Below a cent-fraction it is rounding noise and is ignored,
+		// so a float residue cannot create a spurious priced row.
+		if (item.usageByModel?.length) {
+			const attributed = item.usageByModel.reduce((sum, e) => sum + (Number.isFinite(e.cost) ? e.cost : 0), 0)
+			const remainder = cost - attributed
+			if (remainder > REMAINDER_EPSILON) entries.push({ requests: 0, tokensIn: 0, tokensOut: 0, cost: remainder })
+		}
 
 		for (const e of entries) {
 			const entryTokens = e.tokensIn + e.tokensOut
