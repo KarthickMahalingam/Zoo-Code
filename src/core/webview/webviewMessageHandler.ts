@@ -2,6 +2,7 @@ import { safeWriteJson } from "../../utils/safeWriteJson"
 import * as path from "path"
 import * as os from "os"
 import * as fs from "fs/promises"
+import deepEqual from "fast-deep-equal"
 import { getRooDirectoriesForCwd } from "../../services/roo-config/index.js"
 import pWaitFor from "p-wait-for"
 import * as vscode from "vscode"
@@ -58,7 +59,7 @@ import {
 	handleOpenRuleFile,
 	handleOpenRulesDirectory,
 } from "./rulesMessageHandler"
-import { changeLanguage, getLanguage, t } from "../../i18n"
+import { changeLanguage, t } from "../../i18n"
 import { Package } from "../../shared/package"
 import { type RouterName, toRouterName } from "../../shared/api"
 import { MessageEnhancer } from "./messageEnhancer"
@@ -75,7 +76,7 @@ import { selectImages } from "../../integrations/misc/process-images"
 import { getTheme } from "../../integrations/theme/getTheme"
 import { searchWorkspaceFiles } from "../../services/search/file-search"
 import { fileExistsAtPath } from "../../utils/fs"
-import { getTtsEnabled, getTtsSpeed, playTts, setTtsEnabled, setTtsSpeed, stopTts } from "../../utils/tts"
+import { playTts, setTtsEnabled, setTtsSpeed, stopTts } from "../../utils/tts"
 import { searchCommits } from "../../utils/git"
 import { exportSettings, importSettingsWithFeedback } from "../config/importExport"
 import { getOpenAiModels } from "../../api/providers/openai"
@@ -113,7 +114,6 @@ const ALLOWED_VSCODE_SETTINGS = new Set(["terminal.integrated.inheritEnv"])
 let telemetrySettingQueue: Promise<void> = Promise.resolve()
 
 import { MarketplaceManager, MarketplaceItemType } from "../../services/marketplace"
-import type { McpHub } from "../../services/mcp/McpHub"
 import { setPendingTodoList } from "../tools/UpdateTodoListTool"
 import {
 	handleListWorktrees,
@@ -131,89 +131,11 @@ import {
 const handlerFor = (apiConfiguration: ProviderSettings, provider: RouterName): ApiHandler =>
 	buildApiHandler({ ...apiConfiguration, apiProvider: provider })
 
-/**
- * Settings saves run one at a time, across every provider (the sidebar and editor tabs share one `ContextProxy`
- * and one set of VS Code settings). A save snapshots what is stored, writes, and on failure restores the
- * snapshot. A second save interleaved with it would snapshot the first one's half-written values, and either
- * rollback could put stale values back over the other save's successful writes.
- */
-let settingsSaveChain: Promise<unknown> = Promise.resolve()
-
-/** Longest a save waits for the download and install of the destructive command guard. */
-const DCG_INSTALL_TIMEOUT_MS = 180_000
-/**
- * The MCP hub follows the stored `mcpEnabled` setting, but it is not part of a save. Connecting and disconnecting
- * servers is slow and cannot be cancelled, so it cannot be rolled back, and waiting for it would hold up the save
- * queue. A save therefore only stores the value; once the save has succeeded, the hub is asked to apply it, one
- * change at a time per hub.
- *
- * Every save that includes the setting applies it, even when the value did not change, as before: applying it
- * also reconnects servers that failed to start. A save that arrives while a change is running is applied once
- * more afterwards, with the latest stored value, so changes never overlap and the hub ends on the last value
- * that was stored.
- *
- * There is no time limit on a change. `handleMcpEnabledChange` cannot be cancelled, and a change that is given
- * up on could still finish and undo a newer one. A change that never finishes therefore delays later changes
- * to the hub until the extension reloads; it does not delay saves, which only store the value.
- */
-const mcpReconcilers = new WeakMap<McpHub, { desired: boolean; pending: boolean; running: boolean }>()
-const reconcileMcpEnabled = (provider: ClineProvider, hub: McpHub, enabled: boolean): void => {
-	const state = mcpReconcilers.get(hub) ?? { desired: enabled, pending: false, running: false }
-	mcpReconcilers.set(hub, state)
-	state.desired = enabled
-	state.pending = true
-	if (state.running) return
-
-	state.running = true
-	void (async () => {
-		try {
-			while (state.pending) {
-				state.pending = false
-				const target = state.desired
-				try {
-					await hub.handleMcpEnabledChange(target)
-				} catch (error) {
-					provider.log(
-						`[updateSettings] Could not ${target ? "enable" : "disable"} the MCP servers: ${error instanceof Error ? error.message : String(error)}`,
-					)
-				}
-			}
-		} finally {
-			state.running = false
-		}
-	})()
-}
-
-/**
- * Stops waiting for `work` after `ms`, so one stage that never settles cannot hold the save queue (and so every
- * later save, for every provider) forever. `work` itself cannot be cancelled: callers must only use this where a
- * late completion cannot change a setting after the save has been decided.
- */
-const withTimeout = <T>(work: Promise<T>, ms: number, what: string): Promise<T> => {
-	let timer: ReturnType<typeof setTimeout> | undefined
-	const timedOut = new Promise<never>((_resolve, reject) => {
-		timer = setTimeout(() => reject(new Error(`${what} timed out after ${Math.round(ms / 1000)}s`)), ms)
-	})
-	return Promise.race([work, timedOut]).finally(() => clearTimeout(timer))
-}
-
-export const webviewMessageHandler = (
+export const webviewMessageHandler = async (
 	provider: ClineProvider,
 	message: WebviewMessage,
 	marketplaceManager?: MarketplaceManager,
-): Promise<void> => {
-	if (message.type !== "updateSettings") return handleWebviewMessage(provider, message, marketplaceManager)
-
-	const run = settingsSaveChain.then(() => handleWebviewMessage(provider, message, marketplaceManager))
-	settingsSaveChain = run.catch(() => undefined)
-	return run
-}
-
-const handleWebviewMessage = async (
-	provider: ClineProvider,
-	message: WebviewMessage,
-	marketplaceManager?: MarketplaceManager,
-): Promise<void> => {
+) => {
 	// Utility functions provided for concise get/update of global state via contextProxy API.
 	const getGlobalState = <K extends keyof GlobalState>(key: K) => provider.contextProxy.getValue(key)
 	const updateGlobalState = async <K extends keyof GlobalState>(key: K, value: GlobalState[K]) =>
@@ -817,24 +739,26 @@ const handleWebviewMessage = async (
 			break
 
 		case "updateSettings": {
-			const updatedSettings = message.updatedSettings
-			const saveRequestId = message.requestId
-			if (updatedSettings) {
-				if (updatedSettings.destructiveCommandGuardEnabled === true) {
+			// A save is all-or-nothing as far as the stored values go. If a write fails, the values this save already
+			// stored are put back, so the webview can keep the user's edits and let them retry. Only stored values
+			// are restored: side effects that ran in place (the language, speech, the terminal, ...) are not undone.
+			// A value is put back only while it is still the one this save wrote, so a newer save's value is kept.
+			const written: Array<{ key: string; previous: unknown; wrote: unknown }> = []
+			let failure: string | undefined
+
+			try {
+				if (!message.updatedSettings) break
+
+				if (message.updatedSettings.destructiveCommandGuardEnabled === true) {
 					try {
 						const { ensureDcgInstalled } = await import("../../services/destructive-command-guard")
-						// A late install cannot change a setting: on a timeout the guard is switched off below.
-						const binaryPath = await withTimeout(
-							ensureDcgInstalled(provider.context.globalStorageUri.fsPath),
-							DCG_INSTALL_TIMEOUT_MS,
-							"Installing the destructive command guard",
-						)
+						const binaryPath = await ensureDcgInstalled(provider.context.globalStorageUri.fsPath)
 						if (!binaryPath) {
-							updatedSettings.destructiveCommandGuardEnabled = false
+							message.updatedSettings.destructiveCommandGuardEnabled = false
 							vscode.window.showErrorMessage(t("common:errors.destructiveCommandGuard.unavailable"))
 						}
 					} catch (error) {
-						updatedSettings.destructiveCommandGuardEnabled = false
+						message.updatedSettings.destructiveCommandGuardEnabled = false
 						vscode.window.showErrorMessage(
 							t("common:errors.destructiveCommandGuard.enableFailed", {
 								error: error instanceof Error ? error.message : String(error),
@@ -843,8 +767,8 @@ const handleWebviewMessage = async (
 					}
 				}
 
-				/** Applies one setting (its side effect, then the stored value). Returns whether a value was stored. */
-				const applySetting = async (key: string, value: unknown): Promise<boolean> => {
+				for (const [key, value] of Object.entries(message.updatedSettings)) {
+					const previous = provider.contextProxy.getValue(key as keyof RooCodeSettings)
 					let newValue = value
 
 					if (key === "language") {
@@ -934,10 +858,14 @@ const handleWebviewMessage = async (
 						Terminal.setExecaShellPath(value as string | undefined)
 					} else if (key === "mcpEnabled") {
 						newValue = value ?? true
-						// Only stored here. The hub is reconciled after the save has succeeded.
+						const mcpHub = provider.getMcpHub()
+
+						if (mcpHub) {
+							await mcpHub.handleMcpEnabledChange(newValue as boolean)
+						}
 					} else if (key === "experiments") {
 						if (!value) {
-							return false
+							continue
 						}
 
 						newValue = {
@@ -946,112 +874,51 @@ const handleWebviewMessage = async (
 						}
 					} else if (key === "customSupportPrompts") {
 						if (!value) {
-							return false
+							continue
 						}
 					}
 
-					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue as never)
-					return true
+					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
+					written.push({ key, previous, wrote: newValue })
 				}
+			} catch (error) {
+				failure = error instanceof Error ? error.message : String(error)
 
-				// Every key is snapshotted before it is written. If any write fails, the ones already applied are
-				// restored (stored value and side effect), so a save is all-or-nothing and the webview can keep
-				// the user's edits and let them retry.
-				// The command lists are also written to VS Code's global configuration, which is a different store from
-				// the one `contextProxy` reads (the webview shows a union of both). Restoring them from `contextProxy`
-				// would overwrite configuration-only entries, so their configuration value is snapshotted separately.
-				const commandListKeys = new Set(["allowedCommands", "deniedCommands"])
-				// Some settings are also applied to the running extension (the terminal, the host language, speech).
-				// Restoring the stored value does not put the running one back: when nothing was stored, most terminal
-				// setters skip `undefined` and the others apply their own fallback, which is not the runtime default
-				// (speech would turn on, the language would switch to English); and when something was stored, the
-				// running value can still differ from it. The value it was running with is snapshotted and put back
-				// instead. The stored value is restored separately.
-				const liveRuntimeValues: Record<string, () => unknown> = {
-					language: () => getLanguage(),
-					ttsEnabled: () => getTtsEnabled(),
-					ttsSpeed: () => getTtsSpeed(),
-					terminalShellIntegrationTimeout: () => Terminal.getShellIntegrationTimeout(),
-					terminalShellIntegrationDisabled: () => Terminal.getShellIntegrationDisabled(),
-					terminalCommandDelay: () => Terminal.getCommandDelay(),
-					terminalPowershellCounter: () => Terminal.getPowershellCounter(),
-					terminalZshClearEolMark: () => Terminal.getTerminalZshClearEolMark(),
-					terminalZshOhMy: () => Terminal.getTerminalZshOhMy(),
-					terminalZshP10k: () => Terminal.getTerminalZshP10k(),
-					terminalZdotdir: () => Terminal.getTerminalZdotdir(),
-					// Not skipped when unset, but an unset stored value is not the live one: the extension API can set
-					// these without storing them.
-					terminalProfile: () => Terminal.getTerminalProfile(),
-					execaShellPath: () => Terminal.getExecaShellPath(),
-				}
-				const written: Array<{
-					key: string
-					previous: unknown
-					configGlobal?: { value: unknown }
-					liveRuntime?: { value: unknown }
-				}> = []
-				let failure: string | undefined
-				try {
-					for (const [key, value] of Object.entries(updatedSettings)) {
-						const entry: (typeof written)[number] = {
-							key,
-							previous: provider.contextProxy.getValue(key as keyof RooCodeSettings),
-						}
-						if (commandListKeys.has(key)) {
-							const inspected = vscode.workspace.getConfiguration(Package.name).inspect(key)
-							entry.configGlobal = { value: inspected?.globalValue }
-						}
-						if (key in liveRuntimeValues) entry.liveRuntime = { value: liveRuntimeValues[key]() }
-						written.push(entry)
-						await applySetting(key, value)
-					}
-				} catch (error) {
-					failure = error instanceof Error ? error.message : String(error)
-					for (const { key, previous, configGlobal, liveRuntime } of written.reverse()) {
-						try {
-							if (configGlobal) {
-								await vscode.workspace
-									.getConfiguration(Package.name)
-									.update(key, configGlobal.value, vscode.ConfigurationTarget.Global)
-							} else {
-								await applySetting(key, liveRuntime ? liveRuntime.value : previous)
-							}
-							// Put back exactly what was stored, whatever defaulting the side effect applied.
+				for (const { key, previous, wrote } of written.reverse()) {
+					try {
+						if (deepEqual(provider.contextProxy.getValue(key as keyof RooCodeSettings), wrote)) {
 							await provider.contextProxy.setValue(key as keyof RooCodeSettings, previous as never)
-						} catch (rollbackError) {
-							provider.log(
-								`[updateSettings] Could not restore ${key}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
-							)
 						}
+					} catch (rollbackError) {
+						provider.log(
+							`[updateSettings] Could not restore ${key}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+						)
 					}
-					provider.log(`[updateSettings] Save failed and was rolled back: ${failure}`)
-					vscode.window.showErrorMessage(t("common:errors.settings_save_failed", { error: failure }))
 				}
 
-				// The save is decided. Bring the MCP hub in line with the value that was stored; not awaited.
-				if (failure === undefined && "mcpEnabled" in updatedSettings) {
-					const hub = provider.getMcpHub()
-					if (hub) reconcileMcpEnabled(provider, hub, updatedSettings.mcpEnabled ?? true)
-				}
-
-				// Notification phase: the outcome is already decided by the writes above. A failed refresh must neither
-				// undo a stored save nor keep the webview from receiving the result (it waits on it to re-enable Save).
-				try {
-					await provider.postStateToWebview()
-				} catch (error) {
-					provider.log(
-						`[updateSettings] Could not refresh the webview state: ${error instanceof Error ? error.message : String(error)}`,
-					)
-				}
-				if (saveRequestId) {
-					await provider.postMessageToWebview({
-						type: "settingsSaveResult",
-						requestId: saveRequestId,
-						success: failure === undefined,
-						...(failure === undefined ? {} : { error: failure }),
-					})
-				}
+				provider.log(`[updateSettings] Save failed and was rolled back: ${failure}`)
+				vscode.window.showErrorMessage(t("common:errors.settings_save_failed", { error: failure }))
 			}
+
+			// The outcome is decided above. A failed refresh must neither undo a stored save nor keep the webview
+			// from receiving the result: it waits for it to re-enable Save.
+			try {
+				await provider.postStateToWebview()
+			} catch (error) {
+				provider.log(
+					`[updateSettings] Could not refresh the webview state: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			}
+
+			if (message.requestId) {
+				await provider.postMessageToWebview({
+					type: "settingsSaveResult",
+					requestId: message.requestId,
+					success: failure === undefined,
+					...(failure === undefined ? {} : { error: failure }),
+				})
+			}
+
 			break
 		}
 

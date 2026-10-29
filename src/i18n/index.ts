@@ -19,13 +19,6 @@ export function changeLanguage(language: string): void {
 }
 
 /**
- * The language the extension host is currently using
- */
-export function getLanguage(): string | undefined {
-	return i18next.language
-}
-
-/**
  * Translate a string using i18next
  *
  * @param key The translation key, can use namespace with colon, e.g. "common:welcome"
