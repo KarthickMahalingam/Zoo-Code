@@ -228,7 +228,7 @@ export async function importSettingsFromPath(
 		// They will be imported automatically with the config - no special handling needed
 
 		await providerSettingsManager.import(providerProfiles)
-		await contextProxy.setValues(sanitizedGlobalSettings)
+		await setValuesRestoringDisplaySettings(contextProxy, sanitizedGlobalSettings)
 
 		// Set the current provider.
 		const currentProviderName = providerProfiles.currentApiConfigName
@@ -261,6 +261,34 @@ export async function importSettingsFromPath(
 		}
 
 		return { success: false, error }
+	}
+}
+
+const DISPLAY_SETTING_KEYS = ["timeFormat", "dateFormat", "showRelativeTimes"] as const
+
+/**
+ * Writes global settings; if the write rejects, display settings written by it
+ * are restored so they are imported all-or-nothing. The original error is rethrown.
+ */
+async function setValuesRestoringDisplaySettings(contextProxy: ContextProxy, settings: GlobalSettings) {
+	const snapshot = DISPLAY_SETTING_KEYS.filter((key) => key in settings).map(
+		(key) => [key, contextProxy.getValue(key)] as const,
+	)
+
+	try {
+		await contextProxy.setValues(settings)
+	} catch (error) {
+		for (const [key, previous] of snapshot) {
+			const current = contextProxy.getValue(key)
+			// Only undo our own write; a differing value means a concurrent save.
+			if (current === previous || current !== settings[key]) continue
+			try {
+				await contextProxy.setValue(key, previous)
+			} catch (restoreError) {
+				console.error(`Failed to restore setting "${key}" after import failure:`, restoreError)
+			}
+		}
+		throw error
 	}
 }
 

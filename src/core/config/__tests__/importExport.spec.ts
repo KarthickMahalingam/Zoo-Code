@@ -251,6 +251,145 @@ describe("importExport", () => {
 		})
 	})
 
+	describe("importSettingsFromPath display settings atomicity", () => {
+		type Stored = string | boolean | undefined
+		let stored: Map<string, Stored>
+		let failingKeys: Set<string>
+		let failingRestoreKeys: Set<string>
+
+		const importWith = (globalSettings: Record<string, unknown>) => {
+			;(fs.readFile as Mock).mockResolvedValue(
+				JSON.stringify({
+					providerProfiles: {
+						currentApiConfigName: "test",
+						apiConfigs: {
+							test: { apiProvider: providerIdentifiers.openai, apiKey: "test-key", id: "test-id" },
+						},
+					},
+					globalSettings,
+				}),
+			)
+			return importSettingsFromPath("/mock/path/settings.json", {
+				providerSettingsManager: mockProviderSettingsManager,
+				contextProxy: mockContextProxy,
+				customModesManager: mockCustomModesManager,
+			})
+		}
+
+		beforeEach(() => {
+			stored = new Map<string, Stored>([
+				["timeFormat", "auto"],
+				["dateFormat", "auto"],
+				["showRelativeTimes", true],
+				["mode", "architect"],
+			])
+			failingKeys = new Set<string>()
+			failingRestoreKeys = new Set<string>()
+			mockProviderSettingsManager.export.mockResolvedValue({
+				currentApiConfigName: "default",
+				apiConfigs: { default: { apiProvider: providerIdentifiers.anthropic, id: "default-id" } },
+			})
+			mockProviderSettingsManager.import.mockResolvedValue(undefined)
+			mockProviderSettingsManager.listConfig.mockResolvedValue([])
+			mockContextProxy.setProviderSettings.mockResolvedValue(undefined)
+
+			// Map-backed double mirroring ContextProxy.setValues (Promise.all over setValue).
+			// The casts bridge the generic ContextProxy signatures to this untyped Map store.
+			const getValue = (key: string): Stored => stored.get(key)
+			const setValue = async (key: string, value: Stored) => {
+				if (failingKeys.has(key)) throw new Error(`write failed: ${key}`)
+				if (failingRestoreKeys.has(key) && stored.get(key) !== undefined && value === "auto") {
+					throw new Error(`restore failed: ${key}`)
+				}
+				stored.set(key, value)
+			}
+			mockContextProxy.getValue.mockImplementation(getValue as unknown as typeof mockContextProxy.getValue)
+			mockContextProxy.setValue.mockImplementation(setValue as unknown as typeof mockContextProxy.setValue)
+			mockContextProxy.setValues.mockImplementation((async (values: Record<string, unknown>) => {
+				await Promise.all(Object.entries(values).map(([k, v]) => setValue(k, v as Stored)))
+			}) as unknown as typeof mockContextProxy.setValues)
+		})
+
+		const display = { timeFormat: "24h", dateFormat: "ymd", showRelativeTimes: false }
+
+		it("writes all three display settings on success", async () => {
+			const result = await importWith(display)
+
+			expect(result).toMatchObject({ success: true })
+			expect(stored.get("timeFormat")).toBe("24h")
+			expect(stored.get("dateFormat")).toBe("ymd")
+			expect(stored.get("showRelativeTimes")).toBe(false)
+		})
+
+		it("restores written display settings and reports the original error when one write fails", async () => {
+			failingKeys.add("dateFormat")
+
+			const result = await importWith(display)
+
+			expect(result).toEqual({ success: false, error: "write failed: dateFormat" })
+			expect(stored.get("timeFormat")).toBe("auto")
+			expect(stored.get("dateFormat")).toBe("auto")
+			expect(stored.get("showRelativeTimes")).toBe(true)
+		})
+
+		it("tolerates a failing restore and still reports the original error", async () => {
+			const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+			failingKeys.add("dateFormat")
+			failingRestoreKeys.add("timeFormat")
+
+			const result = await importWith(display)
+
+			expect(result).toEqual({ success: false, error: "write failed: dateFormat" })
+			expect(stored.get("timeFormat")).toBe("24h")
+			expect(stored.get("showRelativeTimes")).toBe(true)
+			expect(consoleError).toHaveBeenCalledWith(
+				'Failed to restore setting "timeFormat" after import failure:',
+				expect.any(Error),
+			)
+			consoleError.mockRestore()
+		})
+
+		it("does not undo a display setting changed concurrently after the import wrote it", async () => {
+			mockContextProxy.setValues.mockImplementationOnce(async () => {
+				stored.set("timeFormat", "12h")
+				stored.set("showRelativeTimes", false)
+				stored.set("dateFormat", "dmy")
+				throw new Error("write failed")
+			})
+
+			const result = await importWith(display)
+
+			expect(result).toEqual({ success: false, error: "write failed" })
+			expect(stored.get("timeFormat")).toBe("12h")
+			expect(stored.get("dateFormat")).toBe("dmy")
+			// Matches what the import wrote, so it is rolled back.
+			expect(stored.get("showRelativeTimes")).toBe(true)
+			expect(mockContextProxy.setValue).not.toHaveBeenCalledWith("timeFormat", "auto")
+			expect(mockContextProxy.setValue).not.toHaveBeenCalledWith("dateFormat", "auto")
+		})
+
+		it("leaves display settings absent from the file untouched on failure", async () => {
+			failingKeys.add("dateFormat")
+
+			await importWith({ dateFormat: "ymd" })
+
+			expect(stored.get("timeFormat")).toBe("auto")
+			expect(stored.get("showRelativeTimes")).toBe(true)
+			expect(mockContextProxy.setValue).not.toHaveBeenCalledWith("timeFormat", expect.anything())
+			expect(mockContextProxy.setValue).not.toHaveBeenCalledWith("showRelativeTimes", expect.anything())
+		})
+
+		it("does not restore non-display settings when their write fails", async () => {
+			failingKeys.add("mode")
+
+			const result = await importWith({ ...display, mode: "code" })
+
+			expect(result).toEqual({ success: false, error: "write failed: mode" })
+			expect(stored.get("mode")).toBe("architect")
+			expect(mockContextProxy.setValue).not.toHaveBeenCalledWith("mode", "architect")
+		})
+	})
+
 	describe("importSettings", () => {
 		it("should return success: false when user cancels file selection", async () => {
 			;(vscode.window.showOpenDialog as Mock).mockResolvedValue(undefined)
