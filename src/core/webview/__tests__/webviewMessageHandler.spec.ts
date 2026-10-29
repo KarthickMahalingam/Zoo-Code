@@ -2165,6 +2165,95 @@ describe("webviewMessageHandler - the appearance settings are saved all-or-nothi
 		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("plain restore failure"))
 	})
 
+	describe("values from the webview are checked before anything is done", () => {
+		const bounds = {
+			interfaceFontScale: { min: 50, max: 200 },
+			terminalFontSize: { min: 8, max: 32 },
+			editorFontSize: { min: 8, max: 32 },
+			spacingScale: { min: 50, max: 200 },
+		} as const
+		const keys = Object.keys(bounds) as Array<keyof typeof bounds>
+
+		it.each(
+			keys.flatMap((key) =>
+				[
+					["below the minimum", bounds[key].min - 1],
+					["above the maximum", bounds[key].max + 1],
+					["zero", 0],
+					["negative", -10],
+					["fractional", bounds[key].min + 0.5],
+					["not a number", Number.NaN],
+					["infinite", Number.POSITIVE_INFINITY],
+					["a string", "20"],
+					["a boolean", true],
+					["an object", { value: 20 }],
+					["an array", [20]],
+				].map(([name, value]) => [key, name, value] as const),
+			),
+		)("rejects %s when it is %s", async (key, _name, value) => {
+			await save({ [key]: value })
+
+			expect(mockClineProvider.contextProxy.setValue).not.toHaveBeenCalled()
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+				type: "settingsSaveResult",
+				requestId: "save-1",
+				success: false,
+				error: `Invalid value for ${key}`,
+			})
+			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("common:errors.settings_save_failed")
+		})
+
+		it("changes nothing at all when one value is invalid, not even the valid ones sent with it", async () => {
+			vi.mocked(ensureDcgInstalled).mockClear()
+
+			await save({
+				interfaceFontScale: 120,
+				terminalFontSize: 500,
+				soundEnabled: true,
+				destructiveCommandGuardEnabled: true,
+			})
+
+			expect(mockClineProvider.contextProxy.setValue).not.toHaveBeenCalled()
+			expect(stored).toMatchObject({ interfaceFontScale: 100, soundEnabled: false })
+			// No side effect ran either.
+			expect(ensureDcgInstalled).not.toHaveBeenCalled()
+		})
+
+		it("does not echo the invalid value back", async () => {
+			await save({ terminalFontSize: "x".repeat(10_000) })
+
+			const posted = JSON.stringify(vi.mocked(mockClineProvider.postMessageToWebview).mock.calls)
+			expect(posted).not.toContain("xxxxxxxxxx")
+		})
+
+		it.each(keys.flatMap((key) => [bounds[key].min, bounds[key].max].map((value) => [key, value] as const)))(
+			"accepts %s at its bound %s",
+			async (key, value) => {
+				await save({ [key]: value })
+
+				expect(stored[key]).toBe(value)
+				expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+					expect.objectContaining({ success: true }),
+				)
+			},
+		)
+
+		it.each(keys)("accepts a reset of %s (null)", async (key) => {
+			await save({ [key]: null })
+
+			expect(stored[key]).toBeNull()
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ success: true }),
+			)
+		})
+
+		it("does not check settings that are not appearance values", async () => {
+			await save({ soundEnabled: true, writeDelayMs: -5 })
+
+			expect(stored).toMatchObject({ soundEnabled: true, writeDelayMs: -5 })
+		})
+	})
+
 	describe("a failure while writing another setting", () => {
 		it("puts the appearance values back, tells the webview, and then follows the existing error path", async () => {
 			failWriteOf("soundEnabled", true)

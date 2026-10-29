@@ -30,6 +30,7 @@ import {
 	RouterModelsMessageType,
 	VsCodeLmModelsMessageType,
 	isTelemetryOptedIn,
+	globalSettingsSchema,
 } from "@roo-code/types"
 import { customToolRegistry } from "@roo-code/core"
 import { CloudService } from "@roo-code/cloud"
@@ -140,6 +141,18 @@ const ROLLBACK_SETTING_KEYS = new Set<string>([
 	"editorFontSize",
 	"spacingScale",
 ])
+
+/**
+ * What the webview may send for each appearance value: the schema the setting is defined with (an integer within
+ * its bounds, or null/unset for a reset). The webview is not trusted, and its own limits (the stepper clamps the
+ * numbers) do not bind a message that was written by hand.
+ */
+const APPEARANCE_VALUE_SCHEMAS = {
+	interfaceFontScale: globalSettingsSchema.shape.interfaceFontScale,
+	terminalFontSize: globalSettingsSchema.shape.terminalFontSize,
+	editorFontSize: globalSettingsSchema.shape.editorFontSize,
+	spacingScale: globalSettingsSchema.shape.spacingScale,
+}
 
 /** One write of a rolled-back setting by a save, linked to the writes of other saves that overlap it. */
 interface SettingWrite {
@@ -808,6 +821,18 @@ export const webviewMessageHandler = async (
 
 			try {
 				if (!message.updatedSettings) break
+
+				// Checked before anything else happens, so an invalid value changes nothing: no side effect runs and
+				// no setting is stored, not even the valid ones sent with it.
+				for (const [key, schema] of Object.entries(APPEARANCE_VALUE_SCHEMAS)) {
+					if (
+						key in message.updatedSettings &&
+						!schema.safeParse(Reflect.get(message.updatedSettings, key)).success
+					) {
+						failedKey = key
+						throw new Error(`Invalid value for ${key}`)
+					}
+				}
 
 				if (message.updatedSettings.destructiveCommandGuardEnabled === true) {
 					try {
