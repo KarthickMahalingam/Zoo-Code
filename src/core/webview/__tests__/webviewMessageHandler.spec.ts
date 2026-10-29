@@ -2274,6 +2274,31 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 			)
 		})
 
+		it("fails the save when the hub rejects, and later hub changes still run", async () => {
+			const calls: boolean[] = []
+			useMcpHub(async (enabled) => {
+				calls.push(enabled)
+				if (calls.length === 1) throw new Error("transport closed")
+			})
+			stored.mcpEnabled = true
+
+			await webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				requestId: "save-hub-error",
+				updatedSettings: { mcpEnabled: false },
+			})
+
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+				type: "settingsSaveResult",
+				requestId: "save-hub-error",
+				success: false,
+				error: "transport closed",
+			})
+			// The failed request did not stop the rollback's request from running, in order.
+			expect(calls).toEqual([false, true])
+			expect(stored.mcpEnabled).toBe(true)
+		})
+
 		it("keeps hub changes in the order they were made", async () => {
 			const calls: boolean[] = []
 			useMcpHub(async (enabled) => {
