@@ -29,6 +29,7 @@ import {
 	OpenAiModelsMessageType,
 	RouterModelsMessageType,
 	VsCodeLmModelsMessageType,
+	globalSettingsSchema,
 	isTelemetryOptedIn,
 } from "@roo-code/types"
 import { customToolRegistry } from "@roo-code/core"
@@ -41,6 +42,7 @@ import {
 	beginSettingWrite,
 	finishSettingWrites,
 	isTrackedSetting,
+	performSettingWrite,
 	undoSettingWrite,
 	type SettingWrite,
 } from "../config/settingWrites"
@@ -136,6 +138,16 @@ import {
 
 const handlerFor = (apiConfiguration: ProviderSettings, provider: RouterName): ApiHandler =>
 	buildApiHandler({ ...apiConfiguration, apiProvider: provider })
+
+/**
+ * What the webview may send for each display value: the schema the setting is defined with. The webview is not
+ * trusted, and its own controls do not bind a message that was written by hand.
+ */
+const DISPLAY_VALUE_SCHEMAS = {
+	timeFormat: globalSettingsSchema.shape.timeFormat,
+	dateFormat: globalSettingsSchema.shape.dateFormat,
+	showRelativeTimes: globalSettingsSchema.shape.showRelativeTimes,
+}
 
 export const webviewMessageHandler = async (
 	provider: ClineProvider,
@@ -757,6 +769,18 @@ export const webviewMessageHandler = async (
 			try {
 				if (!message.updatedSettings) break
 
+				// Checked before anything else happens, so an invalid value changes nothing: no side effect runs and
+				// no setting is stored, not even the valid ones sent with it.
+				for (const [key, schema] of Object.entries(DISPLAY_VALUE_SCHEMAS)) {
+					if (
+						key in message.updatedSettings &&
+						!schema.safeParse(Reflect.get(message.updatedSettings, key)).success
+					) {
+						failedKey = key
+						throw new Error(`Invalid value for ${key}`)
+					}
+				}
+
 				if (message.updatedSettings.destructiveCommandGuardEnabled === true) {
 					try {
 						const { ensureDcgInstalled } = await import("../../services/destructive-command-guard")
@@ -887,7 +911,12 @@ export const webviewMessageHandler = async (
 						}
 					}
 
-					if (isTrackedSetting(key)) written.push(beginSettingWrite(key, previous, newValue))
+					if (isTrackedSetting(key)) {
+						const write = beginSettingWrite(key, previous, newValue)
+						written.push(write)
+						await performSettingWrite(provider.contextProxy, write)
+						continue
+					}
 
 					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
 				}

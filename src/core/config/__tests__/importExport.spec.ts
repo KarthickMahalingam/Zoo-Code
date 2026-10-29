@@ -330,7 +330,6 @@ describe("importExport", () => {
 		it("reports a failure that is not an Error by its text when a restore also fails", async () => {
 			const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 			mockContextProxy.setValues.mockImplementationOnce(async () => {
-				stored.set("timeFormat", "24h")
 				throw "plain failure"
 			})
 			failingRestoreKeys.add("timeFormat")

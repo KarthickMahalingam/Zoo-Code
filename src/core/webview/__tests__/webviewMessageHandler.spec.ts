@@ -82,6 +82,7 @@ import * as vsCodeLmProvider from "../../../api/providers/vscode-lm"
 import * as copilotProvider from "../../../api/providers/github-copilot"
 
 import { webviewMessageHandler } from "../webviewMessageHandler"
+import { settingWriteBookkeepingSize } from "../../config/settingWrites"
 import { registerCopilotModelBroadcast } from "../../../services/language-models/copilotModelBroadcast"
 import type { ClineProvider } from "../ClineProvider"
 import { flushModels, getModels } from "../../../api/providers/fetchers/modelCache"
@@ -1944,6 +1945,129 @@ describe("webviewMessageHandler - the display settings are saved all-or-nothing"
 		expect(stored.showRelativeTimes).toBeUndefined()
 	})
 
+	describe("the values are validated before anything is stored", () => {
+		it.each([
+			["timeFormat", "13h"],
+			["timeFormat", 24],
+			["dateFormat", "dd/mm"],
+			["showRelativeTimes", "yes"],
+		])("refuses %s = %j, and stores nothing, not even the valid values sent with it", async (key, value) => {
+			await save({ [key]: value, soundEnabled: true })
+
+			expect(mockClineProvider.contextProxy.setValue).not.toHaveBeenCalled()
+			expect(stored).toMatchObject({ timeFormat: "auto", dateFormat: "auto", soundEnabled: false })
+		})
+
+		it.each([
+			["timeFormat", "12h"],
+			["dateFormat", "mdy"],
+			["showRelativeTimes", true],
+			["timeFormat", undefined],
+		])("accepts %s = %j", async (key, value) => {
+			await save({ [key]: value })
+
+			expect(stored[key]).toBe(value)
+		})
+	})
+
+	describe("writes to one setting are ordered, down to durable storage", () => {
+		const slowStore = () => {
+			const events: string[] = []
+			const gates = new Map<string, () => void>()
+			vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(
+				async (key: string, value: unknown) => {
+					events.push(`start ${key}=${String(value)}`)
+					await new Promise<void>((resolve) => gates.set(`${key}=${String(value)}`, resolve))
+					stored[key] = value
+					events.push(`end ${key}=${String(value)}`)
+				},
+			)
+			const release = async (what: string) => {
+				await vi.waitFor(() => expect(gates.has(what)).toBe(true))
+				gates.get(what)!()
+				gates.delete(what)
+			}
+			return { events, release }
+		}
+
+		it("does not start a newer save's write of a key before the older one has reached storage", async () => {
+			const { events, release } = slowStore()
+
+			const a = save({ timeFormat: "12h" })
+			await vi.waitFor(() => expect(events).toContain("start timeFormat=12h"))
+			const b = save({ timeFormat: "24h" })
+			await new Promise((resolve) => setTimeout(resolve, 20))
+			expect(events).not.toContain("start timeFormat=24h")
+
+			await release("timeFormat=12h")
+			await release("timeFormat=24h")
+			await Promise.all([a, b])
+
+			expect(events).toEqual([
+				"start timeFormat=12h",
+				"end timeFormat=12h",
+				"start timeFormat=24h",
+				"end timeFormat=24h",
+			])
+			expect(stored.timeFormat).toBe("24h")
+		})
+
+		it("does not make writes of different keys wait for each other", async () => {
+			const { events, release } = slowStore()
+
+			const a = save({ timeFormat: "12h" })
+			await vi.waitFor(() => expect(events).toContain("start timeFormat=12h"))
+			const b = save({ dateFormat: "ymd" })
+			await vi.waitFor(() => expect(events).toContain("start dateFormat=ymd"))
+
+			await release("dateFormat=ymd")
+			await release("timeFormat=12h")
+			await Promise.all([a, b])
+		})
+
+		it("a failed save restores what the save before it wrote, even if that was still queued when it registered", async () => {
+			const { events, release } = slowStore()
+
+			const q = save({ timeFormat: "12h" })
+			await vi.waitFor(() => expect(events).toContain("start timeFormat=12h"))
+			const p = save({ timeFormat: "24h" })
+			await new Promise((resolve) => setTimeout(resolve, 10))
+			failWriteOf("soundEnabled", true)
+			const a = save({ timeFormat: "auto", soundEnabled: true })
+			await new Promise((resolve) => setTimeout(resolve, 10))
+
+			await release("timeFormat=12h")
+			await release("timeFormat=24h")
+			await release("timeFormat=auto")
+			// A fails on soundEnabled, and its restore of timeFormat is a write too.
+			await release("timeFormat=24h")
+			await Promise.all([q, p, a.catch(() => undefined)])
+
+			// P succeeded, so A's failure puts back P's value, not Q's.
+			expect(stored.timeFormat).toBe("24h")
+		})
+	})
+
+	describe("nothing is kept about writes once the saves are over", () => {
+		const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+		it("after a save that succeeded", async () => {
+			await save({ timeFormat: "24h", dateFormat: "ymd" })
+			await settled()
+
+			expect(settingWriteBookkeepingSize()).toEqual({ latestWrites: 0, queuedKeys: 0 })
+		})
+
+		it("after a save that failed and was rolled back", async () => {
+			failWriteOf("showRelativeTimes", false)
+
+			await save({ timeFormat: "24h", showRelativeTimes: false })
+			await settled()
+
+			expect(settingWriteBookkeepingSize()).toEqual({ latestWrites: 0, queuedKeys: 0 })
+		})
+	})
+
 	describe("two saves at once", () => {
 		it("a failed save does not undo another save that wrote the same value", async () => {
 			let releaseFailure!: () => void
@@ -2022,29 +2146,31 @@ describe("webviewMessageHandler - the display settings are saved all-or-nothing"
 			const release: Record<"a" | "b" | "c", () => void> = { a: () => {}, b: () => {}, c: () => {} }
 			const gate = (name: "a" | "b" | "c") => new Promise<void>((resolve) => (release[name] = resolve))
 			const gates = { a: gate("a"), b: gate("b"), c: gate("c") }
-			failWriteOf("dateFormat", "ymd", () => gates.a)
-			failWriteOf("dateFormat", "dmy", () => gates.b)
-			failWriteOf("showRelativeTimes", false, () => gates.c)
+			// Each save fails on a setting that is not tracked, so a held failure does not hold up the other saves'
+			// writes of the display settings, which are queued per key.
+			failWriteOf("soundEnabled", true, () => gates.a)
+			failWriteOf("soundVolume", 0.5, () => gates.b)
+			failWriteOf("ttsEnabled", true, () => gates.c)
 
-			const a = save({ timeFormat: "12h", dateFormat: "ymd" })
+			const a = save({ timeFormat: "12h", soundEnabled: true })
 			await vi.waitFor(() => expect(stored.timeFormat).toBe("12h"))
-			const b = save({ timeFormat: "24h", dateFormat: "dmy" })
+			const b = save({ timeFormat: "24h", soundVolume: 0.5 })
 			await vi.waitFor(() => expect(stored.timeFormat).toBe("24h"))
-			const c = save({ timeFormat: "auto", showRelativeTimes: false })
+			const c = save({ timeFormat: "auto", ttsEnabled: true })
 			await vi.waitFor(() =>
 				expect(mockClineProvider.contextProxy.setValue).toHaveBeenCalledWith("timeFormat", "auto"),
 			)
 
 			release.b()
-			await b
+			await b.catch(() => undefined) // a failed write of a setting that is not tracked is rethrown
 			expect(stored.timeFormat).toBe("auto") // the newest is still pending
 
 			release.c()
-			await c
+			await c.catch(() => undefined) // a failed write of a setting that is not tracked is rethrown
 			expect(stored.timeFormat).toBe("12h") // the oldest save's pending value, not the middle one's
 
 			release.a()
-			await a
+			await a.catch(() => undefined) // a failed write of a setting that is not tracked is rethrown
 			expect(stored.timeFormat).toBe("auto") // from before all three
 		})
 

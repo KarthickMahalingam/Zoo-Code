@@ -23,6 +23,7 @@ import {
 	beginSettingWrite,
 	finishSettingWrites,
 	isTrackedSetting,
+	performSettingWrite,
 	undoSettingWrite,
 } from "./settingWrites"
 import { CustomModesManager } from "./CustomModesManager"
@@ -290,7 +291,7 @@ async function setValuesRestoringDisplaySettings(contextProxy: ContextProxy, set
 
 	const results = await Promise.allSettled([
 		contextProxy.setValues(others),
-		...displayKeys.map((key) => contextProxy.setValue(key, settings[key])),
+		...writes.map((write) => performSettingWrite(contextProxy, write)),
 	])
 	const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
 	if (!failed) {

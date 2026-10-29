@@ -15,6 +15,8 @@ export interface SettingWrite {
 	key: TrackedSettingKey
 	/** What was stored when this write was made. With overlapping writes, this can be another write's pending value. */
 	previous: unknown
+	/** `previous` was handed over by a write that was rolled back, so it is not read again when this write starts. */
+	inherited?: boolean
 	wrote: unknown
 	/** The write before this one that has not finished yet, and the one after it. */
 	prev?: SettingWrite
@@ -41,9 +43,57 @@ export const beginSettingWrite = (key: TrackedSettingKey, previous: unknown, wro
 	return write
 }
 
-/** The save or import that made these writes succeeded. */
+/**
+ * The writes to one key, one at a time, from every save, import and rollback, across providers. A write is only
+ * started once the one before it has reached durable storage, so a slower write cannot complete after a newer one
+ * and overwrite it, and a rollback cannot land after a newer write has started. A write that fails does not hold up
+ * the ones behind it.
+ */
+const settingWriteQueues = new Map<TrackedSettingKey, Promise<void>>()
+
+const queuedSettingWrite = (key: TrackedSettingKey, write: () => Promise<unknown>): Promise<void> => {
+	const run = (settingWriteQueues.get(key) ?? Promise.resolve()).then(async () => {
+		await write()
+	})
+	const tail = run.catch(() => undefined)
+	settingWriteQueues.set(key, tail)
+	void tail.then(() => {
+		if (settingWriteQueues.get(key) === tail) settingWriteQueues.delete(key)
+	})
+	return run
+}
+
+/** @internal test hook: how much is kept about writes. It is nothing once the saves and imports are over. */
+export const settingWriteBookkeepingSize = () => ({
+	latestWrites: lastWriteOfSetting.size,
+	queuedKeys: settingWriteQueues.size,
+})
+
+/**
+ * Stores a recorded write, in line behind the writes of its key. What it replaces is read when it starts, after the
+ * writes before it have reached storage, unless a rolled-back write handed its own value over.
+ */
+export const performSettingWrite = (contextProxy: ContextProxy, write: SettingWrite): Promise<void> =>
+	queuedSettingWrite(write.key, () => {
+		if (!write.inherited) write.previous = contextProxy.getValue(write.key as keyof RooCodeSettings)
+		return contextProxy.setValue(write.key as keyof RooCodeSettings, write.wrote as never)
+	})
+
+/** Takes a write out of its chain, joining the writes on either side of it. */
+const unlinkSettingWrite = (write: SettingWrite) => {
+	if (write.prev) write.prev.next = write.next
+	if (write.next) write.next.prev = write.prev
+	write.prev = undefined
+	write.next = undefined
+}
+
+/** The save or import that made these writes succeeded. Nothing is kept about them once they are over. */
 export const finishSettingWrites = (writes: SettingWrite[]) => {
-	for (const write of writes) write.done = true
+	for (const write of writes) {
+		write.done = true
+		if (lastWriteOfSetting.get(write.key) === write) lastWriteOfSetting.delete(write.key)
+		unlinkSettingWrite(write)
+	}
 }
 
 /** Puts a failed write back, unless another write has superseded it (see `lastWriteOfSetting`). */
@@ -53,21 +103,23 @@ export const undoSettingWrite = async (contextProxy: ContextProxy, write: Settin
 
 	if (lastWriteOfSetting.get(key) !== write) {
 		// A newer write exists. Make it restore the value from before this one if it fails as well.
-		const { next } = write
-		if (next && !next.done) {
-			next.previous = write.previous
-			next.prev = write.prev
-			if (write.prev) write.prev.next = next
+		if (write.next && !write.next.done) {
+			write.next.previous = write.previous
+			write.next.inherited = true
 		}
-
+		unlinkSettingWrite(write)
 		return
 	}
 
 	// The write before this one is pending again: it is the latest, and the value now stored is its value.
-	if (write.prev && !write.prev.done) lastWriteOfSetting.set(key, write.prev)
+	const { prev } = write
+	if (prev && !prev.done) lastWriteOfSetting.set(key, prev)
 	else lastWriteOfSetting.delete(key)
+	unlinkSettingWrite(write)
 
-	if (contextProxy.getValue(key as keyof RooCodeSettings) === write.wrote) {
-		await contextProxy.setValue(key as keyof RooCodeSettings, write.previous as never)
-	}
+	await queuedSettingWrite(key, async () => {
+		if (contextProxy.getValue(key as keyof RooCodeSettings) === write.wrote) {
+			await contextProxy.setValue(key as keyof RooCodeSettings, write.previous as never)
+		}
+	})
 }
