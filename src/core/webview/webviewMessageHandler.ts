@@ -141,23 +141,41 @@ let settingsSaveChain: Promise<unknown> = Promise.resolve()
 
 /** Longest a save waits for the download and install of the destructive command guard. */
 const DCG_INSTALL_TIMEOUT_MS = 180_000
-/** Longest a save waits for the MCP hub to connect or disconnect its servers. */
-const MCP_ENABLE_TIMEOUT_MS = 30_000
-
 /**
- * MCP enable/disable requests, one at a time per hub, in the order they were made. `handleMcpEnabledChange` cannot
- * be cancelled, so a request that outlives its timeout may still be running when the rollback asks for the previous
- * state. Running them one after the other (not together) means the rollback lands after it and the hub ends in the
- * state the save left it in, even if that is later than the save's own wait.
+ * The MCP hub follows the stored `mcpEnabled` setting, but it is not part of a save. Connecting and disconnecting
+ * servers is slow and cannot be cancelled, so it cannot be rolled back, and waiting for it would hold up the save
+ * queue. A save therefore only stores the value; once the save has succeeded, this reconciles the hub with the
+ * latest stored value, one change at a time per hub. A later save only changes what the loop applies next, so
+ * changes never overlap and the hub always ends on the last value that was stored.
  */
-const mcpEnableChains = new WeakMap<McpHub, Promise<unknown>>()
-const changeMcpEnabled = (hub: McpHub, enabled: boolean): Promise<void> => {
-	const run = (mcpEnableChains.get(hub) ?? Promise.resolve()).then(() => hub.handleMcpEnabledChange(enabled))
-	mcpEnableChains.set(
-		hub,
-		run.catch(() => undefined),
-	)
-	return run
+const mcpReconcilers = new WeakMap<McpHub, { desired: boolean; applied?: boolean; running: boolean }>()
+const reconcileMcpEnabled = (provider: ClineProvider, hub: McpHub, enabled: boolean): void => {
+	const state = mcpReconcilers.get(hub) ?? { desired: enabled, running: false }
+	mcpReconcilers.set(hub, state)
+	state.desired = enabled
+	if (state.running) return
+
+	state.running = true
+	void (async () => {
+		try {
+			while (state.applied !== state.desired) {
+				const target = state.desired
+				try {
+					await hub.handleMcpEnabledChange(target)
+					state.applied = target
+				} catch (error) {
+					// Unknown state now: the next save applies its value even if it equals the last one.
+					state.applied = undefined
+					provider.log(
+						`[updateSettings] Could not ${target ? "enable" : "disable"} the MCP servers: ${error instanceof Error ? error.message : String(error)}`,
+					)
+					if (state.desired === target) return
+				}
+			}
+		} finally {
+			state.running = false
+		}
+	})()
 }
 
 /**
@@ -910,16 +928,7 @@ const handleWebviewMessage = async (
 						Terminal.setExecaShellPath(value as string | undefined)
 					} else if (key === "mcpEnabled") {
 						newValue = value ?? true
-						const mcpHub = provider.getMcpHub()
-
-						if (mcpHub) {
-							// A timeout fails the save. The rollback asks the hub for the previous state, queued behind this request.
-							await withTimeout(
-								changeMcpEnabled(mcpHub, newValue as boolean),
-								MCP_ENABLE_TIMEOUT_MS,
-								"Changing the MCP servers",
-							)
-						}
+						// Only stored here. The hub is reconciled after the save has succeeded.
 					} else if (key === "experiments") {
 						if (!value) {
 							return false
@@ -1011,6 +1020,12 @@ const handleWebviewMessage = async (
 					}
 					provider.log(`[updateSettings] Save failed and was rolled back: ${failure}`)
 					vscode.window.showErrorMessage(t("common:errors.settings_save_failed", { error: failure }))
+				}
+
+				// The save is decided. Bring the MCP hub in line with the value that was stored; not awaited.
+				if (failure === undefined && "mcpEnabled" in updatedSettings) {
+					const hub = provider.getMcpHub()
+					if (hub) reconcileMcpEnabled(provider, hub, updatedSettings.mcpEnabled ?? true)
 				}
 
 				// Notification phase: the outcome is already decided by the writes above. A failed refresh must neither

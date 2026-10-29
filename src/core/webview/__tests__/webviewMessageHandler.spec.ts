@@ -2343,107 +2343,8 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 	})
 
 	describe("a stage that never settles", () => {
-		// The provider double has no `getMcpHub`; it is added here without a cast.
-		const useMcpHub = (handleMcpEnabledChange: (enabled: boolean) => Promise<void>) =>
-			Reflect.set(mockClineProvider, "getMcpHub", vi.fn().mockReturnValue({ handleMcpEnabledChange }))
-
 		beforeEach(() => vi.useFakeTimers())
 		afterEach(() => vi.useRealTimers())
-
-		it("fails the save when the MCP hub never answers, and never runs two hub changes at once", async () => {
-			const calls: boolean[] = []
-			let running = 0
-			let mostAtOnce = 0
-			let finishFirst!: () => void
-			const handleMcpEnabledChange = vi.fn(async (enabled: boolean) => {
-				calls.push(enabled)
-				mostAtOnce = Math.max(mostAtOnce, ++running)
-				if (calls.length === 1) await new Promise<void>((resolve) => (finishFirst = resolve))
-				running--
-			})
-			useMcpHub(handleMcpEnabledChange)
-			stored.mcpEnabled = true
-
-			const stuck = webviewMessageHandler(mockClineProvider, {
-				type: "updateSettings",
-				requestId: "save-mcp",
-				updatedSettings: { soundEnabled: true, mcpEnabled: false },
-			})
-			// The save stops waiting for the hub after 30s; its rollback then waits behind the same request, and
-			// stops waiting after another 30s. Neither wait blocks the save queue for longer than that.
-			await vi.advanceTimersByTimeAsync(30_000)
-			await vi.advanceTimersByTimeAsync(30_000)
-			await stuck
-
-			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
-				type: "settingsSaveResult",
-				requestId: "save-mcp",
-				success: false,
-				error: "Changing the MCP servers timed out after 30s",
-			})
-			expect(stored).toMatchObject({ soundEnabled: false, mcpEnabled: true })
-			expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("Could not restore mcpEnabled"))
-			// The restore has not been started: it is queued behind the request that is still running.
-			expect(calls).toEqual([false])
-
-			// When the stuck request finally ends, the restore runs after it, so the hub ends in the previous state.
-			finishFirst()
-			await vi.advanceTimersByTimeAsync(0)
-			expect(calls).toEqual([false, true])
-			expect(mostAtOnce).toBe(1)
-
-			// The save queue was not left blocked.
-			await webviewMessageHandler(mockClineProvider, {
-				type: "updateSettings",
-				requestId: "save-next",
-				updatedSettings: { writeDelayMs: 3000 },
-			})
-			expect(stored.writeDelayMs).toBe(3000)
-			expect(mockClineProvider.postMessageToWebview).toHaveBeenLastCalledWith(
-				expect.objectContaining({ requestId: "save-next", success: true }),
-			)
-		})
-
-		it("fails the save when the hub rejects, and later hub changes still run", async () => {
-			const calls: boolean[] = []
-			useMcpHub(async (enabled) => {
-				calls.push(enabled)
-				if (calls.length === 1) throw new Error("transport closed")
-			})
-			stored.mcpEnabled = true
-
-			await webviewMessageHandler(mockClineProvider, {
-				type: "updateSettings",
-				requestId: "save-hub-error",
-				updatedSettings: { mcpEnabled: false },
-			})
-
-			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
-				type: "settingsSaveResult",
-				requestId: "save-hub-error",
-				success: false,
-				error: "transport closed",
-			})
-			// The failed request did not stop the rollback's request from running, in order.
-			expect(calls).toEqual([false, true])
-			expect(stored.mcpEnabled).toBe(true)
-		})
-
-		it("keeps hub changes in the order they were made", async () => {
-			const calls: boolean[] = []
-			useMcpHub(async (enabled) => {
-				calls.push(enabled)
-			})
-			await webviewMessageHandler(mockClineProvider, {
-				type: "updateSettings",
-				updatedSettings: { mcpEnabled: false },
-			})
-			await webviewMessageHandler(mockClineProvider, {
-				type: "updateSettings",
-				updatedSettings: { mcpEnabled: true },
-			})
-			expect(calls).toEqual([false, true])
-		})
 
 		it("saves with the guard switched off when its install never finishes", async () => {
 			vi.mocked(ensureDcgInstalled).mockImplementation(() => new Promise(() => {}))
@@ -2469,18 +2370,217 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 		})
 
 		it("does not time out a stage that answers in time", async () => {
-			const handleMcpEnabledChange = vi.fn().mockResolvedValue(undefined)
-			useMcpHub(handleMcpEnabledChange)
+			vi.mocked(ensureDcgInstalled).mockResolvedValue("/mock/global/storage/dcg")
 
 			await webviewMessageHandler(mockClineProvider, {
 				type: "updateSettings",
 				requestId: "save-fast",
-				updatedSettings: { mcpEnabled: false },
+				updatedSettings: { destructiveCommandGuardEnabled: true },
 			})
 			// No timer is left running once the stage has answered.
 			expect(vi.getTimerCount()).toBe(0)
+			expect(stored.destructiveCommandGuardEnabled).toBe(true)
 			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
 				expect.objectContaining({ requestId: "save-fast", success: true }),
+			)
+		})
+	})
+
+	describe("the MCP hub follows the stored setting", () => {
+		// The provider double has no `getMcpHub`; it is added here without a cast.
+		const useMcpHub = (handleMcpEnabledChange: (enabled: boolean) => Promise<void>) =>
+			Reflect.set(mockClineProvider, "getMcpHub", vi.fn().mockReturnValue({ handleMcpEnabledChange }))
+		const save = (updatedSettings: Record<string, unknown>, requestId = "save-mcp") =>
+			webviewMessageHandler(mockClineProvider, { type: "updateSettings", requestId, updatedSettings })
+		const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+		it("does not wait for the hub: a hub that never answers cannot hold up the save or the next one", async () => {
+			const handleMcpEnabledChange = vi.fn(() => new Promise<void>(() => {}))
+			useMcpHub(handleMcpEnabledChange)
+
+			await save({ mcpEnabled: false })
+
+			expect(stored.mcpEnabled).toBe(false)
+			expect(handleMcpEnabledChange).toHaveBeenCalledWith(false)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+				type: "settingsSaveResult",
+				requestId: "save-mcp",
+				success: true,
+			})
+
+			// The queue is free for the next save.
+			await save({ writeDelayMs: 3000 }, "save-next")
+			expect(stored.writeDelayMs).toBe(3000)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenLastCalledWith(
+				expect.objectContaining({ requestId: "save-next", success: true }),
+			)
+		})
+
+		it("never touches the hub when the save fails, so there is nothing to roll back", async () => {
+			const handleMcpEnabledChange = vi.fn().mockResolvedValue(undefined)
+			useMcpHub(handleMcpEnabledChange)
+			stored.mcpEnabled = true
+			const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+			vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(
+				async (key: string, value: unknown) => {
+					if (key === "writeDelayMs" && value === 2000) throw new Error("storage unavailable")
+					return real(key as never, value as never)
+				},
+			)
+
+			await save({ mcpEnabled: false, writeDelayMs: 2000 })
+			await flush()
+
+			expect(handleMcpEnabledChange).not.toHaveBeenCalled()
+			expect(stored.mcpEnabled).toBe(true)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ requestId: "save-mcp", success: false }),
+			)
+		})
+
+		it("does not call the hub when the save does not include the setting", async () => {
+			const handleMcpEnabledChange = vi.fn().mockResolvedValue(undefined)
+			useMcpHub(handleMcpEnabledChange)
+
+			await save({ soundEnabled: true })
+			await flush()
+
+			expect(handleMcpEnabledChange).not.toHaveBeenCalled()
+		})
+
+		it("treats an unset value as enabled, as the stored value is", async () => {
+			const handleMcpEnabledChange = vi.fn().mockResolvedValue(undefined)
+			useMcpHub(handleMcpEnabledChange)
+
+			await save({ mcpEnabled: undefined })
+
+			expect(handleMcpEnabledChange).toHaveBeenCalledWith(true)
+		})
+
+		const slowHub = () => {
+			const calls: boolean[] = []
+			const releases: Array<() => void> = []
+			let running = 0
+			let mostAtOnce = 0
+			useMcpHub(async (enabled) => {
+				calls.push(enabled)
+				mostAtOnce = Math.max(mostAtOnce, ++running)
+				await new Promise<void>((resolve) => releases.push(resolve))
+				running--
+			})
+			return { calls, releases, mostAtOnce: () => mostAtOnce }
+		}
+
+		it("changes the hub one request at a time and ends on the last stored value", async () => {
+			const hub = slowHub()
+
+			await save({ mcpEnabled: false }, "save-1")
+			// The hub is still busy with the first change; another save arrives meanwhile.
+			await save({ mcpEnabled: true }, "save-2")
+			expect(hub.calls).toEqual([false])
+
+			// When the first finishes, the latest stored value is applied, after it and not alongside it.
+			hub.releases.shift()!()
+			await vi.waitFor(() => expect(hub.calls).toEqual([false, true]))
+			hub.releases.shift()!()
+			await flush()
+
+			expect(hub.mostAtOnce()).toBe(1)
+			expect(stored.mcpEnabled).toBe(true)
+		})
+
+		it("skips a value that a later save superseded, and a change that would end where the hub is", async () => {
+			const hub = slowHub()
+
+			await save({ mcpEnabled: false }, "save-1")
+			await save({ mcpEnabled: true }, "save-2")
+			await save({ mcpEnabled: false }, "save-3")
+			hub.releases.shift()!()
+			await flush()
+
+			// The hub already ended on the value that was stored last, so nothing more is asked of it.
+			expect(hub.calls).toEqual([false])
+			expect(stored.mcpEnabled).toBe(false)
+		})
+
+		it("applies a changed value after an earlier change has finished", async () => {
+			const calls: boolean[] = []
+			useMcpHub(async (enabled) => {
+				calls.push(enabled)
+			})
+
+			await save({ mcpEnabled: false })
+			await flush()
+			await save({ mcpEnabled: true })
+			await flush()
+
+			expect(calls).toEqual([false, true])
+		})
+
+		it("logs a hub failure without failing the save, and the next save applies its value again", async () => {
+			const calls: boolean[] = []
+			useMcpHub(async (enabled) => {
+				calls.push(enabled)
+				if (calls.length === 1) throw new Error("transport closed")
+			})
+
+			await save({ mcpEnabled: false })
+			await vi.waitFor(() =>
+				expect(mockClineProvider.log).toHaveBeenCalledWith(
+					expect.stringContaining("Could not disable the MCP servers: transport closed"),
+				),
+			)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+				type: "settingsSaveResult",
+				requestId: "save-mcp",
+				success: true,
+			})
+
+			// The hub state is unknown after the failure, so the same value is applied again.
+			await save({ mcpEnabled: false }, "save-retry")
+			await flush()
+			expect(calls).toEqual([false, false])
+		})
+
+		it("logs a hub failure that is not an Error", async () => {
+			useMcpHub(async () => {
+				throw "plain failure"
+			})
+
+			await save({ mcpEnabled: true })
+
+			await vi.waitFor(() =>
+				expect(mockClineProvider.log).toHaveBeenCalledWith(
+					expect.stringContaining("Could not enable the MCP servers: plain failure"),
+				),
+			)
+		})
+
+		it("applies a value saved while a failing change is still running", async () => {
+			const calls: boolean[] = []
+			let failFirst!: () => void
+			useMcpHub(async (enabled) => {
+				calls.push(enabled)
+				if (calls.length === 1) {
+					await new Promise<void>((_resolve, reject) => (failFirst = () => reject(new Error("boom"))))
+				}
+			})
+
+			await save({ mcpEnabled: false }, "save-1")
+			await save({ mcpEnabled: true }, "save-2")
+			failFirst()
+
+			await vi.waitFor(() => expect(calls).toEqual([false, true]))
+		})
+
+		it("skips the hub when there is none", async () => {
+			Reflect.set(mockClineProvider, "getMcpHub", vi.fn().mockReturnValue(undefined))
+
+			await save({ mcpEnabled: false })
+
+			expect(stored.mcpEnabled).toBe(false)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ requestId: "save-mcp", success: true }),
 			)
 		})
 	})
