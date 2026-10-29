@@ -18,6 +18,13 @@ import { TelemetryService } from "@roo-code/telemetry"
 
 import { ProviderSettingsManager, providerProfilesSchema } from "./ProviderSettingsManager"
 import { ContextProxy } from "./ContextProxy"
+import {
+	TRACKED_SETTING_KEYS,
+	beginSettingWrite,
+	finishSettingWrites,
+	isTrackedSetting,
+	undoSettingWrite,
+} from "./settingWrites"
 import { CustomModesManager } from "./CustomModesManager"
 import { downgradeLegacyRooConfig, ROUTER_REMOVAL_IMPORT_WARNING } from "./routerRemoval"
 import { resolveDefaultSaveUri, saveLastExportPath } from "../../utils/export"
@@ -264,21 +271,21 @@ export async function importSettingsFromPath(
 	}
 }
 
-const DISPLAY_SETTING_KEYS = ["timeFormat", "dateFormat", "showRelativeTimes"] as const
-
 /**
  * Writes global settings. The display settings are written all-or-nothing: every write is awaited before anything is
  * restored (`setValues` rejects at the first failure while its other writes are still running, and a restore made
  * then could be overwritten by a write that lands later), and then the ones this import changed are put back. The
- * original error is rethrown, so the caller's failure handling is unchanged. Other settings are written as before.
+ * writes are recorded with the same bookkeeping as saves (`settingWrites`), so a failed import does not undo a save
+ * that wrote the same setting meanwhile, and a failed save does not undo this import. The original error is
+ * rethrown, so the caller's failure handling is unchanged. Other settings are written as before.
  */
 async function setValuesRestoringDisplaySettings(contextProxy: ContextProxy, settings: GlobalSettings) {
-	const displayKeys = DISPLAY_SETTING_KEYS.filter((key) => key in settings)
+	const displayKeys = TRACKED_SETTING_KEYS.filter((key) => key in settings)
 	if (displayKeys.length === 0) return contextProxy.setValues(settings)
 
-	const snapshot = displayKeys.map((key) => [key, contextProxy.getValue(key)] as const)
+	const writes = displayKeys.map((key) => beginSettingWrite(key, contextProxy.getValue(key), settings[key]))
 	const others = Object.fromEntries(
-		Object.entries(settings).filter(([key]) => !(DISPLAY_SETTING_KEYS as readonly string[]).includes(key)),
+		Object.entries(settings).filter(([key]) => !isTrackedSetting(key)),
 	) as GlobalSettings
 
 	const results = await Promise.allSettled([
@@ -286,19 +293,19 @@ async function setValuesRestoringDisplaySettings(contextProxy: ContextProxy, set
 		...displayKeys.map((key) => contextProxy.setValue(key, settings[key])),
 	])
 	const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
-	if (!failed) return
+	if (!failed) {
+		finishSettingWrites(writes)
+		return
+	}
 
 	const notRestored: string[] = []
 
-	for (const [key, previous] of snapshot) {
-		const current = contextProxy.getValue(key)
-		// Only undo our own write; a differing value means a concurrent save.
-		if (current === previous || current !== settings[key]) continue
+	for (const write of writes.reverse()) {
 		try {
-			await contextProxy.setValue(key, previous)
+			await undoSettingWrite(contextProxy, write)
 		} catch (restoreError) {
-			notRestored.push(key)
-			console.error(`Failed to restore setting "${key}" after import failure:`, restoreError)
+			notRestored.push(write.key)
+			console.error(`Failed to restore setting "${write.key}" after import failure:`, restoreError)
 		}
 	}
 

@@ -19,6 +19,7 @@ import {
 } from "../importExport"
 import { ProviderSettingsManager } from "../ProviderSettingsManager"
 import { ContextProxy } from "../ContextProxy"
+import { beginSettingWrite, undoSettingWrite } from "../settingWrites"
 import { CustomModesManager } from "../CustomModesManager"
 import { safeWriteJson } from "../../../utils/safeWriteJson"
 
@@ -341,6 +342,19 @@ describe("importExport", () => {
 				error: "plain failure (these settings could not be restored: timeFormat)",
 			})
 			consoleError.mockRestore()
+		})
+
+		it("is the latest write of the setting, so a failed save that wrote the same value does not undo it", async () => {
+			// A save wrote "24h" and has not finished. The import then writes the same value, and succeeds.
+			const saveWrite = beginSettingWrite("timeFormat", "auto", "24h")
+			stored.set("timeFormat", "24h")
+
+			const result = await importWith({ timeFormat: "24h" })
+			expect(result).toMatchObject({ success: true })
+
+			// The save now fails and is rolled back: the import's value stands.
+			await undoSettingWrite(mockContextProxy as unknown as ContextProxy, saveWrite)
+			expect(stored.get("timeFormat")).toBe("24h")
 		})
 
 		it("writes all three display settings on success", async () => {

@@ -37,6 +37,13 @@ import { TelemetryService } from "@roo-code/telemetry"
 
 import { type ApiMessage } from "../task-persistence/apiMessages"
 import { saveTaskMessages } from "../task-persistence"
+import {
+	beginSettingWrite,
+	finishSettingWrites,
+	isTrackedSetting,
+	undoSettingWrite,
+	type SettingWrite,
+} from "../config/settingWrites"
 import { importRooTaskHistory } from "../task-persistence/importRooTaskHistory"
 
 import { ClineProvider } from "./ClineProvider"
@@ -129,60 +136,6 @@ import {
 
 const handlerFor = (apiConfiguration: ProviderSettings, provider: RouterName): ApiHandler =>
 	buildApiHandler({ ...apiConfiguration, apiProvider: provider })
-
-/**
- * The settings a save puts back if it fails: the three display settings of the Language tab, which are saved
- * together and must not be left half changed. Every other setting keeps the way it is written, and the way a
- * failure is handled, as before.
- */
-const ROLLBACK_SETTING_KEYS = new Set<string>(["timeFormat", "dateFormat", "showRelativeTimes"])
-
-/** One write of a rolled-back setting by a save, linked to the writes of other saves that overlap it. */
-interface SettingWrite {
-	key: string
-	/** What was stored when this save wrote it. With overlapping saves, this can be another save's pending value. */
-	previous: unknown
-	wrote: unknown
-	/** The write before this one that has not finished yet, and the one after it. */
-	prev?: SettingWrite
-	next?: SettingWrite
-	/** The save has finished: it succeeded, or it has been rolled back. */
-	done: boolean
-}
-
-/**
- * The latest write of each of those settings. The store is shared by every provider (sidebar, editor tab), so saves
- * can overlap, and writes to the same key form a chain. Rolling back a write puts the key back only while it is the
- * latest one and the stored value is still what it wrote, so a newer save's value, or a change made outside a save
- * (an import), is kept. A write that is rolled back while a newer one is pending is taken out of the chain, so that
- * if the newer one fails too, it restores what was stored before either of them.
- */
-const lastWriteOfSetting = new Map<string, SettingWrite>()
-
-const undoSettingWrite = async (provider: ClineProvider, write: SettingWrite) => {
-	const { key } = write
-	write.done = true
-
-	if (lastWriteOfSetting.get(key) !== write) {
-		// A newer write exists. Make it restore the value from before this one if it fails as well.
-		const { next } = write
-		if (next && !next.done) {
-			next.previous = write.previous
-			next.prev = write.prev
-			if (write.prev) write.prev.next = next
-		}
-
-		return
-	}
-
-	// The write before this one is pending again: it is the latest, and the value now stored is its value.
-	if (write.prev && !write.prev.done) lastWriteOfSetting.set(key, write.prev)
-	else lastWriteOfSetting.delete(key)
-
-	if (provider.contextProxy.getValue(key as keyof RooCodeSettings) === write.wrote) {
-		await provider.contextProxy.setValue(key as keyof RooCodeSettings, write.previous as never)
-	}
-}
 
 export const webviewMessageHandler = async (
 	provider: ClineProvider,
@@ -934,30 +887,18 @@ export const webviewMessageHandler = async (
 						}
 					}
 
-					if (ROLLBACK_SETTING_KEYS.has(key)) {
-						const before = lastWriteOfSetting.get(key)
-						const write: SettingWrite = {
-							key,
-							previous,
-							wrote: newValue,
-							prev: before && !before.done ? before : undefined,
-							done: false,
-						}
-						if (write.prev) write.prev.next = write
-						written.push(write)
-						lastWriteOfSetting.set(key, write)
-					}
+					if (isTrackedSetting(key)) written.push(beginSettingWrite(key, previous, newValue))
 
 					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
 				}
 
-				for (const write of written) write.done = true
+				finishSettingWrites(written)
 			} catch (error) {
 				const failure = error instanceof Error ? error.message : String(error)
 
 				for (const write of written.reverse()) {
 					try {
-						await undoSettingWrite(provider, write)
+						await undoSettingWrite(provider.contextProxy, write)
 					} catch (rollbackError) {
 						provider.log(
 							`[updateSettings] Could not restore ${write.key}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
@@ -967,7 +908,7 @@ export const webviewMessageHandler = async (
 
 				provider.log(`[updateSettings] Save failed: ${failure}`)
 
-				if (failedKey !== undefined && ROLLBACK_SETTING_KEYS.has(failedKey)) {
+				if (failedKey !== undefined && isTrackedSetting(failedKey)) {
 					vscode.window.showErrorMessage(t("common:errors.settings_save_failed", { error: failure }))
 				} else {
 					// Not a display setting: handled as it always was, once the webview has been refreshed.
