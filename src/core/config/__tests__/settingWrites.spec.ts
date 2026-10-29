@@ -3,6 +3,7 @@ import {
 	beginSettingWrite,
 	finishSettingWrites,
 	isTrackedSetting,
+	noteSettingStored,
 	performSettingWrite,
 	undoSettingWrite,
 } from "../settingWrites"
@@ -71,6 +72,62 @@ describe("settingWrites", () => {
 			expect(stored.get("timeFormat")).toBe("12h")
 
 			await undoSettingWrite(contextProxy, importWrite)
+			expect(stored.get("timeFormat")).toBe("auto")
+		})
+	})
+
+	describe("a store made by anyone else (the public API, other callers of setValues)", () => {
+		beforeEach(() => {
+			// As ContextProxy: every store is reported, synchronously, when it is made.
+			contextProxy = {
+				getValue: (key: string) => stored.get(key),
+				setValue: async (key: string, value: unknown) => {
+					noteSettingStored(key)
+					stored.set(key, value)
+				},
+			} as unknown as ContextProxy
+		})
+
+		it("is kept when a failed write is rolled back, even if it stored the same value", async () => {
+			const write = beginSettingWrite("timeFormat", "auto", "24h")
+			await performSettingWrite(contextProxy, write)
+
+			await contextProxy.setValue("timeFormat" as never, "24h" as never) // the API stores the same value
+
+			await undoSettingWrite(contextProxy, write)
+
+			expect(stored.get("timeFormat")).toBe("24h")
+		})
+
+		it("does not stop a write from being put back when nobody else stored the key", async () => {
+			const write = beginSettingWrite("timeFormat", "auto", "24h")
+			await performSettingWrite(contextProxy, write)
+
+			await undoSettingWrite(contextProxy, write)
+
+			expect(stored.get("timeFormat")).toBe("auto")
+		})
+
+		it("only counts stores of tracked keys", async () => {
+			const write = beginSettingWrite("timeFormat", "auto", "24h")
+			await performSettingWrite(contextProxy, write)
+
+			await contextProxy.setValue("soundEnabled" as never, true as never)
+			await undoSettingWrite(contextProxy, write)
+
+			expect(stored.get("timeFormat")).toBe("auto")
+		})
+
+		it("puts back the earlier write when the write after it is rolled back, and that one then fails too", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+			await performSettingWrite(contextProxy, second)
+
+			await undoSettingWrite(contextProxy, second) // puts "12h" back: the first owns the value again
+			expect(stored.get("timeFormat")).toBe("12h")
+			await undoSettingWrite(contextProxy, first)
+
 			expect(stored.get("timeFormat")).toBe("auto")
 		})
 	})

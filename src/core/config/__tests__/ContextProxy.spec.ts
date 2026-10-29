@@ -8,6 +8,7 @@ import { clearAllMocks } from "../../../test-utils/reset"
 import { makeExtensionContext, makeUri } from "../../../test-utils/vscode"
 
 import { ContextProxy } from "../ContextProxy"
+import { beginSettingWrite, finishSettingWrites, performSettingWrite, undoSettingWrite } from "../settingWrites"
 import { providerIdentifiers, retiredProviderIdentifiers } from "@roo-code/types/provider-identifiers"
 
 vi.mock("vscode", () => ({
@@ -157,6 +158,21 @@ describe("ContextProxy", () => {
 	})
 
 	describe("updateGlobalState", () => {
+		it.each([
+			["setValue", (p: ContextProxy) => p.setValue("timeFormat", "24h")],
+			["setValues", (p: ContextProxy) => p.setValues({ timeFormat: "24h" })],
+			["updateGlobalState", async (p: ContextProxy) => p.updateGlobalState("timeFormat", "24h")],
+		])("reports a store of a tracked setting made by %s, so a rollback does not undo it", async (_name, store) => {
+			const write = beginSettingWrite("timeFormat", "auto", "24h")
+			await performSettingWrite(proxy, write)
+			await store(proxy) // someone else stores the same value after the save's write
+
+			await undoSettingWrite(proxy, write)
+
+			expect(proxy.getValue("timeFormat")).toBe("24h")
+			finishSettingWrites([write])
+		})
+
 		it("should update state directly in original context", async () => {
 			await proxy.updateGlobalState("apiProvider", "deepseek")
 

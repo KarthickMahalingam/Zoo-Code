@@ -23,6 +23,7 @@ import { TelemetryService } from "@roo-code/telemetry"
 import { logger } from "../../utils/logging"
 import { supportPrompt } from "../../shared/support-prompt"
 import { downgradeLegacyRooConfig } from "./routerRemoval"
+import { noteSettingStored } from "./settingWrites"
 
 type GlobalStateKey = keyof GlobalState
 type SecretStateKey = keyof SecretState
@@ -361,6 +362,7 @@ export class ContextProxy {
 	}
 
 	updateGlobalState<K extends GlobalStateKey>(key: K, value: GlobalState[K]) {
+		noteSettingStored(key)
 		if (isPassThroughStateKey(key)) {
 			return this.originalContext.globalState.update(key, value)
 		}
