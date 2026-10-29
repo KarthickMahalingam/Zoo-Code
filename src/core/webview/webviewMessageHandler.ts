@@ -947,10 +947,11 @@ const handleWebviewMessage = async (
 				// would overwrite configuration-only entries, so their configuration value is snapshotted separately.
 				const commandListKeys = new Set(["allowedCommands", "deniedCommands"])
 				// Some settings are also applied to the running extension (the terminal, the host language, speech).
-				// Restoring `undefined` for one that was never stored does not put the running value back: most
-				// terminal setters skip it, and the others apply their own fallback, which is not the runtime
-				// default (for example speech would turn on, and the language would switch to English). The value
-				// it was running with is snapshotted and put back instead.
+				// Restoring the stored value does not put the running one back: when nothing was stored, most terminal
+				// setters skip `undefined` and the others apply their own fallback, which is not the runtime default
+				// (speech would turn on, the language would switch to English); and when something was stored, the
+				// running value can still differ from it. The value it was running with is snapshotted and put back
+				// instead. The stored value is restored separately.
 				const liveRuntimeValues: Record<string, () => unknown> = {
 					language: () => getLanguage(),
 					ttsEnabled: () => getTtsEnabled(),
@@ -998,10 +999,7 @@ const handleWebviewMessage = async (
 									.getConfiguration(Package.name)
 									.update(key, configGlobal.value, vscode.ConfigurationTarget.Global)
 							} else {
-								await applySetting(
-									key,
-									previous === undefined && liveRuntime ? liveRuntime.value : previous,
-								)
+								await applySetting(key, liveRuntime ? liveRuntime.value : previous)
 							}
 							// Put back exactly what was stored, whatever defaulting the side effect applied.
 							await provider.contextProxy.setValue(key as keyof RooCodeSettings, previous as never)

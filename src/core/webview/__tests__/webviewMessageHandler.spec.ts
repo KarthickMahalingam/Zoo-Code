@@ -2307,6 +2307,23 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 			}
 		})
 
+		it("puts back the running language when it differs from the stored one", async () => {
+			const original = getLanguage()
+			try {
+				stored.language = "de"
+				changeLanguage("es")
+				failWriteDelay()
+
+				await failedSave({ language: "fr" })
+
+				// The stored value is restored as it was; the running language is the one from before the save.
+				expect(stored.language).toBe("de")
+				expect(getLanguage()).toBe("es")
+			} finally {
+				changeLanguage(original ?? "en")
+			}
+		})
+
 		it("applies a successful save to the running language and speech", async () => {
 			const originalLanguage = getLanguage()
 			const originalEnabled = getTtsEnabled()
