@@ -31,22 +31,6 @@ export function hourCycleOptions(timeFormat: TimeFormat = "auto"): Intl.DateTime
 	}
 }
 
-/**
- * @internal
- */
-export const formatDate = (timestamp: number, timeFormat: TimeFormat = "auto") => {
-	const date = new Date(timestamp)
-	const locale = i18next.language || "en"
-
-	return date.toLocaleString(locale, {
-		month: "long",
-		day: "numeric",
-		hour: "numeric",
-		minute: "2-digit",
-		...hourCycleOptions(timeFormat),
-	})
-}
-
 const pad = (n: number) => String(n).padStart(2, "0")
 
 /**

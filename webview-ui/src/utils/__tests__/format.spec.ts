@@ -1,6 +1,5 @@
 import {
 	formatLargeNumber,
-	formatDate,
 	formatDateOnly,
 	formatDateTime,
 	formatMessageTime,
@@ -66,27 +65,6 @@ describe("formatLargeNumber", () => {
 	})
 })
 
-describe("formatDate", () => {
-	it("should format date in English", () => {
-		const timestamp = new Date("2024-01-15T14:30:00").getTime()
-		const result = formatDate(timestamp)
-		// The exact format depends on the locale, but it should contain the date components
-		expect(result).toMatch(/january|jan/i)
-		expect(result).toMatch(/15/)
-	})
-
-	it("honours an explicit 24-hour time format", () => {
-		const timestamp = new Date("2024-01-15T14:30:00").getTime()
-		expect(formatDate(timestamp, "24h")).toMatch(/14:30/)
-		expect(formatDate(timestamp, "24h")).not.toMatch(/PM/i)
-	})
-
-	it("honours an explicit 12-hour time format", () => {
-		const timestamp = new Date("2024-01-15T14:30:00").getTime()
-		expect(formatDate(timestamp, "12h")).toMatch(/2:30\s?PM/i)
-	})
-})
-
 describe("hourCycleOptions", () => {
 	it("leaves auto to the locale", () => {
 		expect(hourCycleOptions("auto")).toEqual({})
@@ -114,19 +92,6 @@ describe("formatDateOnly", () => {
 	it("follows the display language for auto", () => {
 		expect(formatDateOnly(ts, "auto")).toMatch(/2026/)
 		expect(formatDateOnly(ts)).toBe(formatDateOnly(ts, "auto"))
-	})
-})
-
-describe("formatDate", () => {
-	it("falls back to English when the display language is empty", async () => {
-		const i18next = (await import("i18next")).default as unknown as { language: string }
-		const original = i18next.language
-		i18next.language = ""
-		try {
-			expect(formatDate(new Date(2026, 9, 27, 14, 41).getTime())).toMatch(/October 27/)
-		} finally {
-			i18next.language = original
-		}
 	})
 })
 

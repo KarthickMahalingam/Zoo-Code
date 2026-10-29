@@ -53,12 +53,15 @@ const TaskItemFooter: React.FC<TaskItemFooterProps> = ({
 						<span>·</span>
 					</>
 				)}
-				{/* Datetime with time-ago format */}
-				<StandardTooltip content={formatDateTime(item.ts, timeFormat, dateFormat)}>
-					<span className="first-letter:uppercase">
-						{showRelativeTimes ? formatTimeAgo(item.ts) : formatDateTime(item.ts, timeFormat, dateFormat)}
-					</span>
-				</StandardTooltip>
+				{/* Datetime. A relative time carries the full date and time in a tooltip; the absolute time already
+				    shows it, so it gets no tooltip that would only repeat it. */}
+				{showRelativeTimes ? (
+					<StandardTooltip content={formatDateTime(item.ts, timeFormat, dateFormat)}>
+						<span className="first-letter:uppercase">{formatTimeAgo(item.ts)}</span>
+					</StandardTooltip>
+				) : (
+					<span className="first-letter:uppercase">{formatDateTime(item.ts, timeFormat, dateFormat)}</span>
+				)}
 
 				{/* Cost */}
 				{!!item.totalCost && (

@@ -10,9 +10,18 @@ vi.mock("@src/i18n/TranslationContext", () => ({
 	}),
 }))
 
+// Renders the tooltip's content as an attribute, so whether a tooltip exists and what it says can be asserted.
+vi.mock("../../ui/standard-tooltip", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../ui/standard-tooltip")>()),
+	StandardTooltip: ({ children, content }: { children: React.ReactNode; content: string }) => (
+		<div data-testid="tooltip" data-content={content}>
+			{children}
+		</div>
+	),
+}))
+
 vi.mock("@/utils/format", () => ({
 	formatTimeAgo: vi.fn(() => "2 hours ago"),
-	formatDate: vi.fn(() => "January 15 at 2:30 PM"),
 	// Depends on its arguments, so a test can tell which formats were applied.
 	formatDateTime: vi.fn(
 		(_ts: number, timeFormat = "auto", dateFormat = "auto") =>
@@ -154,6 +163,27 @@ describe("TaskItemFooter", () => {
 		it("shows a relative time when showRelativeTimes is on", () => {
 			renderWith({ showRelativeTimes: true })
 			expect(screen.getByText("2 hours ago")).toBeInTheDocument()
+		})
+
+		// The footer has other tooltips (the action buttons), so look at the one around the time.
+		const tooltipAround = (text: string) =>
+			screen.queryAllByTestId("tooltip").find((tooltip) => tooltip.textContent?.includes(text))
+
+		it("gives a relative time a tooltip with the full date and time", () => {
+			renderWith({ showRelativeTimes: true, timeFormat: "24h", dateFormat: "ymd" })
+
+			expect(tooltipAround("2 hours ago")).toHaveAttribute("data-content", "2024-01-15, 14:30")
+		})
+
+		it("gives an absolute time no tooltip, which would only repeat it", () => {
+			renderWith({ showRelativeTimes: false, timeFormat: "24h", dateFormat: "ymd" })
+
+			expect(screen.getByText("2024-01-15, 14:30")).toBeInTheDocument()
+			expect(tooltipAround("2024-01-15, 14:30")).toBeUndefined()
+			// ...and nothing carries the same text as a tooltip's content either.
+			expect(screen.queryAllByTestId("tooltip").map((t) => t.getAttribute("data-content"))).not.toContain(
+				"2024-01-15, 14:30",
+			)
 		})
 
 		it("shows the absolute date/time instead when showRelativeTimes is off", () => {
