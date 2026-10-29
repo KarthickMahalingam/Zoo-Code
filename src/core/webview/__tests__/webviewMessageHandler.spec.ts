@@ -2077,45 +2077,123 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 	})
 
 	describe("the live terminal after a failed save", () => {
-		const cases: Array<[string, () => unknown, unknown]> = [
-			["terminalShellIntegrationTimeout", () => Terminal.getShellIntegrationTimeout(), 9_000],
-			["terminalShellIntegrationDisabled", () => Terminal.getShellIntegrationDisabled(), false],
-			["terminalCommandDelay", () => Terminal.getCommandDelay(), 50],
-			["terminalPowershellCounter", () => Terminal.getPowershellCounter(), true],
-			["terminalZshClearEolMark", () => Terminal.getTerminalZshClearEolMark(), false],
-			["terminalZshOhMy", () => Terminal.getTerminalZshOhMy(), true],
-			["terminalZshP10k", () => Terminal.getTerminalZshP10k(), true],
-			["terminalZdotdir", () => Terminal.getTerminalZdotdir(), true],
+		// `running` is what the terminal is running with (not a built-in default), `attempted` is what the save
+		// tries to apply. Both differ from the built-in default, so a rollback that resets to it would show.
+		const cases: Array<{
+			key: string
+			get: () => unknown
+			set: (value: never) => void
+			running: unknown
+			attempted: unknown
+		}> = [
+			{
+				key: "terminalShellIntegrationTimeout",
+				get: () => Terminal.getShellIntegrationTimeout(),
+				set: (value: number) => Terminal.setShellIntegrationTimeout(value),
+				running: 7_000,
+				attempted: 9_000,
+			},
+			{
+				key: "terminalShellIntegrationDisabled",
+				get: () => Terminal.getShellIntegrationDisabled(),
+				set: (value: boolean) => Terminal.setShellIntegrationDisabled(value),
+				running: false,
+				attempted: true,
+			},
+			{
+				key: "terminalCommandDelay",
+				get: () => Terminal.getCommandDelay(),
+				set: (value: number) => Terminal.setCommandDelay(value),
+				running: 25,
+				attempted: 50,
+			},
+			{
+				key: "terminalPowershellCounter",
+				get: () => Terminal.getPowershellCounter(),
+				set: (value: boolean) => Terminal.setPowershellCounter(value),
+				running: true,
+				attempted: false,
+			},
+			{
+				key: "terminalZshClearEolMark",
+				get: () => Terminal.getTerminalZshClearEolMark(),
+				set: (value: boolean) => Terminal.setTerminalZshClearEolMark(value),
+				running: false,
+				attempted: true,
+			},
+			{
+				key: "terminalZshOhMy",
+				get: () => Terminal.getTerminalZshOhMy(),
+				set: (value: boolean) => Terminal.setTerminalZshOhMy(value),
+				running: true,
+				attempted: false,
+			},
+			{
+				key: "terminalZshP10k",
+				get: () => Terminal.getTerminalZshP10k(),
+				set: (value: boolean) => Terminal.setTerminalZshP10k(value),
+				running: true,
+				attempted: false,
+			},
+			{
+				key: "terminalZdotdir",
+				get: () => Terminal.getTerminalZdotdir(),
+				set: (value: boolean) => Terminal.setTerminalZdotdir(value),
+				running: true,
+				attempted: false,
+			},
+			{
+				key: "terminalProfile",
+				get: () => Terminal.getTerminalProfile(),
+				set: (value: string | undefined) => Terminal.setTerminalProfile(value),
+				running: "Git Bash",
+				attempted: "PowerShell",
+			},
+			{
+				key: "execaShellPath",
+				get: () => Terminal.getExecaShellPath(),
+				set: (value: string | undefined) => Terminal.setExecaShellPath(value),
+				running: "/bin/zsh",
+				attempted: "/bin/fish",
+			},
 		]
 
+		const failWriteDelay = () => {
+			const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+			vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (k: string, value: unknown) => {
+				if (k === "writeDelayMs" && value === 2000) throw new Error("storage unavailable")
+				return real(k as never, value as never)
+			})
+		}
+
 		it.each(cases)(
-			"puts the running value of %s back when it was never stored",
-			async (key, liveValue, newValue) => {
-				const before = liveValue()
-				// Precondition: the new value really differs from what is running, so a stale value would show.
-				expect(newValue).not.toBe(before)
-				const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
-				vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(
-					async (k: string, value: unknown) => {
-						if (k === "writeDelayMs" && value === 2000) throw new Error("storage unavailable")
-						return real(k as never, value as never)
-					},
-				)
-				expect(stored).not.toHaveProperty(key)
+			"puts back the running $key when it was never stored",
+			async ({ key, get, set, running, attempted }) => {
+				const original = get()
+				try {
+					// Set by something other than a stored setting (e.g. the extension API): never stored.
+					set(running as never)
+					expect(get()).toBe(running)
+					expect(attempted).not.toBe(running)
+					failWriteDelay()
+					expect(stored).not.toHaveProperty(key)
 
-				await webviewMessageHandler(mockClineProvider, {
-					type: "updateSettings",
-					requestId: "save-terminal",
-					updatedSettings: { [key]: newValue, writeDelayMs: 2000 },
-				})
+					await webviewMessageHandler(mockClineProvider, {
+						type: "updateSettings",
+						requestId: "save-terminal",
+						updatedSettings: { [key]: attempted, writeDelayMs: 2000 },
+					})
 
-				expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
-					expect.objectContaining({ requestId: "save-terminal", success: false }),
-				)
-				// Storage is restored to "never stored"...
-				expect(stored[key]).toBeUndefined()
-				// ...and so is the live terminal.
-				expect(liveValue()).toBe(before)
+					expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+						expect.objectContaining({ requestId: "save-terminal", success: false }),
+					)
+					// Storage is restored to "never stored"...
+					expect(stored[key]).toBeUndefined()
+					// ...and the live terminal keeps the value it was running with, not a default or the attempt.
+					expect(get()).toBe(running)
+				} finally {
+					set(original as never)
+				}
 			},
 		)
 
@@ -2142,11 +2220,17 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 		beforeEach(() => vi.useFakeTimers())
 		afterEach(() => vi.useRealTimers())
 
-		it("fails the save and rolls back when the MCP hub never answers, and the next save still runs", async () => {
-			const handleMcpEnabledChange = vi
-				.fn()
-				.mockImplementationOnce(() => new Promise(() => {}))
-				.mockResolvedValue(undefined)
+		it("fails the save when the MCP hub never answers, and never runs two hub changes at once", async () => {
+			const calls: boolean[] = []
+			let running = 0
+			let mostAtOnce = 0
+			let finishFirst!: () => void
+			const handleMcpEnabledChange = vi.fn(async (enabled: boolean) => {
+				calls.push(enabled)
+				mostAtOnce = Math.max(mostAtOnce, ++running)
+				if (calls.length === 1) await new Promise<void>((resolve) => (finishFirst = resolve))
+				running--
+			})
 			useMcpHub(handleMcpEnabledChange)
 			stored.mcpEnabled = true
 
@@ -2155,6 +2239,9 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 				requestId: "save-mcp",
 				updatedSettings: { soundEnabled: true, mcpEnabled: false },
 			})
+			// The save stops waiting for the hub after 30s; its rollback then waits behind the same request, and
+			// stops waiting after another 30s. Neither wait blocks the save queue for longer than that.
+			await vi.advanceTimersByTimeAsync(30_000)
 			await vi.advanceTimersByTimeAsync(30_000)
 			await stuck
 
@@ -2165,10 +2252,17 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 				error: "Changing the MCP servers timed out after 30s",
 			})
 			expect(stored).toMatchObject({ soundEnabled: false, mcpEnabled: true })
-			// The rollback asked the hub for the previous state.
-			expect(handleMcpEnabledChange).toHaveBeenLastCalledWith(true)
+			expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("Could not restore mcpEnabled"))
+			// The restore has not been started: it is queued behind the request that is still running.
+			expect(calls).toEqual([false])
 
-			// The queue was not left blocked.
+			// When the stuck request finally ends, the restore runs after it, so the hub ends in the previous state.
+			finishFirst()
+			await vi.advanceTimersByTimeAsync(0)
+			expect(calls).toEqual([false, true])
+			expect(mostAtOnce).toBe(1)
+
+			// The save queue was not left blocked.
 			await webviewMessageHandler(mockClineProvider, {
 				type: "updateSettings",
 				requestId: "save-next",
@@ -2178,6 +2272,22 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 			expect(mockClineProvider.postMessageToWebview).toHaveBeenLastCalledWith(
 				expect.objectContaining({ requestId: "save-next", success: true }),
 			)
+		})
+
+		it("keeps hub changes in the order they were made", async () => {
+			const calls: boolean[] = []
+			useMcpHub(async (enabled) => {
+				calls.push(enabled)
+			})
+			await webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				updatedSettings: { mcpEnabled: false },
+			})
+			await webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				updatedSettings: { mcpEnabled: true },
+			})
+			expect(calls).toEqual([false, true])
 		})
 
 		it("saves with the guard switched off when its install never finishes", async () => {

@@ -113,6 +113,7 @@ const ALLOWED_VSCODE_SETTINGS = new Set(["terminal.integrated.inheritEnv"])
 let telemetrySettingQueue: Promise<void> = Promise.resolve()
 
 import { MarketplaceManager, MarketplaceItemType } from "../../services/marketplace"
+import type { McpHub } from "../../services/mcp/McpHub"
 import { setPendingTodoList } from "../tools/UpdateTodoListTool"
 import {
 	handleListWorktrees,
@@ -142,6 +143,22 @@ let settingsSaveChain: Promise<unknown> = Promise.resolve()
 const DCG_INSTALL_TIMEOUT_MS = 180_000
 /** Longest a save waits for the MCP hub to connect or disconnect its servers. */
 const MCP_ENABLE_TIMEOUT_MS = 30_000
+
+/**
+ * MCP enable/disable requests, one at a time per hub, in the order they were made. `handleMcpEnabledChange` cannot
+ * be cancelled, so a request that outlives its timeout may still be running when the rollback asks for the previous
+ * state. Running them one after the other (not together) means the rollback lands after it and the hub ends in the
+ * state the save left it in, even if that is later than the save's own wait.
+ */
+const mcpEnableChains = new WeakMap<McpHub, Promise<unknown>>()
+const changeMcpEnabled = (hub: McpHub, enabled: boolean): Promise<void> => {
+	const run = (mcpEnableChains.get(hub) ?? Promise.resolve()).then(() => hub.handleMcpEnabledChange(enabled))
+	mcpEnableChains.set(
+		hub,
+		run.catch(() => undefined),
+	)
+	return run
+}
 
 /**
  * Stops waiting for `work` after `ms`, so one stage that never settles cannot hold the save queue (and so every
@@ -896,9 +913,9 @@ const handleWebviewMessage = async (
 						const mcpHub = provider.getMcpHub()
 
 						if (mcpHub) {
-							// A timeout fails the save, and the rollback asks the hub for the previous state.
+							// A timeout fails the save. The rollback asks the hub for the previous state, queued behind this request.
 							await withTimeout(
-								mcpHub.handleMcpEnabledChange(newValue as boolean),
+								changeMcpEnabled(mcpHub, newValue as boolean),
 								MCP_ENABLE_TIMEOUT_MS,
 								"Changing the MCP servers",
 							)
@@ -929,7 +946,7 @@ const handleWebviewMessage = async (
 				// the one `contextProxy` reads (the webview shows a union of both). Restoring them from `contextProxy`
 				// would overwrite configuration-only entries, so their configuration value is snapshotted separately.
 				const commandListKeys = new Set(["allowedCommands", "deniedCommands"])
-				// The terminal settings are also applied to the live terminal, and their setters skip an unset value.
+				// The terminal settings are also applied to the live terminal, and most setters skip an unset value.
 				// A setting that was never stored therefore cannot be undone by restoring `undefined`: the value the
 				// terminal was running with is snapshotted and put back instead.
 				const liveTerminalValues: Record<string, () => unknown> = {
@@ -941,6 +958,10 @@ const handleWebviewMessage = async (
 					terminalZshOhMy: () => Terminal.getTerminalZshOhMy(),
 					terminalZshP10k: () => Terminal.getTerminalZshP10k(),
 					terminalZdotdir: () => Terminal.getTerminalZdotdir(),
+					// Not skipped when unset, but an unset stored value is not the live one: the extension API can set
+					// these without storing them.
+					terminalProfile: () => Terminal.getTerminalProfile(),
+					execaShellPath: () => Terminal.getExecaShellPath(),
 				}
 				const written: Array<{
 					key: string
