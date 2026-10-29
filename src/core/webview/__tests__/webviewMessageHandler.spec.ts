@@ -1853,15 +1853,20 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 	})
 })
 
-describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
+describe("webviewMessageHandler - the appearance settings are saved all-or-nothing", () => {
 	const stored: Record<string, unknown> = {}
 
-	/** Makes the write of one key fail (and runs `beforeThrow`, e.g. to simulate another save writing meanwhile). */
-	const failWriteOf = (key: string, value: unknown, beforeThrow?: () => void) => {
+	type WriteHook = (key: string, value: unknown) => Promise<void> | void
+
+	/**
+	 * Makes the write of one key fail. `beforeThrow` can hold the failure back (to let another save run) or
+	 * change what is stored, as a store whose cache was already updated when the write failed.
+	 */
+	const failWriteOf = (key: string, value: unknown, beforeThrow?: WriteHook) => {
 		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
 		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (k: string, v: unknown) => {
 			if (k === key && v === value) {
-				beforeThrow?.()
+				await beforeThrow?.(k, v)
 				throw new Error("storage unavailable")
 			}
 			return real(k as never, v as never)
@@ -1878,7 +1883,7 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		for (const key of Object.keys(stored)) delete stored[key]
-		Object.assign(stored, { soundEnabled: false, writeDelayMs: 1000, terminalCommandDelay: 0 })
+		Object.assign(stored, { interfaceFontScale: 100, terminalFontSize: 12, soundEnabled: false })
 		vi.mocked(mockClineProvider.contextProxy.getValue).mockImplementation((key: string) => stored[key] as never)
 		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
 			stored[key] = value
@@ -1887,9 +1892,14 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 	})
 
 	it("stores every setting and confirms the save by request id", async () => {
-		await save({ soundEnabled: true, writeDelayMs: 2000 })
+		await save({ interfaceFontScale: 120, terminalFontSize: 14, editorFontSize: 15, spacingScale: 80 })
 
-		expect(stored).toMatchObject({ soundEnabled: true, writeDelayMs: 2000 })
+		expect(stored).toMatchObject({
+			interfaceFontScale: 120,
+			terminalFontSize: 14,
+			editorFontSize: 15,
+			spacingScale: 80,
+		})
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
 		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "settingsSaveResult",
@@ -1900,12 +1910,11 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 	})
 
 	it("puts back the values already stored when a later one fails, and reports the failure", async () => {
-		failWriteOf("writeDelayMs", 2000)
+		failWriteOf("editorFontSize", 15)
 
-		await save({ soundEnabled: true, writeDelayMs: 2000 })
+		await save({ interfaceFontScale: 120, terminalFontSize: 14, editorFontSize: 15 })
 
-		// soundEnabled was stored first, then restored; writeDelayMs never changed.
-		expect(stored).toMatchObject({ soundEnabled: false, writeDelayMs: 1000 })
+		expect(stored).toMatchObject({ interfaceFontScale: 100, terminalFontSize: 12 })
 		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "settingsSaveResult",
 			requestId: "save-1",
@@ -1921,53 +1930,123 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
 	})
 
+	it("puts back the value whose own write failed after it had changed the stored value", async () => {
+		// As a store whose cache is updated before its write to disk fails.
+		failWriteOf("terminalFontSize", 14, (key, value) => {
+			stored[key] = value
+		})
+
+		await save({ terminalFontSize: 14 })
+
+		expect(stored.terminalFontSize).toBe(12)
+	})
+
 	it("restores in reverse order, so the first stored value is restored last", async () => {
 		const order: string[] = []
 		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
 		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
 			order.push(key)
-			if (key === "terminalCommandDelay" && value === 50) throw new Error("boom")
+			if (key === "spacingScale" && value === 80) throw new Error("boom")
 			return real(key as never, value as never)
 		})
 
-		await save({ soundEnabled: true, writeDelayMs: 2000, terminalCommandDelay: 50 })
+		await save({ interfaceFontScale: 120, terminalFontSize: 14, spacingScale: 80 })
 
-		expect(stored).toMatchObject({ soundEnabled: false, writeDelayMs: 1000, terminalCommandDelay: 0 })
-		// Three writes forward (the last one fails), then the restores in the opposite order.
-		expect(order).toEqual(["soundEnabled", "writeDelayMs", "terminalCommandDelay", "writeDelayMs", "soundEnabled"])
+		expect(stored).toMatchObject({ interfaceFontScale: 100, terminalFontSize: 12 })
+		// Three writes forward (the last one fails), then the restores in the opposite order, failed key first.
+		expect(order).toEqual([
+			"interfaceFontScale",
+			"terminalFontSize",
+			"spacingScale",
+			"spacingScale",
+			"terminalFontSize",
+			"interfaceFontScale",
+		])
 	})
 
-	it("keeps a newer value: a key is only restored while it still holds what this save wrote", async () => {
-		// Another save stores its own value for soundEnabled while this one is failing.
-		failWriteOf("writeDelayMs", 2000, () => {
-			stored.soundEnabled = "from another save"
+	it("clears a value again that had no stored value before the save", async () => {
+		failWriteOf("terminalFontSize", 14)
+
+		await save({ editorFontSize: 15, terminalFontSize: 14 })
+
+		expect(stored.editorFontSize).toBeUndefined()
+	})
+
+	describe("two saves at once", () => {
+		it("a failed save does not undo another save's different value", async () => {
+			let releaseFailure!: () => void
+			const held = new Promise<void>((resolve) => (releaseFailure = resolve))
+			failWriteOf("terminalFontSize", 14, () => held)
+
+			const a = save({ interfaceFontScale: 120, terminalFontSize: 14 }, "save-a")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(120))
+			await save({ interfaceFontScale: 150 }, "save-b")
+
+			releaseFailure()
+			await a
+
+			expect(stored.interfaceFontScale).toBe(150)
 		})
 
-		await save({ soundEnabled: true, writeDelayMs: 2000 })
+		it("a failed save does not undo another save that wrote the same value", async () => {
+			let releaseFailure!: () => void
+			const held = new Promise<void>((resolve) => (releaseFailure = resolve))
+			failWriteOf("terminalFontSize", 14, () => held)
 
-		expect(stored.soundEnabled).toBe("from another save")
-		expect(stored.writeDelayMs).toBe(1000)
-	})
+			// Save A stores interfaceFontScale 120, then waits at its failing write.
+			const a = save({ interfaceFontScale: 120, terminalFontSize: 14 }, "save-a")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(120))
 
-	it("clears a key again that had no stored value before the save", async () => {
-		failWriteOf("writeDelayMs", 2000)
+			// Save B stores the same value for the same key, and finishes.
+			await save({ interfaceFontScale: 120 }, "save-b")
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+				type: "settingsSaveResult",
+				requestId: "save-b",
+				success: true,
+			})
 
-		await save({ terminalProfile: "bash", writeDelayMs: 2000 })
+			// Save A now fails and rolls back. B's write of the same value must stand.
+			releaseFailure()
+			await a
 
-		expect(stored.terminalProfile).toBeUndefined()
+			expect(stored.interfaceFontScale).toBe(120)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+				expect.objectContaining({ requestId: "save-a", success: false }),
+			)
+		})
+
+		it("a later failure of the other save still puts its own writes back", async () => {
+			let releaseFailure!: () => void
+			const held = new Promise<void>((resolve) => (releaseFailure = resolve))
+			failWriteOf("editorFontSize", 15, () => held)
+
+			// Save A holds at its failing write, and has not touched spacingScale.
+			const a = save({ terminalFontSize: 14, editorFontSize: 15 }, "save-a")
+			await vi.waitFor(() => expect(stored.terminalFontSize).toBe(14))
+			// Save B writes a different key and finishes.
+			await save({ spacingScale: 80 }, "save-b")
+
+			releaseFailure()
+			await a
+
+			expect(stored.terminalFontSize).toBe(12) // A's own write is put back
+			expect(stored.spacingScale).toBe(80) // B's is untouched
+		})
 	})
 
 	it("keeps going and still reports the failure when a restore itself fails", async () => {
 		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
 		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
-			if (key === "writeDelayMs") throw new Error("writeDelayMs is broken")
-			if (key === "soundEnabled" && value === false) throw new Error("cannot restore")
+			if (key === "terminalFontSize" && value === 14) throw new Error("terminalFontSize is broken")
+			if (key === "interfaceFontScale" && value === 100) throw new Error("cannot restore")
 			return real(key as never, value as never)
 		})
 
-		await save({ soundEnabled: true, writeDelayMs: 2000 })
+		await save({ interfaceFontScale: 120, terminalFontSize: 14 })
 
-		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("Could not restore soundEnabled"))
+		expect(mockClineProvider.log).toHaveBeenCalledWith(
+			expect.stringContaining("Could not restore interfaceFontScale"),
+		)
 		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
 			expect.objectContaining({ requestId: "save-1", success: false }),
 		)
@@ -1976,12 +2055,12 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 	it("reports a restore failure that is not an Error", async () => {
 		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
 		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
-			if (key === "writeDelayMs") throw new Error("writeDelayMs is broken")
-			if (key === "soundEnabled" && value === false) throw "plain restore failure"
+			if (key === "terminalFontSize" && value === 14) throw new Error("terminalFontSize is broken")
+			if (key === "interfaceFontScale" && value === 100) throw "plain restore failure"
 			return real(key as never, value as never)
 		})
 
-		await save({ soundEnabled: true, writeDelayMs: 2000 })
+		await save({ interfaceFontScale: 120, terminalFontSize: 14 })
 
 		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("plain restore failure"))
 	})
@@ -1989,25 +2068,37 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 	it("reports a non-Error failure by its text", async () => {
 		vi.mocked(mockClineProvider.contextProxy.setValue).mockRejectedValue("plain string failure")
 
-		await save({ soundEnabled: true })
+		await save({ interfaceFontScale: 120 })
 
 		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
 			expect.objectContaining({ success: false, error: "plain string failure" }),
 		)
 	})
 
-	it("still saves and refreshes, without a result message, when the request has no id", async () => {
-		await save({ soundEnabled: true }, null)
+	it("leaves every other setting as it was written: it is not put back when a later write fails", async () => {
+		failWriteOf("terminalFontSize", 14)
 
+		await save({ soundEnabled: true, terminalFontSize: 14 })
+
+		// Not an appearance value, so it keeps its existing behaviour. The failure is still reported.
 		expect(stored.soundEnabled).toBe(true)
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+			expect.objectContaining({ requestId: "save-1", success: false }),
+		)
+	})
+
+	it("still saves and refreshes, without a result message, when the request has no id", async () => {
+		await save({ interfaceFontScale: 120 }, null)
+
+		expect(stored.interfaceFontScale).toBe(120)
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
 		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalled()
 	})
 
 	it("does not report a failure to a request without an id either", async () => {
-		failWriteOf("soundEnabled", true)
+		failWriteOf("interfaceFontScale", 120)
 
-		await save({ soundEnabled: true }, null)
+		await save({ interfaceFontScale: 120 }, null)
 
 		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalled()
 		expect(vscode.window.showErrorMessage).toHaveBeenCalled()
@@ -2021,10 +2112,10 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 	})
 
 	it.each(["experiments", "customSupportPrompts"])("stores nothing for an empty %s value", async (key) => {
-		await save({ [key]: undefined, soundEnabled: true })
+		await save({ [key]: undefined, interfaceFontScale: 120 })
 
 		expect(stored).not.toHaveProperty(key)
-		expect(stored.soundEnabled).toBe(true)
+		expect(stored.interfaceFontScale).toBe(120)
 		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
 			expect.objectContaining({ requestId: "save-1", success: true }),
 		)
@@ -2034,9 +2125,9 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 		it("keeps a stored save and still reports success", async () => {
 			vi.mocked(mockClineProvider.postStateToWebview).mockRejectedValueOnce(new Error("state unavailable"))
 
-			await save({ soundEnabled: true, writeDelayMs: 2000 })
+			await save({ interfaceFontScale: 120, terminalFontSize: 14 })
 
-			expect(stored).toMatchObject({ soundEnabled: true, writeDelayMs: 2000 })
+			expect(stored).toMatchObject({ interfaceFontScale: 120, terminalFontSize: 14 })
 			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
 				type: "settingsSaveResult",
 				requestId: "save-1",
@@ -2049,7 +2140,7 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 		it("logs a refresh failure that is not an Error", async () => {
 			vi.mocked(mockClineProvider.postStateToWebview).mockRejectedValueOnce("plain refresh failure")
 
-			await save({ soundEnabled: true })
+			await save({ interfaceFontScale: 120 })
 
 			expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("plain refresh failure"))
 			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
@@ -2058,10 +2149,10 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 		})
 
 		it("still reports a failed save", async () => {
-			failWriteOf("soundEnabled", true)
+			failWriteOf("interfaceFontScale", 120)
 			vi.mocked(mockClineProvider.postStateToWebview).mockRejectedValueOnce(new Error("state unavailable"))
 
-			await save({ soundEnabled: true })
+			await save({ interfaceFontScale: 120 })
 
 			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
 				type: "settingsSaveResult",

@@ -2,7 +2,6 @@ import { safeWriteJson } from "../../utils/safeWriteJson"
 import * as path from "path"
 import * as os from "os"
 import * as fs from "fs/promises"
-import deepEqual from "fast-deep-equal"
 import { getRooDirectoriesForCwd } from "../../services/roo-config/index.js"
 import pWaitFor from "p-wait-for"
 import * as vscode from "vscode"
@@ -130,6 +129,24 @@ import {
 
 const handlerFor = (apiConfiguration: ProviderSettings, provider: RouterName): ApiHandler =>
 	buildApiHandler({ ...apiConfiguration, apiProvider: provider })
+
+/**
+ * The settings a save puts back if it fails: the four appearance values, which are saved together and must not be
+ * left half changed. Every other setting keeps the way it is written, and the way a failure is handled, as before.
+ */
+const ROLLBACK_SETTING_KEYS = new Set<string>([
+	"interfaceFontScale",
+	"terminalFontSize",
+	"editorFontSize",
+	"spacingScale",
+])
+
+/**
+ * Which save wrote each of those settings last. A failed save puts a setting back only while it is still the one
+ * that wrote it. Comparing values instead would not tell two saves apart when they write the same value, and the
+ * failed one would undo the other's successful write. The store is shared by every provider (sidebar, editor tab).
+ */
+const lastWriterOfSetting = new Map<string, object>()
 
 export const webviewMessageHandler = async (
 	provider: ClineProvider,
@@ -739,11 +756,11 @@ export const webviewMessageHandler = async (
 			break
 
 		case "updateSettings": {
-			// A save is all-or-nothing as far as the stored values go. If a write fails, the values this save already
-			// stored are put back, so the webview can keep the user's edits and let them retry. Only stored values
-			// are restored: side effects that ran in place (the language, speech, the terminal, ...) are not undone.
-			// A value is put back only while it is still the one this save wrote, so a newer save's value is kept.
-			const written: Array<{ key: string; previous: unknown; wrote: unknown }> = []
+			// The appearance values are saved all-or-nothing: if a write fails, the ones this save already stored are
+			// put back, so the webview can keep the user's edits and let them retry. A key is recorded before it is
+			// written, so a write that failed after changing the stored value is put back too. A key is put back only
+			// while this save is still the last one that wrote it, so a newer save's value is kept.
+			const written: Array<{ key: string; previous: unknown; writer: object }> = []
 			let failure: string | undefined
 
 			try {
@@ -878,15 +895,21 @@ export const webviewMessageHandler = async (
 						}
 					}
 
+					if (ROLLBACK_SETTING_KEYS.has(key)) {
+						const writer = {}
+						written.push({ key, previous, writer })
+						lastWriterOfSetting.set(key, writer)
+					}
+
 					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
-					written.push({ key, previous, wrote: newValue })
 				}
 			} catch (error) {
 				failure = error instanceof Error ? error.message : String(error)
 
-				for (const { key, previous, wrote } of written.reverse()) {
+				for (const { key, previous, writer } of written.reverse()) {
 					try {
-						if (deepEqual(provider.contextProxy.getValue(key as keyof RooCodeSettings), wrote)) {
+						if (lastWriterOfSetting.get(key) === writer) {
+							lastWriterOfSetting.delete(key)
 							await provider.contextProxy.setValue(key as keyof RooCodeSettings, previous as never)
 						}
 					} catch (rollbackError) {
