@@ -1,5 +1,5 @@
 import React from "react"
-import { render, screen } from "@/utils/test-utils"
+import { fireEvent, render, screen } from "@/utils/test-utils"
 import type { ClineMessage } from "@roo-code/types"
 
 import { ChatRowContent } from "../ChatRow"
@@ -10,6 +10,26 @@ vi.mock("react-i18next", () => ({
 	useTranslation: () => ({ t: (key: string) => key, i18n: { exists: () => true } }),
 	Trans: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
 	initReactI18next: { type: "3rdParty", init: () => {} },
+}))
+
+// The edit box is a large component of its own. This stand-in shows the text it was given and offers the two ways
+// out of editing, which is all the timestamp tests need.
+vi.mock("../ChatTextArea", () => ({
+	ChatTextArea: ({
+		inputValue,
+		onSend,
+		onCancel,
+	}: {
+		inputValue: string
+		onSend: () => void
+		onCancel: () => void
+	}) => (
+		<div data-testid="edit-box">
+			<textarea data-testid="edit-text" value={inputValue} readOnly />
+			<button data-testid="cancel-edit" onClick={onCancel} />
+			<button data-testid="send-edit" onClick={onSend} />
+		</div>
+	),
 }))
 
 let mockState: Record<string, unknown> = {}
@@ -218,6 +238,58 @@ describe("ChatRow – message timestamp", () => {
 
 				expect(screen.getByTestId("message-timestamp")).toHaveAttribute("datetime", new Date(OLD).toISOString())
 			})
+		})
+	})
+
+	describe("while a user message is being edited", () => {
+		const message: ClineMessage = { ts: Date.now(), type: "say", say: "user_feedback", text: "an editable message" }
+		const startEditing = () => fireEvent.click(screen.getByText("an editable message"))
+
+		it("shows the time before editing starts", () => {
+			renderRow(message)
+
+			expect(screen.getByTestId("message-timestamp")).toBeInTheDocument()
+			expect(screen.queryByTestId("edit-box")).not.toBeInTheDocument()
+		})
+
+		it("keeps the message in the edit box and hides the time, which the edit box replaces", () => {
+			renderRow(message)
+
+			startEditing()
+
+			expect(screen.getByTestId("edit-box")).toBeInTheDocument()
+			expect(screen.getByTestId("edit-text")).toHaveValue("an editable message")
+			expect(screen.queryByTestId("message-timestamp")).not.toBeInTheDocument()
+		})
+
+		it("shows the time again, under the message, when editing is cancelled", () => {
+			renderRow(message)
+			startEditing()
+
+			fireEvent.click(screen.getByTestId("cancel-edit"))
+
+			expect(screen.queryByTestId("edit-box")).not.toBeInTheDocument()
+			expect(screen.getByText("an editable message")).toBeInTheDocument()
+			expect(screen.getByTestId("message-timestamp")).toBeInTheDocument()
+		})
+
+		it("shows the time again when the edit is sent", () => {
+			renderRow(message)
+			startEditing()
+
+			fireEvent.click(screen.getByTestId("send-edit"))
+
+			expect(screen.queryByTestId("edit-box")).not.toBeInTheDocument()
+			expect(screen.getByTestId("message-timestamp")).toBeInTheDocument()
+		})
+
+		it("cannot be edited while streaming, so the time stays", () => {
+			renderRow(message, true)
+
+			startEditing()
+
+			expect(screen.queryByTestId("edit-box")).not.toBeInTheDocument()
+			expect(screen.getByTestId("message-timestamp")).toBeInTheDocument()
 		})
 	})
 

@@ -183,6 +183,20 @@ describe("TaskHeader", () => {
 			expect(text).toMatch(/2:41\s?PM/i)
 		})
 
+		it.each([
+			["zero", 0],
+			["negative", -1],
+			["not a number", Number.NaN],
+			["beyond the range of a date", 8.64e15 + 1],
+		])("shows no time, and still the expanded task, when the task's time is %s", (_name, ts) => {
+			renderWithExtensionState(<TaskHeader {...defaultProps} task={{ ...defaultProps.task, ts }} />)
+
+			expand()
+
+			expect(screen.getByText("chat:task.title")).toBeInTheDocument()
+			expect(screen.queryByTestId("message-timestamp")).not.toBeInTheDocument()
+		})
+
 		it("is not shown while the task is collapsed", () => {
 			renderWithExtensionState(<TaskHeader {...defaultProps} task={task} />)
 
