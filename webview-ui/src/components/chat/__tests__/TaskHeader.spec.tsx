@@ -41,6 +41,8 @@ const mockExtensionState: {
 	currentTaskItem: { id: string; task?: string; title?: string } | null
 	clineMessages: any[]
 	taskHistory: any[]
+	timeFormat?: "auto" | "12h" | "24h"
+	dateFormat?: "auto" | "mdy" | "dmy" | "ymd"
 } = {
 	apiConfiguration: {
 		apiProvider: providerIdentifiers.anthropic,
@@ -148,6 +150,54 @@ describe("TaskHeader", () => {
 		const condenseButton = buttons.find((button) => button.querySelector("svg.lucide-list-chevrons-down-up"))
 		expect(condenseButton).toBeDefined()
 		expect(condenseButton?.querySelector("svg")).toBeInTheDocument()
+	})
+
+	describe("when the task was sent", () => {
+		const SENT = new Date(2024, 2, 7, 14, 41, 0, 0).getTime() // years back: a date, not "Today"
+		const expand = () => fireEvent.click(screen.getByText("Test task"))
+		const task = { ...defaultProps.task, ts: SENT }
+
+		afterEach(() => {
+			delete mockExtensionState.timeFormat
+			delete mockExtensionState.dateFormat
+		})
+
+		it("shows the time under the expanded task, in the chosen time and date format", () => {
+			Object.assign(mockExtensionState, { timeFormat: "24h", dateFormat: "ymd" })
+			renderWithExtensionState(<TaskHeader {...defaultProps} task={task} />)
+			expand()
+
+			const timestamp = screen.getByTestId("message-timestamp")
+			expect(timestamp.textContent).toContain("2024-03-07")
+			expect(timestamp.textContent).toContain("14:41")
+			expect(timestamp).toHaveAttribute("datetime", new Date(SENT).toISOString())
+		})
+
+		it("follows a different format", () => {
+			Object.assign(mockExtensionState, { timeFormat: "12h", dateFormat: "dmy" })
+			renderWithExtensionState(<TaskHeader {...defaultProps} task={task} />)
+			expand()
+
+			const text = screen.getByTestId("message-timestamp").textContent!
+			expect(text).toContain("07/03/2024")
+			expect(text).toMatch(/2:41\s?PM/i)
+		})
+
+		it("is not shown while the task is collapsed", () => {
+			renderWithExtensionState(<TaskHeader {...defaultProps} task={task} />)
+
+			expect(screen.queryByTestId("message-timestamp")).not.toBeInTheDocument()
+		})
+
+		it("keeps the task expanded when the time is clicked, as for the other controls under the task", () => {
+			renderWithExtensionState(<TaskHeader {...defaultProps} task={task} />)
+			expand()
+			expect(screen.getByText("chat:task.title")).toBeInTheDocument()
+
+			fireEvent.click(screen.getByTestId("message-timestamp"))
+
+			expect(screen.getByText("chat:task.title")).toBeInTheDocument()
+		})
 	})
 
 	it("should call handleCondenseContext when condense context button is clicked", () => {

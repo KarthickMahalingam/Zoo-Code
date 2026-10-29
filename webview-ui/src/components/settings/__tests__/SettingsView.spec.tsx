@@ -533,6 +533,21 @@ describe("SettingsView - Sound Settings", () => {
 			expect(savedSettings()).toMatchObject({ timeFormat: "24h", showRelativeTimes: false })
 		})
 
+		it("shows English as the display language when none is stored", async () => {
+			const { activateTab, getSettingsContent } = renderSettingsView({
+				language: undefined,
+				settingsImportedAt: "no-stored-language",
+			})
+			activateTab("language")
+
+			// The select is mocked in this spec: it shows the value it was given in a button before its trigger.
+			await waitFor(() =>
+				expect(within(getSettingsContent()).getAllByTestId("select-trigger").length).toBeGreaterThan(0),
+			)
+			const shownValue = within(getSettingsContent()).getAllByTestId("select-trigger")[0].previousElementSibling
+			expect(shownValue?.textContent).toBe("en")
+		})
+
 		it("shows the values it was given when the tab opens, and keeps edits buffered until Save", async () => {
 			const { activateTab } = renderSettingsView({
 				timeFormat: "24h",
