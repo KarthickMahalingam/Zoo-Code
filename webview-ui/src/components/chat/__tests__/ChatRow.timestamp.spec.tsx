@@ -195,6 +195,23 @@ describe("ChatRow – message timestamp", () => {
 				expect(text).toContain("14:41")
 			})
 
+			it("writes the automatic date in the display language, not only in English", async () => {
+				const i18next = (await import("i18next")).default
+				const original = i18next.language
+				i18next.language = "de"
+				try {
+					mockState = { dateFormat: "auto", timeFormat: "24h" }
+					renderRow(message)
+
+					const text = screen.getByTestId("message-timestamp").textContent!
+					expect(text).toContain("7. März 2024")
+					expect(text).toContain("14:41")
+					expect(text).not.toContain("Mar")
+				} finally {
+					i18next.language = original
+				}
+			})
+
 			it("carries the exact time as a machine-readable value", () => {
 				mockState = { dateFormat: "ymd", timeFormat: "24h" }
 				renderRow(message)

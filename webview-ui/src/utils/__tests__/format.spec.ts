@@ -249,6 +249,40 @@ describe("formatMessageTime", () => {
 		expect(fmt(at(2026, 9, 14, 14, 41), { timeFormat: "24h" })).toBe("Today 14:41")
 	})
 
+	describe("in another display language (automatic date format)", () => {
+		let original: string
+
+		beforeEach(async () => {
+			const i18next = (await import("i18next")).default as unknown as { language: string }
+			original = i18next.language
+			i18next.language = "de"
+		})
+
+		afterEach(async () => {
+			const i18next = (await import("i18next")).default as unknown as { language: string }
+			i18next.language = original
+		})
+
+		it("names today and yesterday in that language", () => {
+			expect(fmt(at(2026, 9, 14, 14, 41), { timeFormat: "24h" })).toBe("Heute 14:41")
+			expect(fmt(at(2026, 9, 13, 11, 43), { timeFormat: "24h" })).toBe("Gestern 11:43")
+		})
+
+		it("names the weekday in that language", () => {
+			expect(fmt(at(2026, 9, 12, 8, 0), { timeFormat: "24h" })).toMatch(/^Mo\.? 0?8:00$/) // a Monday
+		})
+
+		it("writes an older date in that language's own order and month name", () => {
+			expect(fmt(at(2024, 2, 7, 14, 41), { timeFormat: "24h" })).toBe("7. März 2024, 14:41")
+			// The same date within the current year leaves the year out.
+			expect(fmt(at(2026, 2, 7, 14, 41), { timeFormat: "24h" })).toMatch(/^7\. März, 14:41$/)
+		})
+
+		it("still lets an explicit date order win over the language", () => {
+			expect(fmt(at(2024, 2, 7, 14, 41), { timeFormat: "24h", dateFormat: "mdy" })).toBe("03/07/2024, 14:41")
+		})
+	})
+
 	it("honours an explicit date order for older messages", () => {
 		expect(fmt(at(2026, 0, 2, 10, 0), { timeFormat: "24h", dateFormat: "dmy" })).toBe("02/01/2026, 10:00")
 		expect(fmt(at(2026, 0, 2, 10, 0), { timeFormat: "24h", dateFormat: "ymd" })).toBe("2026-01-02, 10:00")

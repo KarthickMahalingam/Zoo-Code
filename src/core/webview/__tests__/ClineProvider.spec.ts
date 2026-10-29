@@ -2147,11 +2147,29 @@ describe("ClineProvider", () => {
 			["showRelativeTimes", true],
 			["showRelativeTimes", false],
 		])("a saved %s of %j is stored and returned to the webview", async (key, value) => {
+			mockPostMessage.mockClear()
 			await save({ [key]: value })
 
 			expect(mockContext.globalState.update).toHaveBeenCalledWith(key, value)
 			expect(await provider.getState()).toMatchObject({ [key]: value })
 			expect(await provider.getStateToPostToWebview()).toMatchObject({ [key]: value })
+			// The open webview is told, so the saved value does not revert on screen.
+			expect(mockPostMessage).toHaveBeenCalledWith(
+				expect.objectContaining({ type: "state", state: expect.objectContaining({ [key]: value }) }),
+			)
+		})
+
+		test("the state refresh after a save reaches the active webview with the saved time format", async () => {
+			mockPostMessage.mockClear()
+
+			await save({ timeFormat: "24h" })
+
+			const posted: unknown[][] = mockPostMessage.mock.calls
+			const states = posted
+				.map(([message]) => message as { type?: string; state?: { timeFormat?: string } })
+				.filter((message) => message.type === "state")
+			expect(states.length).toBeGreaterThan(0)
+			expect(states.at(-1)?.state?.timeFormat).toBe("24h")
 		})
 
 		test("an explicit false is kept, not replaced by the default of true", async () => {
