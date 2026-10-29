@@ -223,6 +223,25 @@ describe("UISettings", () => {
 			expect(setCachedStateField).toHaveBeenCalledWith("terminalFontSize", undefined)
 		})
 
+		it.each([
+			["interfaceFontScale", 120],
+			["terminalFontSize", 20],
+			["editorFontSize", 18],
+			["spacingScale", 80],
+		] as const)("records a reset of %s as a null value, not a number", (key, current) => {
+			vi.mocked(telemetryClient.capture).mockClear()
+			const props = { ...defaultProps, [key]: current }
+			const { getByTestId } = render(<UISettings {...props} />)
+
+			fireEvent.click(getByTestId(`appearance-${key}-reset`))
+
+			expect(telemetryClient.capture).toHaveBeenCalledTimes(1)
+			expect(telemetryClient.capture).toHaveBeenCalledWith("ui_settings_appearance_changed", {
+				key,
+				value: null,
+			})
+		})
+
 		it("records telemetry for changes", () => {
 			const { getByTestId } = render(<UISettings {...defaultProps} />)
 			fireEvent.click(getByTestId("appearance-editorFontSize-increment"))
