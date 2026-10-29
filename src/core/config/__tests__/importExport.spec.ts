@@ -256,6 +256,11 @@ describe("importExport", () => {
 		let stored: Map<string, Stored>
 		let failingKeys: Set<string>
 		let failingRestoreKeys: Set<string>
+		// Keys whose write lands only after the given delay (ms), and keys whose write stores the value and then fails.
+		let slowKeys: Map<string, number>
+		let failAfterStoringKeys: Set<string>
+		// Runs right after a key was stored, to emulate another save writing meanwhile.
+		let afterStored: Map<string, () => void>
 
 		const importWith = (globalSettings: Record<string, unknown>) => {
 			;(fs.readFile as Mock).mockResolvedValue(
@@ -285,6 +290,9 @@ describe("importExport", () => {
 			])
 			failingKeys = new Set<string>()
 			failingRestoreKeys = new Set<string>()
+			slowKeys = new Map<string, number>()
+			failAfterStoringKeys = new Set<string>()
+			afterStored = new Map<string, () => void>()
 			mockProviderSettingsManager.export.mockResolvedValue({
 				currentApiConfigName: "default",
 				apiConfigs: { default: { apiProvider: providerIdentifiers.anthropic, id: "default-id" } },
@@ -301,7 +309,11 @@ describe("importExport", () => {
 				if (failingRestoreKeys.has(key) && stored.get(key) !== undefined && value === "auto") {
 					throw new Error(`restore failed: ${key}`)
 				}
+				const delay = slowKeys.get(key)
+				if (delay !== undefined) await new Promise((resolve) => setTimeout(resolve, delay))
 				stored.set(key, value)
+				afterStored.get(key)?.()
+				if (failAfterStoringKeys.has(key)) throw new Error(`write failed after storing: ${key}`)
 			}
 			mockContextProxy.getValue.mockImplementation(getValue as unknown as typeof mockContextProxy.getValue)
 			mockContextProxy.setValue.mockImplementation(setValue as unknown as typeof mockContextProxy.setValue)
@@ -350,22 +362,56 @@ describe("importExport", () => {
 		})
 
 		it("does not undo a display setting changed concurrently after the import wrote it", async () => {
-			mockContextProxy.setValues.mockImplementationOnce(async () => {
+			failingKeys.add("mode")
+			// Another save changes two of them right after the import wrote the last one.
+			afterStored.set("showRelativeTimes", () => {
 				stored.set("timeFormat", "12h")
-				stored.set("showRelativeTimes", false)
 				stored.set("dateFormat", "dmy")
-				throw new Error("write failed")
 			})
 
-			const result = await importWith(display)
+			const result = await importWith({ ...display, mode: "code" })
 
-			expect(result).toEqual({ success: false, error: "write failed" })
+			expect(result).toEqual({ success: false, error: "write failed: mode" })
 			expect(stored.get("timeFormat")).toBe("12h")
 			expect(stored.get("dateFormat")).toBe("dmy")
 			// Matches what the import wrote, so it is rolled back.
 			expect(stored.get("showRelativeTimes")).toBe(true)
 			expect(mockContextProxy.setValue).not.toHaveBeenCalledWith("timeFormat", "auto")
 			expect(mockContextProxy.setValue).not.toHaveBeenCalledWith("dateFormat", "auto")
+		})
+
+		it("waits for every display write before restoring, so a slow write cannot land after its restore", async () => {
+			failingKeys.add("dateFormat")
+			slowKeys.set("timeFormat", 30)
+
+			const result = await importWith(display)
+
+			expect(result).toEqual({ success: false, error: "write failed: dateFormat" })
+			// Look again after the slow write's delay: a restore made before it landed would be overwritten by now.
+			await new Promise((resolve) => setTimeout(resolve, 80))
+			expect(stored.get("timeFormat")).toBe("auto")
+			expect(stored.get("showRelativeTimes")).toBe(true)
+		})
+
+		it("puts back a display setting whose own write stored the value and then failed", async () => {
+			failAfterStoringKeys.add("dateFormat")
+
+			const result = await importWith(display)
+
+			expect(result).toEqual({ success: false, error: "write failed after storing: dateFormat" })
+			expect(stored.get("dateFormat")).toBe("auto")
+			expect(stored.get("timeFormat")).toBe("auto")
+		})
+
+		it("reports a failure of another setting, and puts the display settings back", async () => {
+			failingKeys.add("mode")
+
+			const result = await importWith({ ...display, mode: "code" })
+
+			expect(result).toEqual({ success: false, error: "write failed: mode" })
+			expect(stored.get("timeFormat")).toBe("auto")
+			expect(stored.get("dateFormat")).toBe("auto")
+			expect(stored.get("showRelativeTimes")).toBe(true)
 		})
 
 		it("leaves display settings absent from the file untouched on failure", async () => {

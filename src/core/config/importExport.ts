@@ -267,29 +267,39 @@ export async function importSettingsFromPath(
 const DISPLAY_SETTING_KEYS = ["timeFormat", "dateFormat", "showRelativeTimes"] as const
 
 /**
- * Writes global settings; if the write rejects, display settings written by it
- * are restored so they are imported all-or-nothing. The original error is rethrown.
+ * Writes global settings. The display settings are written all-or-nothing: every write is awaited before anything is
+ * restored (`setValues` rejects at the first failure while its other writes are still running, and a restore made
+ * then could be overwritten by a write that lands later), and then the ones this import changed are put back. The
+ * original error is rethrown, so the caller's failure handling is unchanged. Other settings are written as before.
  */
 async function setValuesRestoringDisplaySettings(contextProxy: ContextProxy, settings: GlobalSettings) {
-	const snapshot = DISPLAY_SETTING_KEYS.filter((key) => key in settings).map(
-		(key) => [key, contextProxy.getValue(key)] as const,
-	)
+	const displayKeys = DISPLAY_SETTING_KEYS.filter((key) => key in settings)
+	if (displayKeys.length === 0) return contextProxy.setValues(settings)
 
-	try {
-		await contextProxy.setValues(settings)
-	} catch (error) {
-		for (const [key, previous] of snapshot) {
-			const current = contextProxy.getValue(key)
-			// Only undo our own write; a differing value means a concurrent save.
-			if (current === previous || current !== settings[key]) continue
-			try {
-				await contextProxy.setValue(key, previous)
-			} catch (restoreError) {
-				console.error(`Failed to restore setting "${key}" after import failure:`, restoreError)
-			}
+	const snapshot = displayKeys.map((key) => [key, contextProxy.getValue(key)] as const)
+	const others = Object.fromEntries(
+		Object.entries(settings).filter(([key]) => !(DISPLAY_SETTING_KEYS as readonly string[]).includes(key)),
+	) as GlobalSettings
+
+	const results = await Promise.allSettled([
+		contextProxy.setValues(others),
+		...displayKeys.map((key) => contextProxy.setValue(key, settings[key])),
+	])
+	const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
+	if (!failed) return
+
+	for (const [key, previous] of snapshot) {
+		const current = contextProxy.getValue(key)
+		// Only undo our own write; a differing value means a concurrent save.
+		if (current === previous || current !== settings[key]) continue
+		try {
+			await contextProxy.setValue(key, previous)
+		} catch (restoreError) {
+			console.error(`Failed to restore setting "${key}" after import failure:`, restoreError)
 		}
-		throw error
 	}
+
+	throw failed.reason
 }
 
 /**
