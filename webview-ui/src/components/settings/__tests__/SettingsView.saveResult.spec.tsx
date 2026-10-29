@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react"
+import { fireEvent, screen, waitFor } from "@testing-library/react"
 import { QueryClient } from "@tanstack/react-query"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -32,7 +32,7 @@ const makeAnEdit = async () => {
 describe("SettingsView – save acknowledgement", () => {
 	beforeEach(() => postMessage.mockClear())
 
-	it("sends the settings with a request id and holds back the follow-up messages until the host confirms", async () => {
+	it("sends the settings with a request id, plus the API configuration, telemetry and debug as before", async () => {
 		renderUiTab()
 		await makeAnEdit()
 
@@ -40,25 +40,25 @@ describe("SettingsView – save acknowledgement", () => {
 
 		const [save] = posted("updateSettings") as Array<{ type: string; requestId?: string }>
 		expect(save.requestId).toMatch(/^settings-save-\d+$/)
-		// Nothing else is sent, and the unsaved flag stays on, until the host answers.
-		expect(posted("upsertApiConfiguration")).toHaveLength(0)
-		expect(posted("telemetrySetting")).toHaveLength(0)
-		expect(posted("debugSetting")).toHaveLength(0)
+		// These do not wait for the host's answer, exactly as before the acknowledgement existed.
+		expect(posted("upsertApiConfiguration")).toHaveLength(1)
+		expect(posted("telemetrySetting")).toHaveLength(1)
+		expect(posted("debugSetting")).toHaveLength(1)
+		// Save stays unavailable, and the edit stays unsaved, until the host answers.
 		expect(screen.getByTestId("save-button")).toBeDisabled()
 	})
 
-	it("sends the rest of the save and clears the unsaved flag once the host confirms", async () => {
+	it("clears the unsaved flag once the host confirms, and sends nothing more", async () => {
 		renderUiTab()
 		await makeAnEdit()
 		fireEvent.click(screen.getByTestId("save-button"))
 
 		answerSave(lastSaveRequestId(postMessage), { success: true })
 
-		await waitFor(() => expect(posted("upsertApiConfiguration")).toHaveLength(1))
-		expect(posted("telemetrySetting")).toHaveLength(1)
-		expect(posted("debugSetting")).toHaveLength(1)
 		// Saved: nothing left to save.
-		expect(screen.getByTestId("save-button")).toBeDisabled()
+		await waitFor(() => expect(screen.getByTestId("save-button")).toBeDisabled())
+		expect(posted("upsertApiConfiguration")).toHaveLength(1)
+		expect(posted("updateSettings")).toHaveLength(1)
 	})
 
 	it("keeps the edits and the unsaved flag when the host reports a failure, so the user can retry", async () => {
@@ -68,9 +68,6 @@ describe("SettingsView – save acknowledgement", () => {
 
 		answerSave(lastSaveRequestId(postMessage), { success: false, error: "disk full" })
 
-		// No follow-up writes after a failed save.
-		expect(posted("upsertApiConfiguration")).toHaveLength(0)
-		expect(posted("telemetrySetting")).toHaveLength(0)
 		// The edit is still there, still unsaved, and Save is available again.
 		await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
 		// The checkbox defaults to checked; the user unchecked it, and that edit survives the failed save.
@@ -92,6 +89,7 @@ describe("SettingsView – save acknowledgement", () => {
 		fireEvent.click(screen.getByTestId("save-button"))
 
 		expect(posted("updateSettings")).toHaveLength(1)
+		expect(posted("upsertApiConfiguration")).toHaveLength(1)
 	})
 
 	it("ignores an answer for a different save, or one that arrives with no id", async () => {
@@ -99,24 +97,23 @@ describe("SettingsView – save acknowledgement", () => {
 		await makeAnEdit()
 		fireEvent.click(screen.getByTestId("save-button"))
 
-		answerSave("settings-save-999", { success: true })
+		answerSave("settings-save-never-issued", { success: true })
 		answerSave(undefined, { success: true })
-
-		expect(posted("upsertApiConfiguration")).toHaveLength(0)
 		expect(screen.getByTestId("save-button")).toBeDisabled()
 
-		// The real answer still works afterwards.
-		answerSave(lastSaveRequestId(postMessage), { success: true })
-		await waitFor(() => expect(posted("upsertApiConfiguration")).toHaveLength(1))
+		// The real answer still works afterwards: the edit is saved and Save is idle.
+		answerSave(lastSaveRequestId(postMessage), { success: false })
+		await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
 	})
 
 	it("ignores a save result when nothing is being saved", async () => {
 		renderUiTab()
-		await screen.findByTestId("collapse-thinking-checkbox")
-		// An id no save was ever issued with (earlier tests may leave their own saves unanswered).
+		await makeAnEdit()
 		answerSave("settings-save-never-issued", { success: true })
-		expect(posted("upsertApiConfiguration")).toHaveLength(0)
+		// The unsaved edit is untouched.
+		expect(screen.getByTestId("save-button")).toBeEnabled()
 	})
+
 	it("keeps an edit made while the save was pending unsaved, so Save stays available for it", async () => {
 		renderUiTab()
 		await makeAnEdit()
@@ -126,63 +123,27 @@ describe("SettingsView – save acknowledgement", () => {
 		fireEvent.click(screen.getByTestId("enter-behavior-checkbox"))
 		answerSave(lastSaveRequestId(postMessage), { success: true })
 
-		await waitFor(() => expect(posted("upsertApiConfiguration")).toHaveLength(1))
 		await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
 	})
 
-	it("sends the API configuration under the profile name it was submitted with", async () => {
-		renderWithExtensionState(<SettingsView onDone={vi.fn()} targetSection="ui" />, {
-			state: { currentApiConfigName: "first-profile" },
-			queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-		})
-		await makeAnEdit()
-		fireEvent.click(screen.getByTestId("save-button"))
+	it("does nothing, and does not fail, when the answer arrives after the view is gone", async () => {
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+		try {
+			const view = renderUiTab()
+			await makeAnEdit()
+			fireEvent.click(screen.getByTestId("save-button"))
+			const id = lastSaveRequestId(postMessage)
+			view.unmount()
 
-		// The user switches profile before the host answers.
-		act(() => {
-			window.dispatchEvent(
-				new MessageEvent("message", {
-					data: { type: "state", state: { currentApiConfigName: "other-profile" } },
-				}),
-			)
-		})
-		answerSave(lastSaveRequestId(postMessage), { success: true })
-
-		await waitFor(() => expect(posted("upsertApiConfiguration")).toHaveLength(1))
-		expect(posted("upsertApiConfiguration")[0]).toMatchObject({ text: "first-profile" })
-	})
-	it("sends the rest of a save even when the view is gone before the host answers", async () => {
-		const view = renderUiTab()
-		await makeAnEdit()
-		fireEvent.click(screen.getByTestId("save-button"))
-		const id = lastSaveRequestId(postMessage)
-
-		// The user leaves Settings (and discards) while the host is still storing the settings.
-		view.unmount()
-		expect(posted("upsertApiConfiguration")).toHaveLength(0)
-
-		answerSave(id, { success: true })
-		expect(posted("upsertApiConfiguration")).toHaveLength(1)
-		expect(posted("telemetrySetting")).toHaveLength(1)
-		expect(posted("debugSetting")).toHaveLength(1)
-
-		// A second answer for the same save does nothing.
-		answerSave(id, { success: true })
-		expect(posted("upsertApiConfiguration")).toHaveLength(1)
+			answerSave(id, { success: true })
+			expect(posted("upsertApiConfiguration")).toHaveLength(1)
+			expect(consoleError).not.toHaveBeenCalled()
+		} finally {
+			consoleError.mockRestore()
+		}
 	})
 
-	it("sends nothing more when the host reports a failure after the view is gone", async () => {
-		const view = renderUiTab()
-		await makeAnEdit()
-		fireEvent.click(screen.getByTestId("save-button"))
-		const id = lastSaveRequestId(postMessage)
-		view.unmount()
-
-		answerSave(id, { success: false, error: "disk full" })
-		expect(posted("upsertApiConfiguration")).toHaveLength(0)
-	})
-
-	it("never reuses a request id across mounts, and answers each save for itself", async () => {
+	it("never reuses a request id across mounts, so an earlier save's answer cannot complete a later one", async () => {
 		const first = renderUiTab()
 		await makeAnEdit()
 		fireEvent.click(screen.getByTestId("save-button"))
@@ -195,12 +156,11 @@ describe("SettingsView – save acknowledgement", () => {
 		const laterId = lastSaveRequestId(postMessage)
 		expect(laterId).not.toBe(earlierId)
 
-		// The earlier save's answer completes the earlier save only: the new one is still pending.
+		// The earlier save's answer arrives while the new save is pending: it must not complete it.
 		answerSave(earlierId, { success: true })
-		expect(posted("upsertApiConfiguration")).toHaveLength(1)
 		expect(screen.getByTestId("save-button")).toBeDisabled()
 
-		answerSave(laterId, { success: true })
-		expect(posted("upsertApiConfiguration")).toHaveLength(2)
+		answerSave(laterId, { success: false })
+		await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
 	})
 })

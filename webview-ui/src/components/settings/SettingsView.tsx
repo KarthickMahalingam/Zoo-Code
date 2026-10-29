@@ -140,14 +140,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	const [isChangeDetected, setChangeDetected] = useState(false)
 	// The save currently waiting for the host's answer. The "unsaved changes" flag stays on until it succeeds.
 	const [pendingSaveId, setPendingSaveId] = useState<string | undefined>(undefined)
-	// False once the view has gone: a save started here can still be answered after that.
-	const isMounted = useRef(true)
-	useEffect(() => {
-		isMounted.current = true
-		return () => {
-			isMounted.current = false
-		}
-	}, [])
+	// The state the pending save was made from, to tell whether the user edited again while it was in flight.
+	const pendingSaveEditedState = useRef<typeof cachedState | undefined>(undefined)
 	const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined)
 	const [activeTab, setActiveTab] = useState<SectionName>(
 		targetSection && sectionNames.includes(targetSection as SectionName)
@@ -405,37 +399,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	const handleSubmit = () => {
 		if (isSettingValid) {
 			const saveId = `settings-save-${++saveCounter}`
-			// What the rest of this save sends once the host confirms the settings were stored.
-			const saved = {
-				configName: currentApiConfigName,
-				apiConfiguration,
-				telemetrySetting,
-				debug: cachedState.debug,
-				editedState: cachedState,
-			}
-			// Registered here, not from an effect, so it outlives this view: if the user leaves Settings before the
-			// host answers, the rest of the save must still be sent.
-			const onResult = (event: MessageEvent) => {
-				const message = event.data
-				if (message?.type !== "settingsSaveResult" || message.requestId !== saveId) return
-
-				window.removeEventListener("message", onResult)
-				if (isMounted.current) setPendingSaveId(undefined)
-				if (!message.success) return
-
-				// These have more complex logic so they aren't (yet) handled
-				// by the `updateSettings` message.
-				vscode.postMessage({
-					type: "upsertApiConfiguration",
-					text: saved.configName,
-					apiConfiguration: saved.apiConfiguration,
-				})
-				vscode.postMessage({ type: "telemetrySetting", text: saved.telemetrySetting })
-				vscode.postMessage({ type: "debugSetting", bool: saved.debug })
-				// An edit made while the save was in flight is not in what was sent: it stays unsaved.
-				if (isMounted.current && latestCachedState.current === saved.editedState) setChangeDetected(false)
-			}
-			window.addEventListener("message", onResult)
+			pendingSaveEditedState.current = cachedState
 			setPendingSaveId(saveId)
 			vscode.postMessage({
 				type: "updateSettings",
@@ -520,9 +484,35 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 				},
 			})
 
-			// A failed save leaves the user's edits in place to retry.
+			// These have more complex logic so they aren't (yet) handled
+			// by the `updateSettings` message.
+			vscode.postMessage({ type: "upsertApiConfiguration", text: currentApiConfigName, apiConfiguration })
+			vscode.postMessage({ type: "telemetrySetting", text: telemetrySetting })
+			vscode.postMessage({ type: "debugSetting", bool: cachedState.debug })
+
+			// The "unsaved changes" flag is cleared only once the host reports that `updateSettings` was stored:
+			// see the `settingsSaveResult` listener below. A failed save leaves the user's edits in place to retry.
 		}
 	}
+
+	useEffect(() => {
+		if (!pendingSaveId) return
+
+		const onResult = (event: MessageEvent) => {
+			const message = event.data
+			if (message?.type !== "settingsSaveResult" || message.requestId !== pendingSaveId) return
+
+			const editedState = pendingSaveEditedState.current
+			pendingSaveEditedState.current = undefined
+			setPendingSaveId(undefined)
+
+			// An edit made while the save was in flight is not in what was sent: it stays unsaved.
+			if (message.success && latestCachedState.current === editedState) setChangeDetected(false)
+		}
+
+		window.addEventListener("message", onResult)
+		return () => window.removeEventListener("message", onResult)
+	}, [pendingSaveId])
 
 	const checkUnsaveChanges = useCallback(
 		(then: () => void) => {
