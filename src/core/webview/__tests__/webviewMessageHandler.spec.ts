@@ -1902,9 +1902,11 @@ describe("webviewMessageHandler - the display settings are saved all-or-nothing"
 
 		expect(stored).toMatchObject({ timeFormat: "auto", dateFormat: "auto" })
 		expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("common:errors.settings_save_failed")
-		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("rolled back"))
-		// The webview is re-synced with what is really stored.
+		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("Save failed"))
+		// The webview is re-synced with what is really stored: after the values were put back, not before.
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+		const lastWrite = Math.max(...vi.mocked(mockClineProvider.contextProxy.setValue).mock.invocationCallOrder)
+		expect(vi.mocked(mockClineProvider.postStateToWebview).mock.invocationCallOrder[0]).toBeGreaterThan(lastWrite)
 	})
 
 	it("puts back the value whose own write failed after it had changed the stored value", async () => {
@@ -1918,7 +1920,7 @@ describe("webviewMessageHandler - the display settings are saved all-or-nothing"
 		expect(stored.dateFormat).toBe("auto")
 	})
 
-	it("restores in reverse order, with the failed key first", async () => {
+	it("restores in reverse order", async () => {
 		const order: string[] = []
 		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
 		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
@@ -1929,14 +1931,9 @@ describe("webviewMessageHandler - the display settings are saved all-or-nothing"
 
 		await save({ timeFormat: "24h", dateFormat: "ymd", showRelativeTimes: false })
 
-		expect(order).toEqual([
-			"timeFormat",
-			"dateFormat",
-			"showRelativeTimes",
-			"showRelativeTimes",
-			"dateFormat",
-			"timeFormat",
-		])
+		// Three writes forward (the last one fails and never changed the stored value, so there is nothing to put
+		// back for it), then the restores in the opposite order.
+		expect(order).toEqual(["timeFormat", "dateFormat", "showRelativeTimes", "dateFormat", "timeFormat"])
 	})
 
 	it("clears a value again that had no stored value before the save", async () => {
@@ -1979,6 +1976,102 @@ describe("webviewMessageHandler - the display settings are saved all-or-nothing"
 
 			releaseFailure()
 			await a
+
+			expect(stored.timeFormat).toBe("12h")
+		})
+
+		/** Two saves that both write the same key and then fail, each held at its own failing write. */
+		const twoFailingSaves = async (releaseFirst: "a" | "b") => {
+			const gates: Record<"a" | "b", () => void> = { a: () => {}, b: () => {} }
+			const heldA = new Promise<void>((resolve) => (gates.a = resolve))
+			const heldB = new Promise<void>((resolve) => (gates.b = resolve))
+			failWriteOf("dateFormat", "ymd", () => heldA)
+			failWriteOf("showRelativeTimes", false, () => heldB)
+
+			const a = save({ timeFormat: "12h", dateFormat: "ymd" })
+			await vi.waitFor(() => expect(stored.timeFormat).toBe("12h"))
+			const b = save({ timeFormat: "24h", showRelativeTimes: false })
+			await vi.waitFor(() => expect(stored.timeFormat).toBe("24h"))
+
+			const [first, second] = releaseFirst === "a" ? (["a", "b"] as const) : (["b", "a"] as const)
+			gates[first]()
+			await (first === "a" ? a : b)
+			const afterFirst = stored.timeFormat
+			gates[second]()
+			await (second === "a" ? a : b)
+			return { afterFirst, final: stored.timeFormat }
+		}
+
+		it("puts back the value from before both saves when both fail, the earlier one failing first", async () => {
+			const { afterFirst, final } = await twoFailingSaves("a")
+
+			// The later save is still pending with 24h, so the first failure leaves it. Then it restores "auto".
+			expect(afterFirst).toBe("24h")
+			expect(final).toBe("auto")
+		})
+
+		it("puts back the value from before both saves when both fail, the later one failing first", async () => {
+			const { afterFirst, final } = await twoFailingSaves("b")
+
+			// The later save restores the earlier one's pending value, and the earlier one then restores "auto".
+			expect(afterFirst).toBe("12h")
+			expect(final).toBe("auto")
+		})
+
+		it("puts back the original value when three overlapping saves all fail, the middle one first", async () => {
+			const release: Record<"a" | "b" | "c", () => void> = { a: () => {}, b: () => {}, c: () => {} }
+			const gate = (name: "a" | "b" | "c") => new Promise<void>((resolve) => (release[name] = resolve))
+			const gates = { a: gate("a"), b: gate("b"), c: gate("c") }
+			failWriteOf("dateFormat", "ymd", () => gates.a)
+			failWriteOf("dateFormat", "dmy", () => gates.b)
+			failWriteOf("showRelativeTimes", false, () => gates.c)
+
+			const a = save({ timeFormat: "12h", dateFormat: "ymd" })
+			await vi.waitFor(() => expect(stored.timeFormat).toBe("12h"))
+			const b = save({ timeFormat: "24h", dateFormat: "dmy" })
+			await vi.waitFor(() => expect(stored.timeFormat).toBe("24h"))
+			const c = save({ timeFormat: "auto", showRelativeTimes: false })
+			await vi.waitFor(() =>
+				expect(mockClineProvider.contextProxy.setValue).toHaveBeenCalledWith("timeFormat", "auto"),
+			)
+
+			release.b()
+			await b
+			expect(stored.timeFormat).toBe("auto") // the newest is still pending
+
+			release.c()
+			await c
+			expect(stored.timeFormat).toBe("12h") // the oldest save's pending value, not the middle one's
+
+			release.a()
+			await a
+			expect(stored.timeFormat).toBe("auto") // from before all three
+		})
+
+		it("keeps the earlier save's value when the later one fails and the earlier one succeeds", async () => {
+			let releaseFailure!: () => void
+			const held = new Promise<void>((resolve) => (releaseFailure = resolve))
+			failWriteOf("showRelativeTimes", false, () => held)
+
+			const later = (async () => {
+				await vi.waitFor(() => expect(stored.timeFormat).toBe("12h"))
+				return save({ timeFormat: "24h", showRelativeTimes: false })
+			})()
+			await save({ timeFormat: "12h" })
+			await vi.waitFor(() => expect(stored.timeFormat).toBe("24h"))
+
+			releaseFailure()
+			await later
+
+			expect(stored.timeFormat).toBe("12h")
+		})
+
+		it("keeps a value changed outside a save, such as an import, when a failed save rolls back", async () => {
+			failWriteOf("dateFormat", "ymd", () => {
+				stored.timeFormat = "12h" // an import writes the same key meanwhile
+			})
+
+			await save({ timeFormat: "24h", dateFormat: "ymd" })
 
 			expect(stored.timeFormat).toBe("12h")
 		})
@@ -2035,6 +2128,26 @@ describe("webviewMessageHandler - the display settings are saved all-or-nothing"
 
 		expect(stored.soundEnabled).toBe(true)
 		expect(vscode.window.showErrorMessage).toHaveBeenCalled()
+	})
+
+	describe("a failure while writing another setting", () => {
+		it("puts the display settings back, refreshes the webview, and then follows the existing error path", async () => {
+			failWriteOf("soundEnabled", true)
+
+			await expect(save({ timeFormat: "24h", soundEnabled: true })).rejects.toThrow("storage unavailable")
+
+			expect(stored.timeFormat).toBe("auto")
+			expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+			// No toast: the existing path did not show one for these settings.
+			expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+		})
+
+		it("does not reject for a failure of a display setting, which is reported to the user instead", async () => {
+			failWriteOf("timeFormat", "24h")
+
+			await expect(save({ timeFormat: "24h" })).resolves.toBeUndefined()
+			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("common:errors.settings_save_failed")
+		})
 	})
 
 	it("does nothing when there are no settings to save", async () => {
