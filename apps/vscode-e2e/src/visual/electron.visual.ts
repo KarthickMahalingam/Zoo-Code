@@ -256,8 +256,16 @@ for (const scenario of scenarios) {
 			const tokenCountMask = webviewFrame
 				.frameLocator("iframe")
 				.locator('[data-testid="context-tokens-count"],[data-testid="context-window-size"]')
-			// The time under each message is the real send time, so it changes on every run. Mask it, as the
-			// token counters above, and keep the rest of the scene byte-stable.
+			// The time under each message is the real send time, so it changes on every run, and so does the width
+			// of its text ("9:05 AM" and "12:36 PM" are not equally wide). A mask covers the element's box, so
+			// that box needs a fixed width as well: without it the masked area differs between runs.
+			await contentFrame.evaluate(() => {
+				for (const time of document.querySelectorAll<HTMLElement>('[data-testid="message-timestamp"]')) {
+					time.style.setProperty("width", "96px", "important")
+					time.style.setProperty("overflow", "hidden", "important")
+				}
+			})
+			// Mask it, as the token counters above, and keep the rest of the scene byte-stable.
 			const messageTimeMask = webviewFrame.frameLocator("iframe").locator('[data-testid="message-timestamp"]')
 			await expect(sidebar).toHaveScreenshot(`electron-${scenario.name}-sidebar.png`, {
 				mask: [tokenCountMask, messageTimeMask],
