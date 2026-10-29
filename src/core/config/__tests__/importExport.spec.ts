@@ -313,7 +313,9 @@ describe("importExport", () => {
 				if (delay !== undefined) await new Promise((resolve) => setTimeout(resolve, delay))
 				stored.set(key, value)
 				afterStored.get(key)?.()
-				if (failAfterStoringKeys.has(key)) throw new Error(`write failed after storing: ${key}`)
+				// Only the import's own write fails; putting the previous value back works.
+				if (failAfterStoringKeys.has(key) && value !== "auto")
+					throw new Error(`write failed after storing: ${key}`)
 			}
 			mockContextProxy.getValue.mockImplementation(getValue as unknown as typeof mockContextProxy.getValue)
 			mockContextProxy.setValue.mockImplementation(setValue as unknown as typeof mockContextProxy.setValue)
@@ -323,6 +325,23 @@ describe("importExport", () => {
 		})
 
 		const display = { timeFormat: "24h", dateFormat: "ymd", showRelativeTimes: false }
+
+		it("reports a failure that is not an Error by its text when a restore also fails", async () => {
+			const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+			mockContextProxy.setValues.mockImplementationOnce(async () => {
+				stored.set("timeFormat", "24h")
+				throw "plain failure"
+			})
+			failingRestoreKeys.add("timeFormat")
+
+			const result = await importWith({ timeFormat: "24h", mode: "code" })
+
+			expect(result).toEqual({
+				success: false,
+				error: "plain failure (these settings could not be restored: timeFormat)",
+			})
+			consoleError.mockRestore()
+		})
 
 		it("writes all three display settings on success", async () => {
 			const result = await importWith(display)
@@ -344,14 +363,18 @@ describe("importExport", () => {
 			expect(stored.get("showRelativeTimes")).toBe(true)
 		})
 
-		it("tolerates a failing restore and still reports the original error", async () => {
+		it("keeps restoring after a failed restore, and reports which settings could not be restored", async () => {
 			const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 			failingKeys.add("dateFormat")
 			failingRestoreKeys.add("timeFormat")
 
 			const result = await importWith(display)
 
-			expect(result).toEqual({ success: false, error: "write failed: dateFormat" })
+			// The original error comes first, then the part of the import that is still stored.
+			expect(result).toEqual({
+				success: false,
+				error: "write failed: dateFormat (these settings could not be restored: timeFormat)",
+			})
 			expect(stored.get("timeFormat")).toBe("24h")
 			expect(stored.get("showRelativeTimes")).toBe(true)
 			expect(consoleError).toHaveBeenCalledWith(

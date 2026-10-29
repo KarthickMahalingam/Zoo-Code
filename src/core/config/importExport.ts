@@ -288,6 +288,8 @@ async function setValuesRestoringDisplaySettings(contextProxy: ContextProxy, set
 	const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
 	if (!failed) return
 
+	const notRestored: string[] = []
+
 	for (const [key, previous] of snapshot) {
 		const current = contextProxy.getValue(key)
 		// Only undo our own write; a differing value means a concurrent save.
@@ -295,11 +297,16 @@ async function setValuesRestoringDisplaySettings(contextProxy: ContextProxy, set
 		try {
 			await contextProxy.setValue(key, previous)
 		} catch (restoreError) {
+			notRestored.push(key)
 			console.error(`Failed to restore setting "${key}" after import failure:`, restoreError)
 		}
 	}
 
-	throw failed.reason
+	if (notRestored.length === 0) throw failed.reason
+
+	// Part of the import is still stored: say so, instead of reporting only the first failure.
+	const reason = failed.reason instanceof Error ? failed.reason.message : String(failed.reason)
+	throw new Error(`${reason} (these settings could not be restored: ${notRestored.join(", ")})`)
 }
 
 /**
