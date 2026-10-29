@@ -2119,6 +2119,63 @@ describe("ClineProvider", () => {
 		expect(state.allowedReadFiles).toEqual([])
 	})
 
+	describe("date and time display settings", () => {
+		const defaults = { timeFormat: "auto", dateFormat: "auto", showRelativeTimes: true }
+
+		/** Saves through the real `updateSettings` handler, as the settings view does. */
+		const save = async (updatedSettings: Record<string, unknown>) => {
+			await provider.resolveWebviewView(mockWebviewView)
+			const messageHandler = vi.mocked(mockWebviewView.webview.onDidReceiveMessage).mock.calls[0][0]
+			await messageHandler({ type: "updateSettings", updatedSettings })
+		}
+
+		test.each(Object.entries(defaults))("%s is %j when it was never saved", async (key, expected) => {
+			await provider.resolveWebviewView(mockWebviewView)
+
+			expect(await provider.getState()).toMatchObject({ [key]: expected })
+			expect(await provider.getStateToPostToWebview()).toMatchObject({ [key]: expected })
+		})
+
+		test.each([
+			["timeFormat", "12h"],
+			["timeFormat", "24h"],
+			["timeFormat", "auto"],
+			["dateFormat", "mdy"],
+			["dateFormat", "dmy"],
+			["dateFormat", "ymd"],
+			["dateFormat", "auto"],
+			["showRelativeTimes", true],
+			["showRelativeTimes", false],
+		])("a saved %s of %j is stored and returned to the webview", async (key, value) => {
+			await save({ [key]: value })
+
+			expect(mockContext.globalState.update).toHaveBeenCalledWith(key, value)
+			expect(await provider.getState()).toMatchObject({ [key]: value })
+			expect(await provider.getStateToPostToWebview()).toMatchObject({ [key]: value })
+		})
+
+		test("an explicit false is kept, not replaced by the default of true", async () => {
+			await save({ showRelativeTimes: false })
+
+			expect((await provider.getState()).showRelativeTimes).toBe(false)
+			expect((await provider.getStateToPostToWebview()).showRelativeTimes).toBe(false)
+		})
+
+		test("all three are saved together and returned together", async () => {
+			await save({ timeFormat: "24h", dateFormat: "dmy", showRelativeTimes: false })
+
+			const expected = { timeFormat: "24h", dateFormat: "dmy", showRelativeTimes: false }
+			expect(await provider.getState()).toMatchObject(expected)
+			expect(await provider.getStateToPostToWebview()).toMatchObject(expected)
+		})
+
+		test("saving one setting leaves the others at their defaults", async () => {
+			await save({ timeFormat: "12h" })
+
+			expect(await provider.getStateToPostToWebview()).toMatchObject({ ...defaults, timeFormat: "12h" })
+		})
+	})
+
 	test("getState returns the saved allowed write files", async () => {
 		await provider.contextProxy.setValue("allowedWriteFiles", ["notes.md"])
 
