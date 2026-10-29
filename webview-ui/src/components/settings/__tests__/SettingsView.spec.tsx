@@ -480,7 +480,7 @@ describe("SettingsView - Sound Settings", () => {
 
 		// Pick a size, then Save — the boundary should forward it to the host.
 		fireEvent.change(slider, { target: { value: "18" } })
-		saveAndConfirm(vi.mocked(vscode.postMessage))
+		fireEvent.click(screen.getByTestId("save-button"))
 
 		expect(vscode.postMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -491,7 +491,7 @@ describe("SettingsView - Sound Settings", () => {
 
 		// Reset clears the override; it is persisted as null (not undefined).
 		fireEvent.click(within(getSettingsContent()).getByTestId("chat-font-size-reset"))
-		saveAndConfirm(vi.mocked(vscode.postMessage))
+		fireEvent.click(screen.getByTestId("save-button"))
 
 		expect(vscode.postMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -1052,7 +1052,7 @@ describe("SettingsView - openAiStrictToolSchemas save round trip", () => {
 		fireEvent.click(screen.getByTestId("set-strict-false"))
 		// Toggling buffers in cachedState; nothing is persisted before Save.
 		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "upsertApiConfiguration" }))
-		saveAndConfirm(vi.mocked(vscode.postMessage))
+		fireEvent.click(screen.getByTestId("save-button"))
 		expect(posted()).toEqual(
 			expect.objectContaining({
 				type: "upsertApiConfiguration",
@@ -1067,7 +1067,7 @@ describe("SettingsView - openAiStrictToolSchemas save round trip", () => {
 		// toggling on from a stored false and saving has to put true in the payload.
 		renderWithConfig({ openAiStrictToolSchemas: false })
 		fireEvent.click(screen.getByTestId("set-strict-true"))
-		saveAndConfirm(vi.mocked(vscode.postMessage))
+		fireEvent.click(screen.getByTestId("save-button"))
 		expect(posted()?.apiConfiguration?.openAiStrictToolSchemas).toBe(true)
 	})
 
@@ -1075,7 +1075,7 @@ describe("SettingsView - openAiStrictToolSchemas save round trip", () => {
 		renderWithConfig({ openAiStrictToolSchemas: false })
 		fireEvent.click(screen.getByTestId("set-strict-true"))
 		fireEvent.click(screen.getByTestId("set-strict-false"))
-		saveAndConfirm(vi.mocked(vscode.postMessage))
+		fireEvent.click(screen.getByTestId("save-button"))
 		expect(posted()?.apiConfiguration?.openAiStrictToolSchemas).toBe(false)
 	})
 
@@ -1086,7 +1086,7 @@ describe("SettingsView - openAiStrictToolSchemas save round trip", () => {
 		expect(screen.getByTestId("received-strict").textContent).toBe("undefined")
 		// Make a change elsewhere so Save is enabled, then save.
 		fireEvent.click(screen.getByTestId("set-other-field"))
-		saveAndConfirm(vi.mocked(vscode.postMessage))
+		fireEvent.click(screen.getByTestId("save-button"))
 		expect(posted()?.apiConfiguration?.openAiBaseUrl).toBe("https://example.test")
 		expect(posted()?.apiConfiguration?.openAiStrictToolSchemas).toBeUndefined()
 	})

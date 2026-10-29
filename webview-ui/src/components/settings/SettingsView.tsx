@@ -43,6 +43,7 @@ import {
 } from "@roo-code/types"
 
 import { vscode } from "@src/utils/vscode"
+import { APPEARANCE_SETTINGS, type AppearanceKey } from "@src/utils/appearance"
 import { cn } from "@src/lib/utils"
 import { useAppTranslation } from "@src/i18n/TranslationContext"
 import { ExtensionStateContextType, useExtensionState } from "@src/context/ExtensionStateContext"
@@ -398,9 +399,16 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 
 	const handleSubmit = () => {
 		if (isSettingValid) {
-			const saveId = `settings-save-${++saveCounter}`
-			pendingSaveEditedState.current = cachedState
-			setPendingSaveId(saveId)
+			// Only a save that changes an appearance value waits for the host's answer: those are saved
+			// all-or-nothing, and a failed save has to keep the edits. Every other save behaves as it always did.
+			const appearanceEdited = (Object.keys(APPEARANCE_SETTINGS) as AppearanceKey[]).some(
+				(key) => (cachedState[key] ?? null) !== (extensionState[key] ?? null),
+			)
+			const saveId = appearanceEdited ? `settings-save-${++saveCounter}` : undefined
+			if (saveId) {
+				pendingSaveEditedState.current = cachedState
+				setPendingSaveId(saveId)
+			}
 			vscode.postMessage({
 				type: "updateSettings",
 				requestId: saveId,
@@ -490,8 +498,10 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			vscode.postMessage({ type: "telemetrySetting", text: telemetrySetting })
 			vscode.postMessage({ type: "debugSetting", bool: cachedState.debug })
 
-			// The "unsaved changes" flag is cleared only once the host reports that `updateSettings` was stored:
-			// see the `settingsSaveResult` listener below. A failed save leaves the user's edits in place to retry.
+			// With an appearance edit, the "unsaved changes" flag is cleared only once the host reports that
+			// `updateSettings` was stored: see the `settingsSaveResult` listener below. A failed save leaves the
+			// user's edits in place to retry. Any other save clears it at once.
+			if (!saveId) setChangeDetected(false)
 		}
 	}
 

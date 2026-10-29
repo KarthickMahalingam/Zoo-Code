@@ -22,10 +22,15 @@ const renderUiTab = () =>
 		queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
 	})
 
-/** Edit a setting so Save becomes available. */
+/** Edit an appearance value (the terminal font size, 12 by default) so Save becomes available. */
 const makeAnEdit = async () => {
-	const checkbox = await screen.findByTestId("collapse-thinking-checkbox")
-	fireEvent.click(checkbox)
+	fireEvent.click(await screen.findByTestId("appearance-terminalFontSize-increment"))
+	await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
+}
+
+/** Edit a setting that is not an appearance value, so Save becomes available. */
+const makeAnOtherEdit = async () => {
+	fireEvent.click(await screen.findByTestId("collapse-thinking-checkbox"))
 	await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
 }
 
@@ -70,14 +75,72 @@ describe("SettingsView – save acknowledgement", () => {
 
 		// The edit is still there, still unsaved, and Save is available again.
 		await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
-		// The checkbox defaults to checked; the user unchecked it, and that edit survives the failed save.
-		expect((screen.getByTestId("collapse-thinking-checkbox") as HTMLInputElement).checked).toBe(false)
+		// The stepper started at 12; the user raised it, and that edit survives the failed save.
+		expect((screen.getByTestId("appearance-terminalFontSize-input") as HTMLInputElement).value).toBe("13")
 
 		// Retrying sends a fresh request with a new id.
 		const firstId = lastSaveRequestId(postMessage)
 		fireEvent.click(screen.getByTestId("save-button"))
 		expect(lastSaveRequestId(postMessage)).not.toBe(firstId)
 		expect(posted("updateSettings")).toHaveLength(2)
+	})
+
+	describe("a save that changes no appearance value", () => {
+		it("is sent without a request id and behaves as it always did: nothing to wait for", async () => {
+			renderUiTab()
+			await makeAnOtherEdit()
+
+			fireEvent.click(screen.getByTestId("save-button"))
+
+			const [save] = posted("updateSettings") as Array<{ type: string; requestId?: string }>
+			expect(save.requestId).toBeUndefined()
+			expect(posted("upsertApiConfiguration")).toHaveLength(1)
+			// The unsaved flag is cleared at once, so Save is idle straight away.
+			expect(screen.getByTestId("save-button")).toBeDisabled()
+			// ...and a further edit enables it again, with no answer from the host needed in between.
+			fireEvent.click(screen.getByTestId("collapse-thinking-checkbox"))
+			await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
+		})
+
+		it("ignores any save result, since it did not ask for one", async () => {
+			renderUiTab()
+			await makeAnOtherEdit()
+			fireEvent.click(screen.getByTestId("save-button"))
+			fireEvent.click(screen.getByTestId("collapse-thinking-checkbox"))
+			await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
+
+			answerSave("settings-save-1", { success: false, error: "nope" })
+
+			expect(screen.getByTestId("save-button")).toBeEnabled()
+		})
+
+		it("also waits for the host when an appearance value is edited together with other settings", async () => {
+			renderUiTab()
+			await makeAnOtherEdit()
+			fireEvent.click(await screen.findByTestId("appearance-spacingScale-increment"))
+
+			fireEvent.click(screen.getByTestId("save-button"))
+
+			const [save] = posted("updateSettings") as Array<{ type: string; requestId?: string }>
+			expect(save.requestId).toMatch(/^settings-save-\d+$/)
+			expect(screen.getByTestId("save-button")).toBeDisabled()
+			answerSave(save.requestId, { success: false })
+			await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
+		})
+
+		it("treats a reset of an appearance value as an appearance edit", async () => {
+			renderWithExtensionState(<SettingsView onDone={vi.fn()} targetSection="ui" />, {
+				state: { terminalFontSize: 20 },
+				queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+			})
+			fireEvent.click(await screen.findByTestId("appearance-terminalFontSize-reset"))
+			await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
+
+			fireEvent.click(screen.getByTestId("save-button"))
+
+			const [save] = posted("updateSettings") as Array<{ type: string; requestId?: string }>
+			expect(save.requestId).toMatch(/^settings-save-\d+$/)
+		})
 	})
 
 	it("does not send a second save while one is waiting for the host", async () => {
