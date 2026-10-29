@@ -144,32 +144,38 @@ const DCG_INSTALL_TIMEOUT_MS = 180_000
 /**
  * The MCP hub follows the stored `mcpEnabled` setting, but it is not part of a save. Connecting and disconnecting
  * servers is slow and cannot be cancelled, so it cannot be rolled back, and waiting for it would hold up the save
- * queue. A save therefore only stores the value; once the save has succeeded, this reconciles the hub with the
- * latest stored value, one change at a time per hub. A later save only changes what the loop applies next, so
- * changes never overlap and the hub always ends on the last value that was stored.
+ * queue. A save therefore only stores the value; once the save has succeeded, the hub is asked to apply it, one
+ * change at a time per hub.
+ *
+ * Every save that includes the setting applies it, even when the value did not change, as before: applying it
+ * also reconnects servers that failed to start. A save that arrives while a change is running is applied once
+ * more afterwards, with the latest stored value, so changes never overlap and the hub ends on the last value
+ * that was stored.
+ *
+ * There is no time limit on a change. `handleMcpEnabledChange` cannot be cancelled, and a change that is given
+ * up on could still finish and undo a newer one. A change that never finishes therefore delays later changes
+ * to the hub until the extension reloads; it does not delay saves, which only store the value.
  */
-const mcpReconcilers = new WeakMap<McpHub, { desired: boolean; applied?: boolean; running: boolean }>()
+const mcpReconcilers = new WeakMap<McpHub, { desired: boolean; pending: boolean; running: boolean }>()
 const reconcileMcpEnabled = (provider: ClineProvider, hub: McpHub, enabled: boolean): void => {
-	const state = mcpReconcilers.get(hub) ?? { desired: enabled, running: false }
+	const state = mcpReconcilers.get(hub) ?? { desired: enabled, pending: false, running: false }
 	mcpReconcilers.set(hub, state)
 	state.desired = enabled
+	state.pending = true
 	if (state.running) return
 
 	state.running = true
 	void (async () => {
 		try {
-			while (state.applied !== state.desired) {
+			while (state.pending) {
+				state.pending = false
 				const target = state.desired
 				try {
 					await hub.handleMcpEnabledChange(target)
-					state.applied = target
 				} catch (error) {
-					// Unknown state now: the next save applies its value even if it equals the last one.
-					state.applied = undefined
 					provider.log(
 						`[updateSettings] Could not ${target ? "enable" : "disable"} the MCP servers: ${error instanceof Error ? error.message : String(error)}`,
 					)
-					if (state.desired === target) return
 				}
 			}
 		} finally {

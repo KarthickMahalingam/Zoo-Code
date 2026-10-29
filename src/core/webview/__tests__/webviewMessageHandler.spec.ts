@@ -2489,18 +2489,58 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 			expect(stored.mcpEnabled).toBe(true)
 		})
 
-		it("skips a value that a later save superseded, and a change that would end where the hub is", async () => {
+		it("applies the latest value once after the running change, for saves that arrived meanwhile", async () => {
 			const hub = slowHub()
 
 			await save({ mcpEnabled: false }, "save-1")
 			await save({ mcpEnabled: true }, "save-2")
 			await save({ mcpEnabled: false }, "save-3")
+			expect(hub.calls).toEqual([false])
+
+			hub.releases.shift()!()
+			await vi.waitFor(() => expect(hub.calls).toEqual([false, false]))
 			hub.releases.shift()!()
 			await flush()
 
-			// The hub already ended on the value that was stored last, so nothing more is asked of it.
-			expect(hub.calls).toEqual([false])
+			// One more change, not two: the superseded value is never applied, and the changes never overlap.
+			expect(hub.calls).toEqual([false, false])
+			expect(hub.mostAtOnce()).toBe(1)
 			expect(stored.mcpEnabled).toBe(false)
+		})
+
+		it("applies the setting on every save that includes it, even when the value is unchanged", async () => {
+			// Applying it also reconnects servers that failed to start, or were disconnected while the stored value
+			// stayed the same (for example by the refresh button), so a repeat save is not a no-op.
+			const calls: boolean[] = []
+			useMcpHub(async (enabled) => {
+				calls.push(enabled)
+			})
+
+			await save({ mcpEnabled: true }, "save-1")
+			await flush()
+			await save({ mcpEnabled: true }, "save-2")
+			await flush()
+			await save({ mcpEnabled: true }, "save-3")
+			await flush()
+
+			expect(calls).toEqual([true, true, true])
+		})
+
+		it("applies a later mcpEnabled save once a change that never finishes ends, not before and not alongside", async () => {
+			const hub = slowHub()
+
+			await save({ mcpEnabled: false }, "save-hung")
+			await save({ mcpEnabled: true }, "save-later")
+			await save({ writeDelayMs: 3000 }, "save-other")
+			await flush()
+
+			// Saves are not held up, and the hub is not asked for a second change while the first is running.
+			expect(stored).toMatchObject({ mcpEnabled: true, writeDelayMs: 3000 })
+			expect(hub.calls).toEqual([false])
+
+			hub.releases.shift()!()
+			await vi.waitFor(() => expect(hub.calls).toEqual([false, true]))
+			expect(hub.mostAtOnce()).toBe(1)
 		})
 
 		it("applies a changed value after an earlier change has finished", async () => {
