@@ -170,7 +170,11 @@ const QuotaRow = ({
 				quota.windows.map((w) => (
 					<div key={w.id} className="mt-1.5 pl-3.5">
 						<div className="flex items-baseline justify-between gap-2 text-xs">
-							<span className="tabular-nums text-vscode-foreground">{w.valueLabel}</span>
+							<span className="tabular-nums text-vscode-foreground">
+								{w.name
+									? t(`settings:usage.limits.window.${w.name.key}`, { n: w.name.count })
+									: w.valueLabel}
+							</span>
 							{w.usedPercent !== undefined && (
 								<span className="tabular-nums text-vscode-descriptionForeground">
 									{Math.round(w.usedPercent)}%

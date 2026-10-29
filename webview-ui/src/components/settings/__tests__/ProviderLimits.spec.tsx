@@ -53,6 +53,36 @@ describe("ProviderLimits", () => {
 		})
 	})
 
+	describe("window names", () => {
+		const quota = (windows: Extract<ProviderQuota, { ok: true }>["windows"]): ProviderQuota => ({
+			providerId: providerIdentifiers.zai,
+			ok: true,
+			windows,
+			fetchedAt: 1,
+		})
+
+		it.each([
+			[{ key: "weekly" }, "settings:usage.limits.window.weekly"],
+			[{ key: "unlimited" }, "settings:usage.limits.window.unlimited"],
+			[{ key: "hours", count: 5 }, "settings:usage.limits.window.hours 5"],
+			[{ key: "days", count: 3 }, "settings:usage.limits.window.days 3"],
+		] as const)("translates a window named %j", (name, expected) => {
+			render(<ProviderLimits />)
+			respond([quota([{ id: "w", valueLabel: "ENGLISH FALLBACK", name }])])
+
+			const row = screen.getByTestId(`provider-limit-${providerIdentifiers.zai}`)
+			expect(row.textContent).toContain(expected)
+			expect(row.textContent).not.toContain("ENGLISH FALLBACK")
+		})
+
+		it("shows the host's text for a window without a fixed name", () => {
+			render(<ProviderLimits />)
+			respond([quota([{ id: "b", valueLabel: "$4.25 left" }])])
+
+			expect(screen.getByTestId(`provider-limit-${providerIdentifiers.zai}`).textContent).toContain("$4.25 left")
+		})
+	})
+
 	it("shows a loading row until the first response", () => {
 		render(<ProviderLimits />)
 		expect(screen.getByTestId("provider-limits")).toBeTruthy()

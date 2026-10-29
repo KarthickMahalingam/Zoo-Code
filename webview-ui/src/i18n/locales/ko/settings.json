@@ -1278,7 +1278,15 @@
 			"noCopilot": "Copilot 할당량 없음",
 			"noKey": "API 키가 없거나 올바르지 않음",
 			"unsupported": "사용자 지정 기본 URL — 확인하지 않음",
-			"error": "불러올 수 없음"
+			"error": "불러올 수 없음",
+			"window": {
+				"weekly": "주간",
+				"daily": "일간",
+				"monthly": "월간",
+				"unlimited": "무제한",
+				"hours": "{{n}}시간",
+				"days": "{{n}}일"
+			}
 		},
 		"byModel": "모델별",
 		"notRecorded": "기록되지 않음",

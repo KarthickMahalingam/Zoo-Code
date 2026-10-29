@@ -1278,7 +1278,15 @@
 			"noCopilot": "No Copilot quota",
 			"noKey": "API key missing or invalid",
 			"unsupported": "Custom base URL — not checked",
-			"error": "Couldn't load"
+			"error": "Couldn't load",
+			"window": {
+				"weekly": "Weekly",
+				"daily": "Daily",
+				"monthly": "Monthly",
+				"unlimited": "Unlimited",
+				"hours": "{{n}}-hour",
+				"days": "{{n}}-day"
+			}
 		},
 		"byModel": "By model",
 		"notRecorded": "Not recorded",

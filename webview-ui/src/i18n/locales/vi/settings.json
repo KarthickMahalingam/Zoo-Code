@@ -1278,7 +1278,15 @@
 			"noCopilot": "Không có hạn mức Copilot",
 			"noKey": "Thiếu khóa API hoặc không hợp lệ",
 			"unsupported": "URL cơ sở tùy chỉnh — không kiểm tra",
-			"error": "Không thể tải"
+			"error": "Không thể tải",
+			"window": {
+				"weekly": "Hằng tuần",
+				"daily": "Hằng ngày",
+				"monthly": "Hằng tháng",
+				"unlimited": "Không giới hạn",
+				"hours": "{{n}} giờ",
+				"days": "{{n}} ngày"
+			}
 		},
 		"byModel": "Theo mô hình",
 		"notRecorded": "Chưa ghi nhận",

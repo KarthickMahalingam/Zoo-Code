@@ -1278,7 +1278,15 @@
 			"noCopilot": "无 Copilot 配额",
 			"noKey": "API 密钥缺失或无效",
 			"unsupported": "自定义基础 URL — 未检查",
-			"error": "无法加载"
+			"error": "无法加载",
+			"window": {
+				"weekly": "每周",
+				"daily": "每日",
+				"monthly": "每月",
+				"unlimited": "无限制",
+				"hours": "{{n}} 小时",
+				"days": "{{n}} 天"
+			}
 		},
 		"byModel": "按模型",
 		"notRecorded": "未记录",

@@ -1278,7 +1278,15 @@
 			"noCopilot": "Sense quota de Copilot",
 			"noKey": "Clau d'API absent o no vàlida",
 			"unsupported": "URL base personalitzada — no comprovat",
-			"error": "No s'ha pogut carregar"
+			"error": "No s'ha pogut carregar",
+			"window": {
+				"weekly": "Setmanal",
+				"daily": "Diari",
+				"monthly": "Mensual",
+				"unlimited": "Il·limitat",
+				"hours": "{{n}} hores",
+				"days": "{{n}} dies"
+			}
 		},
 		"byModel": "Per model",
 		"notRecorded": "No registrat",

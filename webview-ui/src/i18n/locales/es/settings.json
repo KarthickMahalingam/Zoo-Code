@@ -1278,7 +1278,15 @@
 			"noCopilot": "Sin cuota de Copilot",
 			"noKey": "Falta la clave de API o no es válida",
 			"unsupported": "URL base personalizada: no comprobado",
-			"error": "No se pudo cargar"
+			"error": "No se pudo cargar",
+			"window": {
+				"weekly": "Semanal",
+				"daily": "Diario",
+				"monthly": "Mensual",
+				"unlimited": "Ilimitado",
+				"hours": "{{n}} horas",
+				"days": "{{n}} días"
+			}
 		},
 		"byModel": "Por modelo",
 		"notRecorded": "No registrado",

@@ -1278,7 +1278,15 @@
 			"noCopilot": "Copilot kotası yok",
 			"noKey": "API anahtarı eksik veya geçersiz",
 			"unsupported": "Özel temel URL — kontrol edilmedi",
-			"error": "Yüklenemedi"
+			"error": "Yüklenemedi",
+			"window": {
+				"weekly": "Haftalık",
+				"daily": "Günlük",
+				"monthly": "Aylık",
+				"unlimited": "Sınırsız",
+				"hours": "{{n}} saat",
+				"days": "{{n}} gün"
+			}
 		},
 		"byModel": "Modele göre",
 		"notRecorded": "Kaydedilmedi",

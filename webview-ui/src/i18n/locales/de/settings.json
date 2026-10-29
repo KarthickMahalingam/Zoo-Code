@@ -1278,7 +1278,15 @@
 			"noCopilot": "Kein Copilot-Kontingent",
 			"noKey": "API-Schlüssel fehlt oder ist ungültig",
 			"unsupported": "Benutzerdefinierte Basis-URL – nicht geprüft",
-			"error": "Konnte nicht geladen werden"
+			"error": "Konnte nicht geladen werden",
+			"window": {
+				"weekly": "Wöchentlich",
+				"daily": "Täglich",
+				"monthly": "Monatlich",
+				"unlimited": "Unbegrenzt",
+				"hours": "{{n}} Stunden",
+				"days": "{{n}} Tage"
+			}
 		},
 		"byModel": "Nach Modell",
 		"notRecorded": "Nicht erfasst",

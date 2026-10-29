@@ -1045,6 +1045,55 @@ describe("getProviderQuotas", () => {
 	})
 })
 
+describe("window names", () => {
+	beforeEach(() => resetProviderQuotaCache())
+
+	const quotaFrom = async (profile: Record<string, unknown>, body: unknown) => {
+		const [q] = await getProviderQuotas(
+			[profile as never],
+			{},
+			vi.fn(async () => new Response(JSON.stringify(body))),
+		)
+		return q
+	}
+
+	it("gives the fixed windows of OpenCode Go a structured name next to the English text", async () => {
+		const q = await quotaFrom(
+			{ apiProvider: providerIdentifiers.opencodeGo, opencodeGoApiKey: "sk" },
+			{
+				usage: {
+					rolling: { percent: 10, resetsAt: 1_800_000_000 },
+					weekly: { percent: 20, resetsAt: 1_800_000_000 },
+					monthly: { percent: 30, resetsAt: 1_800_000_000 },
+				},
+			},
+		)
+		expect(q).toMatchObject({
+			ok: true,
+			windows: [
+				{ valueLabel: "5-hour", name: { key: "hours", count: 5 } },
+				{ valueLabel: "Weekly", name: { key: "weekly" } },
+				{ valueLabel: "Monthly", name: { key: "monthly" } },
+			],
+		})
+	})
+
+	it("names a Copilot unlimited plan, and leaves a figure without a name", async () => {
+		const copilot = await import("../copilotQuota")
+		vi.mocked(copilot.getGitHubCopilotQuota).mockResolvedValueOnce({
+			ok: true,
+			quota: { unlimited: true, resetAt: 7, fetchedAt: 1 },
+		})
+		const [unlimited] = await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never], {})
+		expect(unlimited).toMatchObject({ windows: [{ valueLabel: "Unlimited", name: { key: "unlimited" } }] })
+
+		resetProviderQuotaCache()
+		const [counted] = await getProviderQuotas([{ apiProvider: providerIdentifiers.githubCopilot } as never], {})
+		expect(counted).toMatchObject({ ok: true, windows: [{ valueLabel: "39,389.3 / 140,000 used" }] })
+		expect(counted.ok && counted.windows[0]).not.toHaveProperty("name")
+	})
+})
+
 describe("loadProfiles", () => {
 	it("loads every saved profile through the manager, with keys", async () => {
 		const source = {

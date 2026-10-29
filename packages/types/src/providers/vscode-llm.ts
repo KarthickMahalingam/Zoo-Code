@@ -25,6 +25,11 @@ export interface ProviderQuotaWindow {
 	id: string
 	/** Pre-formatted primary figure, e.g. "39,389.3 / 140,000 used", "$12.40 left". */
 	valueLabel: string
+	/**
+	 * Set when the label is just the name of a fixed window ("Weekly", "5-hour", "Unlimited"), so the webview can
+	 * show it in the user's language. `valueLabel` stays as the English fallback.
+	 */
+	name?: { key: "weekly" | "daily" | "monthly" | "unlimited" | "hours" | "days"; count?: number }
 	/** 0–100 when the provider reports a bounded allowance. */
 	usedPercent?: number
 	/** Epoch ms. */

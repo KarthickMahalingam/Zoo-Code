@@ -86,6 +86,27 @@ export function windowLabel(seconds: number | undefined, fallback: string): stri
 	return fallback
 }
 
+const FIXED_WINDOW_NAMES: Record<string, NonNullable<ProviderQuotaWindow["name"]>> = {
+	Weekly: { key: "weekly" },
+	Daily: { key: "daily" },
+	Monthly: { key: "monthly" },
+	Unlimited: { key: "unlimited" },
+}
+
+/** The structured name of a window whose label is only its name, so it can be translated. Anything else is left as is. */
+function windowName(label: string): ProviderQuotaWindow["name"] {
+	const fixed = FIXED_WINDOW_NAMES[label]
+	if (fixed) return fixed
+	const rolling = /^(\d+)-(hour|day)$/.exec(label)
+	return rolling ? { key: rolling[2] === "hour" ? "hours" : "days", count: Number(rolling[1]) } : undefined
+}
+
+const withNames = (windows: ProviderQuotaWindow[]): ProviderQuotaWindow[] =>
+	windows.map((w) => {
+		const name = windowName(w.valueLabel)
+		return name ? { ...w, name } : w
+	})
+
 /** Kimi Code `GET /coding/v1/usages` → 5-hour / weekly / monthly usage. */
 export function parseKimiCodeUsage(payload: unknown): ProviderQuotaWindow[] | undefined {
 	const root = asRecord(payload)
@@ -502,7 +523,7 @@ async function fetchKeyed(
 		}
 		if (!windows?.length && lastError) throw lastError
 		return windows?.length
-			? { providerId: provider.providerId, ok: true, windows, fetchedAt: now }
+			? { providerId: provider.providerId, ok: true, windows: withNames(windows), fetchedAt: now }
 			: { providerId: provider.providerId, ok: false, reason: "error", message: "No usage data", fetchedAt: now }
 	} catch (error) {
 		return {
@@ -536,7 +557,7 @@ async function fetchCopilot(force: boolean, signal?: AbortSignal): Promise<Provi
 				usedPercent: q.usedPercent,
 				resetAt: q.resetAt,
 			}
-	return { providerId, ok: true, plan: q.plan, windows: [window], fetchedAt: q.fetchedAt }
+	return { providerId, ok: true, plan: q.plan, windows: withNames([window]), fetchedAt: q.fetchedAt }
 }
 
 // Entry point -------------------------------------------------------------------------------------

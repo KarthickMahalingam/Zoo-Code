@@ -1278,7 +1278,15 @@
 			"noCopilot": "Brak limitu Copilot",
 			"noKey": "Brak klucza API lub jest nieprawidłowy",
 			"unsupported": "Niestandardowy bazowy URL — nie sprawdzono",
-			"error": "Nie udało się wczytać"
+			"error": "Nie udało się wczytać",
+			"window": {
+				"weekly": "Tygodniowo",
+				"daily": "Dziennie",
+				"monthly": "Miesięcznie",
+				"unlimited": "Bez limitu",
+				"hours": "{{n}} godz.",
+				"days": "{{n}} dni"
+			}
 		},
 		"byModel": "Według modelu",
 		"notRecorded": "Nie zapisano",

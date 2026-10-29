@@ -1278,7 +1278,15 @@
 			"noCopilot": "Tidak ada kuota Copilot",
 			"noKey": "Kunci API hilang atau tidak valid",
 			"unsupported": "URL dasar kustom — tidak diperiksa",
-			"error": "Tidak dapat dimuat"
+			"error": "Tidak dapat dimuat",
+			"window": {
+				"weekly": "Mingguan",
+				"daily": "Harian",
+				"monthly": "Bulanan",
+				"unlimited": "Tanpa batas",
+				"hours": "{{n}} jam",
+				"days": "{{n}} hari"
+			}
 		},
 		"byModel": "Menurut model",
 		"notRecorded": "Tidak dicatat",

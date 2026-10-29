@@ -1278,7 +1278,15 @@
 			"noCopilot": "Geen Copilot-quotum",
 			"noKey": "API-sleutel ontbreekt of is ongeldig",
 			"unsupported": "Aangepaste basis-URL — niet gecontroleerd",
-			"error": "Kon niet laden"
+			"error": "Kon niet laden",
+			"window": {
+				"weekly": "Wekelijks",
+				"daily": "Dagelijks",
+				"monthly": "Maandelijks",
+				"unlimited": "Onbeperkt",
+				"hours": "{{n}} uur",
+				"days": "{{n}} dagen"
+			}
 		},
 		"byModel": "Per model",
 		"notRecorded": "Niet vastgelegd",

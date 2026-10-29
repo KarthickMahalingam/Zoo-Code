@@ -1278,7 +1278,15 @@
 			"noCopilot": "कोई Copilot कोटा नहीं",
 			"noKey": "API कुंजी अनुपलब्ध या अमान्य",
 			"unsupported": "कस्टम बेस URL — जाँच नहीं की गई",
-			"error": "लोड नहीं हो सका"
+			"error": "लोड नहीं हो सका",
+			"window": {
+				"weekly": "साप्ताहिक",
+				"daily": "दैनिक",
+				"monthly": "मासिक",
+				"unlimited": "असीमित",
+				"hours": "{{n}} घंटे",
+				"days": "{{n}} दिन"
+			}
 		},
 		"byModel": "मॉडल के अनुसार",
 		"notRecorded": "दर्ज नहीं",
