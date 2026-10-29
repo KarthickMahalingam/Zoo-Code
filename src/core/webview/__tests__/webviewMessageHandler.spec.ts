@@ -772,7 +772,8 @@ describe("webviewMessageHandler - theme fixture probes", () => {
 	})
 })
 
-import { t } from "../../../i18n"
+import { changeLanguage, getLanguage, t } from "../../../i18n"
+import { getTtsEnabled, getTtsSpeed, setTtsEnabled, setTtsSpeed } from "../../../utils/tts"
 
 vi.mock("vscode", () => {
 	const showInformationMessage = vi.fn()
@@ -801,7 +802,13 @@ vi.mock("vscode", () => {
 	}
 })
 
+const i18nState = vi.hoisted(() => ({ language: "en" }))
+
 vi.mock("../../../i18n", () => ({
+	changeLanguage: vi.fn((language: string) => {
+		i18nState.language = language
+	}),
+	getLanguage: vi.fn(() => i18nState.language),
 	t: vi.fn((key: string, args?: Record<string, any>) => {
 		// For the delete confirmation with rules, we need to return the interpolated string
 		if (key === "common:confirmation.delete_custom_mode_with_rules" && args) {
@@ -2208,6 +2215,112 @@ describe("webviewMessageHandler - updateSettings is all-or-nothing", () => {
 				expect(Terminal.getCommandDelay()).toBe(before + 75)
 			} finally {
 				Terminal.setCommandDelay(before)
+			}
+		})
+	})
+
+	describe("the running language and speech after a failed save", () => {
+		const failWriteDelay = () => {
+			const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+			vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (k: string, value: unknown) => {
+				if (k === "writeDelayMs" && value === 2000) throw new Error("storage unavailable")
+				return real(k as never, value as never)
+			})
+		}
+		const failedSave = (updatedSettings: Record<string, unknown>) =>
+			webviewMessageHandler(mockClineProvider, {
+				type: "updateSettings",
+				requestId: "save-runtime",
+				updatedSettings: { ...updatedSettings, writeDelayMs: 2000 },
+			})
+
+		it("keeps the running language when none was stored (not English, and not the attempted one)", async () => {
+			const original = getLanguage()
+			try {
+				changeLanguage("es")
+				delete stored.language // never stored: the running language came from the host, not a setting
+				failWriteDelay()
+				expect(stored).not.toHaveProperty("language")
+
+				await failedSave({ language: "fr" })
+
+				expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith(
+					expect.objectContaining({ requestId: "save-runtime", success: false }),
+				)
+				expect(stored.language).toBeUndefined()
+				expect(getLanguage()).toBe("es")
+			} finally {
+				changeLanguage(original ?? "en")
+			}
+		})
+
+		it("keeps speech off when it was never turned on, although the attempt turned it on", async () => {
+			const original = getTtsEnabled()
+			try {
+				setTtsEnabled(false)
+				failWriteDelay()
+				expect(stored).not.toHaveProperty("ttsEnabled")
+
+				await failedSave({ ttsEnabled: true })
+
+				expect(stored.ttsEnabled).toBeUndefined()
+				expect(getTtsEnabled()).toBe(false)
+			} finally {
+				setTtsEnabled(original)
+			}
+		})
+
+		it("keeps the running speech speed when none was stored", async () => {
+			const original = getTtsSpeed()
+			try {
+				setTtsSpeed(1.5)
+				failWriteDelay()
+				expect(stored).not.toHaveProperty("ttsSpeed")
+
+				await failedSave({ ttsSpeed: 2 })
+
+				expect(stored.ttsSpeed).toBeUndefined()
+				expect(getTtsSpeed()).toBe(1.5)
+			} finally {
+				setTtsSpeed(original)
+			}
+		})
+
+		it("restores a stored language and speech value as before", async () => {
+			const originalLanguage = getLanguage()
+			const originalEnabled = getTtsEnabled()
+			try {
+				stored.language = "de"
+				stored.ttsEnabled = true
+				changeLanguage("de")
+				setTtsEnabled(true)
+				failWriteDelay()
+
+				await failedSave({ language: "fr", ttsEnabled: false })
+
+				expect(stored).toMatchObject({ language: "de", ttsEnabled: true })
+				expect(getLanguage()).toBe("de")
+				expect(getTtsEnabled()).toBe(true)
+			} finally {
+				changeLanguage(originalLanguage ?? "en")
+				setTtsEnabled(originalEnabled)
+			}
+		})
+
+		it("applies a successful save to the running language and speech", async () => {
+			const originalLanguage = getLanguage()
+			const originalEnabled = getTtsEnabled()
+			try {
+				await webviewMessageHandler(mockClineProvider, {
+					type: "updateSettings",
+					requestId: "save-runtime-ok",
+					updatedSettings: { language: "ja", ttsEnabled: true },
+				})
+				expect(getLanguage()).toBe("ja")
+				expect(getTtsEnabled()).toBe(true)
+			} finally {
+				changeLanguage(originalLanguage ?? "en")
+				setTtsEnabled(originalEnabled)
 			}
 		})
 	})

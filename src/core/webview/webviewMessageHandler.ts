@@ -58,7 +58,7 @@ import {
 	handleOpenRuleFile,
 	handleOpenRulesDirectory,
 } from "./rulesMessageHandler"
-import { changeLanguage, t } from "../../i18n"
+import { changeLanguage, getLanguage, t } from "../../i18n"
 import { Package } from "../../shared/package"
 import { type RouterName, toRouterName } from "../../shared/api"
 import { MessageEnhancer } from "./messageEnhancer"
@@ -75,7 +75,7 @@ import { selectImages } from "../../integrations/misc/process-images"
 import { getTheme } from "../../integrations/theme/getTheme"
 import { searchWorkspaceFiles } from "../../services/search/file-search"
 import { fileExistsAtPath } from "../../utils/fs"
-import { playTts, setTtsEnabled, setTtsSpeed, stopTts } from "../../utils/tts"
+import { getTtsEnabled, getTtsSpeed, playTts, setTtsEnabled, setTtsSpeed, stopTts } from "../../utils/tts"
 import { searchCommits } from "../../utils/git"
 import { exportSettings, importSettingsWithFeedback } from "../config/importExport"
 import { getOpenAiModels } from "../../api/providers/openai"
@@ -946,10 +946,15 @@ const handleWebviewMessage = async (
 				// the one `contextProxy` reads (the webview shows a union of both). Restoring them from `contextProxy`
 				// would overwrite configuration-only entries, so their configuration value is snapshotted separately.
 				const commandListKeys = new Set(["allowedCommands", "deniedCommands"])
-				// The terminal settings are also applied to the live terminal, and most setters skip an unset value.
-				// A setting that was never stored therefore cannot be undone by restoring `undefined`: the value the
-				// terminal was running with is snapshotted and put back instead.
-				const liveTerminalValues: Record<string, () => unknown> = {
+				// Some settings are also applied to the running extension (the terminal, the host language, speech).
+				// Restoring `undefined` for one that was never stored does not put the running value back: most
+				// terminal setters skip it, and the others apply their own fallback, which is not the runtime
+				// default (for example speech would turn on, and the language would switch to English). The value
+				// it was running with is snapshotted and put back instead.
+				const liveRuntimeValues: Record<string, () => unknown> = {
+					language: () => getLanguage(),
+					ttsEnabled: () => getTtsEnabled(),
+					ttsSpeed: () => getTtsSpeed(),
 					terminalShellIntegrationTimeout: () => Terminal.getShellIntegrationTimeout(),
 					terminalShellIntegrationDisabled: () => Terminal.getShellIntegrationDisabled(),
 					terminalCommandDelay: () => Terminal.getCommandDelay(),
@@ -967,7 +972,7 @@ const handleWebviewMessage = async (
 					key: string
 					previous: unknown
 					configGlobal?: { value: unknown }
-					liveTerminal?: { value: unknown }
+					liveRuntime?: { value: unknown }
 				}> = []
 				let failure: string | undefined
 				try {
@@ -980,13 +985,13 @@ const handleWebviewMessage = async (
 							const inspected = vscode.workspace.getConfiguration(Package.name).inspect(key)
 							entry.configGlobal = { value: inspected?.globalValue }
 						}
-						if (key in liveTerminalValues) entry.liveTerminal = { value: liveTerminalValues[key]() }
+						if (key in liveRuntimeValues) entry.liveRuntime = { value: liveRuntimeValues[key]() }
 						written.push(entry)
 						await applySetting(key, value)
 					}
 				} catch (error) {
 					failure = error instanceof Error ? error.message : String(error)
-					for (const { key, previous, configGlobal, liveTerminal } of written.reverse()) {
+					for (const { key, previous, configGlobal, liveRuntime } of written.reverse()) {
 						try {
 							if (configGlobal) {
 								await vscode.workspace
@@ -995,7 +1000,7 @@ const handleWebviewMessage = async (
 							} else {
 								await applySetting(
 									key,
-									previous === undefined && liveTerminal ? liveTerminal.value : previous,
+									previous === undefined && liveRuntime ? liveRuntime.value : previous,
 								)
 							}
 							// Put back exactly what was stored, whatever defaulting the side effect applied.

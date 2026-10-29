@@ -17,9 +17,13 @@ let isTtsEnabled = false
 
 export const setTtsEnabled = (enabled: boolean) => (isTtsEnabled = enabled)
 
+export const getTtsEnabled = () => isTtsEnabled
+
 let speed = 1.0
 
 export const setTtsSpeed = (newSpeed: number) => (speed = newSpeed)
+
+export const getTtsSpeed = () => speed
 
 let sayInstance: Say | undefined = undefined
 let queue: QueueItem[] = []

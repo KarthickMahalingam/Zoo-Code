@@ -220,6 +220,8 @@ vi.mock("../../../utils/tts", () => ({
 	playTts: vi.fn().mockResolvedValue(undefined),
 	setTtsEnabled: vi.fn(),
 	setTtsSpeed: vi.fn(),
+	getTtsEnabled: vi.fn(() => false),
+	getTtsSpeed: vi.fn(() => 1),
 	stopTts: vi.fn(),
 }))
 
