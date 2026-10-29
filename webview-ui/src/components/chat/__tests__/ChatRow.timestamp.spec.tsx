@@ -159,6 +159,51 @@ describe("ChatRow – message timestamp", () => {
 		})
 	})
 
+	describe("date format on an older message, for every row that shows a time", () => {
+		// Years back, so the date (not "Today" or a weekday) is shown, whatever day the tests run.
+		const OLD = new Date(2024, 2, 7, 14, 41, 0, 0).getTime()
+
+		const rows: Array<[string, ClineMessage]> = [
+			["a user message", { ts: OLD, type: "say", say: "user_feedback", text: "u" }],
+			["an assistant reply", { ts: OLD, type: "say", say: "text", text: "a", partial: false }],
+			["a completion result", { ts: OLD, type: "say", say: "completion_result", text: "c", partial: false }],
+		]
+		const formats: Array<{ settings: Record<string, string>; date: string; time: RegExp }> = [
+			{ settings: { dateFormat: "ymd", timeFormat: "24h" }, date: "2024-03-07", time: /14:41/ },
+			{ settings: { dateFormat: "dmy", timeFormat: "12h" }, date: "07/03/2024", time: /2:41\s?PM/i },
+			{ settings: { dateFormat: "mdy", timeFormat: "24h" }, date: "03/07/2024", time: /14:41/ },
+		]
+
+		describe.each(rows)("%s", (_name, message) => {
+			it.each(formats)("writes the date as $date when the date format is $settings.dateFormat", (format) => {
+				mockState = format.settings
+				renderRow(message)
+
+				const text = screen.getByTestId("message-timestamp").textContent!
+				expect(text).toContain(format.date)
+				expect(text).toMatch(format.time)
+				// Not a relative day: an old message is dated.
+				expect(text).not.toMatch(/Today|Yesterday/)
+			})
+
+			it("uses the locale's own short date when the date format is automatic", () => {
+				mockState = { dateFormat: "auto", timeFormat: "24h" }
+				renderRow(message)
+
+				const text = screen.getByTestId("message-timestamp").textContent!
+				expect(text).toContain("Mar 7, 2024")
+				expect(text).toContain("14:41")
+			})
+
+			it("carries the exact time as a machine-readable value", () => {
+				mockState = { dateFormat: "ymd", timeFormat: "24h" }
+				renderRow(message)
+
+				expect(screen.getByTestId("message-timestamp")).toHaveAttribute("datetime", new Date(OLD).toISOString())
+			})
+		})
+	})
+
 	it("keeps the message visible while streaming", () => {
 		renderRow({ ts: Date.now(), type: "say", say: "user_feedback", text: "streaming" }, true)
 		expect(screen.getByTestId("message-timestamp")).toBeTruthy()
