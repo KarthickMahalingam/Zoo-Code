@@ -159,6 +159,8 @@ interface SettingWrite {
 	key: string
 	/** What was stored when this save wrote it. With overlapping saves, this can be another save's pending value. */
 	previous: unknown
+	/** `previous` was handed over by a write that was rolled back, so it is not read again when this write starts. */
+	inherited?: boolean
 	wrote: unknown
 	/** The write before this one that has not finished yet, and the one after it. */
 	prev?: SettingWrite
@@ -223,7 +225,10 @@ const undoSettingWrite = async (provider: ClineProvider, write: SettingWrite) =>
 
 	if (lastWriteOfSetting.get(key) !== write) {
 		// A newer write exists. Make it restore the value from before this one if it fails as well.
-		if (write.next && !write.next.done) write.next.previous = write.previous
+		if (write.next && !write.next.done) {
+			write.next.previous = write.previous
+			write.next.inherited = true
+		}
 		unlinkSettingWrite(write)
 		return
 	}
@@ -1018,9 +1023,12 @@ export const webviewMessageHandler = async (
 						lastWriteOfSetting.set(key, write)
 
 						// One write of this key at a time, until it has reached durable storage.
-						await queuedSettingWrite(key, () =>
-							provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue),
-						)
+						// What it replaces is read when it starts, after the writes before it have reached storage.
+						await queuedSettingWrite(key, () => {
+							if (!write.inherited)
+								write.previous = provider.contextProxy.getValue(key as keyof RooCodeSettings)
+							return provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
+						})
 						continue
 					}
 

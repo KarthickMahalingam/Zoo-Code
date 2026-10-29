@@ -2153,6 +2153,7 @@ describe("webviewMessageHandler - the appearance settings are saved all-or-nothi
 			const release = async (what: string) => {
 				await vi.waitFor(() => expect(gates.has(what)).toBe(true))
 				gates.get(what)!()
+				gates.delete(what)
 			}
 			return { events, release }
 		}
@@ -2185,6 +2186,29 @@ describe("webviewMessageHandler - the appearance settings are saved all-or-nothi
 				requestId: "save-b",
 				success: true,
 			})
+		})
+
+		it("a failed save restores what the save before it wrote, even if that was still queued when it registered", async () => {
+			const { events, release } = slowStore()
+
+			// Q is writing, P waits behind it, and A registers while P has not started its write.
+			const q = save({ interfaceFontScale: 110 }, "save-q")
+			await vi.waitFor(() => expect(events).toContain("start interfaceFontScale=110"))
+			const p = save({ interfaceFontScale: 130 }, "save-p")
+			await new Promise((resolve) => setTimeout(resolve, 10))
+			failWriteOf("terminalFontSize", 14)
+			const a = save({ interfaceFontScale: 150, terminalFontSize: 14 }, "save-a")
+			await new Promise((resolve) => setTimeout(resolve, 10))
+
+			await release("interfaceFontScale=110")
+			await release("interfaceFontScale=130")
+			await release("interfaceFontScale=150")
+			// A fails on terminalFontSize, and its restore of the interface font scale is a write too.
+			await release("interfaceFontScale=130")
+			await Promise.all([q, p, a])
+
+			// P succeeded, so A's failure puts back P's value, not Q's.
+			expect(stored.interfaceFontScale).toBe(130)
 		})
 
 		it("does not make writes of different keys wait for each other", async () => {
