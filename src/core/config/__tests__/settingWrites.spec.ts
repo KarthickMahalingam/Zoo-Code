@@ -3,6 +3,7 @@ import {
 	beginSettingWrite,
 	finishSettingWrites,
 	isTrackedSetting,
+	performSettingWrite,
 	undoSettingWrite,
 } from "../settingWrites"
 import type { ContextProxy } from "../ContextProxy"
@@ -70,6 +71,31 @@ describe("settingWrites", () => {
 			expect(stored.get("timeFormat")).toBe("12h")
 
 			await undoSettingWrite(contextProxy, importWrite)
+			expect(stored.get("timeFormat")).toBe("auto")
+		})
+	})
+
+	describe("performSettingWrite", () => {
+		it("reads what the write replaces when it starts", async () => {
+			const write = beginSettingWrite("timeFormat", "stale", "24h")
+			store("timeFormat", "12h") // an earlier write reached storage after this one registered
+
+			await performSettingWrite(contextProxy, write)
+
+			expect(write.previous).toBe("12h")
+			expect(stored.get("timeFormat")).toBe("24h")
+		})
+
+		it("keeps the value handed over by a write that was rolled back before this one started", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			store("timeFormat", "12h")
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+
+			await undoSettingWrite(contextProxy, first) // superseded: hands "auto" to the second write
+			await performSettingWrite(contextProxy, second)
+			expect(second.previous).toBe("auto")
+
+			await undoSettingWrite(contextProxy, second)
 			expect(stored.get("timeFormat")).toBe("auto")
 		})
 	})
