@@ -260,10 +260,10 @@ for (const scenario of scenarios) {
 			// of its text ("9:05 AM" and "12:36 PM" are not equally wide). A mask covers the element's box, so
 			// that box needs a fixed width as well: without it the masked area differs between runs.
 			await contentFrame.evaluate(() => {
-				for (const time of document.querySelectorAll<HTMLElement>('[data-testid="message-timestamp"]')) {
+				document.querySelectorAll<HTMLElement>('[data-testid="message-timestamp"]').forEach((time) => {
 					time.style.setProperty("width", "96px", "important")
 					time.style.setProperty("overflow", "hidden", "important")
-				}
+				})
 			})
 			// Mask it, as the token counters above, and keep the rest of the scene byte-stable.
 			const messageTimeMask = webviewFrame.frameLocator("iframe").locator('[data-testid="message-timestamp"]')
