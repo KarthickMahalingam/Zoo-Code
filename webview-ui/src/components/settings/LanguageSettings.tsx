@@ -1,5 +1,6 @@
 import { FormEvent, HTMLAttributes } from "react"
 import { VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
+import * as RadioGroupPrimitive from "@radix-ui/react-radio-group"
 
 import { useAppTranslation } from "@/i18n/TranslationContext"
 
@@ -99,29 +100,29 @@ export const LanguageSettings = ({
 							label={t("settings:language.timeFormat.label")}>
 							<div className="flex flex-col gap-1.5">
 								<label className="font-medium">{t("settings:language.timeFormat.label")}</label>
-								<div
+								{/* A radio group: one tab stop, the arrow keys move between the options and select them. */}
+								<RadioGroupPrimitive.Root
 									className="inline-flex self-start rounded-md border border-vscode-input-border overflow-hidden"
-									role="radiogroup"
+									value={timeFormat}
+									onValueChange={(value) => setCachedStateField("timeFormat", value as TimeFormat)}
+									orientation="horizontal"
 									aria-label={t("settings:language.timeFormat.label")}
 									data-testid="time-format-select">
 									{TIME_FORMATS.map((format) => (
-										<button
+										<RadioGroupPrimitive.Item
 											key={format}
-											type="button"
-											role="radio"
-											aria-checked={format === timeFormat}
-											onClick={() => setCachedStateField("timeFormat", format)}
+											value={format}
 											data-testid={`time-format-${format}`}
 											className={cn(
-												"px-3 py-1 text-sm border-r border-vscode-input-border last:border-r-0 cursor-pointer",
+												"px-3 py-1 text-sm border-r border-vscode-input-border last:border-r-0 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-vscode-focusBorder",
 												format === timeFormat
 													? "bg-vscode-button-background text-vscode-button-foreground"
 													: "bg-vscode-input-background text-vscode-foreground hover:bg-vscode-list-hoverBackground",
 											)}>
 											{t(`settings:language.timeFormat.options.${format}`)}
-										</button>
+										</RadioGroupPrimitive.Item>
 									))}
-								</div>
+								</RadioGroupPrimitive.Root>
 								<div className="text-vscode-descriptionForeground text-sm">
 									{t("settings:language.timeFormat.description")}
 								</div>

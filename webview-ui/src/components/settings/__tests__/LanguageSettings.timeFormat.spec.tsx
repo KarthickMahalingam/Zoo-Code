@@ -34,6 +34,37 @@ describe("LanguageSettings – date & time (design mock 2)", () => {
 			expect(setCachedStateField).toHaveBeenCalledWith("timeFormat", format)
 		})
 
+		describe("keyboard structure", () => {
+			// Real focus and the arrow keys are covered in LanguageSettings.visual.tsx (a real browser): the unit
+			// test setup stubs `focus()`. What can be checked here is the structure the keys depend on.
+			const option = (format: "auto" | "12h" | "24h") => screen.getByTestId(`time-format-${format}`)
+
+			it("is a horizontal radio group of three radios", () => {
+				setup({ timeFormat: "12h" })
+
+				const group = screen.getByRole("radiogroup")
+				expect(group).toBe(screen.getByTestId("time-format-select"))
+				expect(group).toHaveAttribute("aria-orientation", "horizontal")
+				expect(group).toHaveAccessibleName("settings:language.timeFormat.label")
+				expect(screen.getAllByRole("radio")).toHaveLength(3)
+			})
+
+			it("has one tab stop: the group, with the options reached by the arrow keys", () => {
+				setup({ timeFormat: "12h" })
+
+				expect(screen.getByRole("radiogroup")).toHaveAttribute("tabindex", "0")
+				for (const format of ["auto", "12h", "24h"] as const) {
+					expect(option(format)).toHaveAttribute("tabindex", "-1")
+				}
+			})
+
+			it("exposes exactly the selected option as checked", () => {
+				setup({ timeFormat: "24h" })
+
+				expect(screen.getByRole("radio", { checked: true })).toBe(option("24h"))
+			})
+		})
+
 		it("marks the stored value as the active segment", () => {
 			setup({ timeFormat: "24h" })
 			expect(screen.getByTestId("time-format-24h").getAttribute("aria-checked")).toBe("true")
