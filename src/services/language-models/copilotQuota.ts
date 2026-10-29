@@ -151,7 +151,11 @@ export function getGitHubCopilotQuota(
 				if (!response.ok) return { ok: false, reason: "error", message: `GitHub API error ${response.status}` }
 
 				const quota = parseCopilotQuota(await response.json())
-				return quota ? { ok: true, quota } : { ok: false, reason: "noCopilot" }
+				// A 403 or 404 is how GitHub says there is no Copilot. A success without a premium snapshot is more likely
+				// a changed payload on this undocumented endpoint, and must not be shown as "no Copilot".
+				return quota
+					? { ok: true, quota }
+					: { ok: false, reason: "error", message: "GitHub returned no premium request quota" }
 			} catch (error) {
 				return { ok: false, reason: "error", message: safeErrorMessage(error) }
 			}

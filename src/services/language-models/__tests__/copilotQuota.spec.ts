@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("vscode", () => ({ version: "1.0.0", authentication: { getSession: vi.fn() } }))
 
@@ -149,10 +149,17 @@ describe("getGitHubCopilotQuota", () => {
 		expect(result).toEqual({ ok: false, reason: "error", message: "GitHub API error 500" })
 	})
 
-	it("reports noCopilot when the payload has no premium snapshot", async () => {
-		const result = await getGitHubCopilotQuota({}, (async () => json({ quota_snapshots: {} })) as never)
-		expect(result).toMatchObject({ ok: false, reason: "noCopilot" })
-	})
+	it.each([
+		["an empty quota_snapshots", { quota_snapshots: {} }],
+		["a renamed premium field", { copilot_plan: "pro", quota_snapshots: { premium_requests: {} } }],
+		["no quota_snapshots", { copilot_plan: "pro" }],
+	])(
+		"reports an error, not noCopilot, when a successful payload has no premium snapshot (%s)",
+		async (_name, body) => {
+			const result = await getGitHubCopilotQuota({}, (async () => json(body)) as never)
+			expect(result).toEqual({ ok: false, reason: "error", message: "GitHub returned no premium request quota" })
+		},
+	)
 
 	it("turns network errors into a generic error result instead of throwing", async () => {
 		const result = await getGitHubCopilotQuota({}, (async () => {
@@ -183,6 +190,25 @@ describe("getGitHubCopilotQuota", () => {
 		expect(fetchSpy).toHaveBeenCalledTimes(1)
 		await getGitHubCopilotQuota({ force: true }, fetchSpy as never)
 		expect(fetchSpy).toHaveBeenCalledTimes(2)
+	})
+
+	describe("the cache lifetime", () => {
+		afterEach(() => vi.useRealTimers())
+
+		it.each([
+			[59_999, 1],
+			[60_000, 2],
+		])("serves a cached result %i ms after it was fetched with %i request(s) in total", async (age, requests) => {
+			vi.useFakeTimers()
+			vi.setSystemTime(1_000_000)
+			const fetchSpy = vi.fn(async () => json(businessPayload))
+			await getGitHubCopilotQuota({}, fetchSpy as never)
+
+			vi.setSystemTime(1_000_000 + age)
+			await getGitHubCopilotQuota({}, fetchSpy as never)
+
+			expect(fetchSpy).toHaveBeenCalledTimes(requests)
+		})
 	})
 
 	it("does not cache failures", async () => {

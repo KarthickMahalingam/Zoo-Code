@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { providerIdentifiers } from "@roo-code/types"
 
@@ -672,25 +672,62 @@ describe("getProviderQuotas", () => {
 		expect(q).toMatchObject({ ok: true })
 	})
 
-	it("never sends a key to a custom base URL", async () => {
-		const fetchSpy = vi.fn(okFetch)
-		const [q] = await getProviderQuotas(
-			[
-				{
-					apiProvider: providerIdentifiers.openrouter,
-					openRouterApiKey: "sk",
-					openRouterBaseUrl: "https://evil.example/api/v1",
-				} as never,
-			],
-			{},
-			fetchSpy,
-		)
-		expect(q).toMatchObject({ ok: false, reason: "unsupported" })
-		expect(fetchSpy).not.toHaveBeenCalled()
+	describe("never sends a key to a base URL that is not the provider's own host", () => {
+		const providers = [
+			{
+				id: providerIdentifiers.openrouter,
+				host: "openrouter.ai",
+				own: "https://openrouter.ai/api/v1",
+				settings: { openRouterApiKey: "sk" },
+				urlKey: "openRouterBaseUrl",
+			},
+			{
+				id: providerIdentifiers.deepseek,
+				host: "api.deepseek.com",
+				own: "https://api.deepseek.com",
+				settings: { deepSeekApiKey: "sk" },
+				urlKey: "deepSeekBaseUrl",
+			},
+			{
+				id: providerIdentifiers.moonshot,
+				host: "api.moonshot.ai",
+				own: "https://api.moonshot.ai/v1",
+				settings: { moonshotApiKey: "sk" },
+				urlKey: "moonshotBaseUrl",
+			},
+		] as const
+
+		const hostile = (host: string) => [
+			"https://evil.example/api/v1",
+			`https://${host}.evil.com`,
+			`https://user@${host}.evil.com`,
+			`http://${host}`,
+			`https://${host}:8443`,
+		]
+
+		const cases = providers.flatMap((p) => hostile(p.host).map((url) => [p.id, url, p] as const))
+
+		it.each(cases)("%s: %s", async (_id, url, p) => {
+			const fetchSpy = vi.fn(okFetch)
+			const [q] = await getProviderQuotas(
+				[{ apiProvider: p.id, ...p.settings, [p.urlKey]: url } as never],
+				{},
+				fetchSpy,
+			)
+			expect(q).toMatchObject({ ok: false, reason: "unsupported" })
+			expect(fetchSpy).not.toHaveBeenCalled()
+		})
+
+		it.each(providers.map((p) => [p.id, p] as const))("%s: still queries its own host", async (_id, p) => {
+			const fetchSpy = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => okFetch())
+			await getProviderQuotas([{ apiProvider: p.id, ...p.settings, [p.urlKey]: p.own } as never], {}, fetchSpy)
+			expect(fetchSpy).toHaveBeenCalled()
+			for (const [url] of fetchSpy.mock.calls) expect(String(url).startsWith(p.own)).toBe(true)
+		})
 	})
 
 	it("calls the provider's own host with the saved key", async () => {
-		const fetchSpy = vi.fn(okFetch)
+		const fetchSpy = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => okFetch())
 		const [q] = await getProviderQuotas(
 			[{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk-test" } as never],
 			{},
@@ -973,6 +1010,28 @@ describe("getProviderQuotas", () => {
 		// The earlier success is still served from the cache.
 		await getProviderQuotas(profiles, {}, ok)
 		expect(ok).toHaveBeenCalledTimes(1)
+	})
+
+	describe("the cache lifetime", () => {
+		afterEach(() => vi.useRealTimers())
+
+		it.each([
+			[59_999, 1],
+			[60_000, 2],
+		])("a result %i ms old gives %i request(s) in total", async (age, requests) => {
+			vi.useFakeTimers()
+			vi.setSystemTime(1_000_000)
+			const fetchSpy = vi.fn(
+				async () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })),
+			)
+			const profiles = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never]
+			await getProviderQuotas(profiles, {}, fetchSpy)
+
+			vi.setSystemTime(1_000_000 + age)
+			await getProviderQuotas(profiles, {}, fetchSpy)
+
+			expect(fetchSpy).toHaveBeenCalledTimes(requests)
+		})
 	})
 
 	it("caches results for the same set of providers unless forced", async () => {
