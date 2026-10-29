@@ -26,9 +26,12 @@ for (const theme of visualThemes) {
 			.filter({ hasText: "Tests passed" })
 			.last()
 		const diffCode = story.getByTestId("consumer-diff").locator(".diff-view").first()
+		const code = story.getByTestId("consumer-code").locator("code").first()
 		await expect(markdownText).toBeVisible()
 		await expect(queued).toBeVisible()
 		await expect(diffCode).toBeVisible()
+		// The code block highlights asynchronously: wait for it, so the picture is the same on every run.
+		await expect(code.locator("span[style]").first()).toBeVisible({ timeout: 20_000 })
 
 		// Unset: the historical look.
 		await expect(story.getByTestId("appearance-state")).toHaveText("unset")
@@ -38,12 +41,15 @@ for (const theme of visualThemes) {
 			padY: await px(queued, "padding-top"),
 			terminal: await px(terminal, "font-size"),
 			diff: await px(diffCode, "font-size"),
+			code: await px(code, "font-size"),
 		}
 		expect(before.padX).toBe(15)
 		expect(before.padY).toBe(10)
 		expect(before.terminal).not.toBe(20)
 		expect(before.diff).not.toBe(22)
+		expect(before.code).not.toBe(22)
 		await expect(page.locator("html")).not.toHaveClass(/zoo-editor-font-set/)
+		await expect(story).toHaveScreenshot(`appearance-consumers-${theme.name}-unset.png`)
 
 		// Set: interface 150%, terminal 20px, editor 22px, spacing 150%.
 		await story.getByTestId("apply-appearance").click()
@@ -54,6 +60,8 @@ for (const theme of visualThemes) {
 		expect(await px(markdownText, "font-size")).toBeCloseTo(before.chat * 1.5, 1)
 		expect(await px(terminal, "font-size")).toBe(20)
 		expect(await px(diffCode, "font-size")).toBe(22)
+		expect(await px(code, "font-size")).toBe(22)
+		await expect(story).toHaveScreenshot(`appearance-consumers-${theme.name}-set.png`)
 
 		// Removed again: every consumer is back on its default.
 		await story.getByTestId("remove-appearance").click()
@@ -64,5 +72,8 @@ for (const theme of visualThemes) {
 		expect(await px(markdownText, "font-size")).toBeCloseTo(before.chat, 1)
 		expect(await px(terminal, "font-size")).toBeCloseTo(before.terminal, 1)
 		expect(await px(diffCode, "font-size")).toBeCloseTo(before.diff, 1)
+		expect(await px(code, "font-size")).toBeCloseTo(before.code, 1)
+		// ...and it looks the way it did before: the same picture as the unset state.
+		await expect(story).toHaveScreenshot(`appearance-consumers-${theme.name}-unset.png`)
 	})
 }
