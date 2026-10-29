@@ -81,7 +81,7 @@ import type { ModelRecord } from "@roo-code/types"
 import * as vsCodeLmProvider from "../../../api/providers/vscode-lm"
 import * as copilotProvider from "../../../api/providers/github-copilot"
 
-import { webviewMessageHandler } from "../webviewMessageHandler"
+import { settingWriteBookkeepingSize, webviewMessageHandler } from "../webviewMessageHandler"
 import { registerCopilotModelBroadcast } from "../../../services/language-models/copilotModelBroadcast"
 import type { ClineProvider } from "../ClineProvider"
 import { flushModels, getModels } from "../../../api/providers/fetchers/modelCache"
@@ -2131,6 +2131,197 @@ describe("webviewMessageHandler - the appearance settings are saved all-or-nothi
 
 			expect(stored.terminalFontSize).toBe(12) // A's own write is put back
 			expect(stored.spacingScale).toBe(80) // B's is untouched
+		})
+	})
+
+	describe("writes to one setting are ordered, down to durable storage", () => {
+		/**
+		 * A store whose writes reach durable storage later than they are started: each write holds until it is
+		 * released, and the events record when it started and when it reached storage.
+		 */
+		const slowStore = () => {
+			const events: string[] = []
+			const gates = new Map<string, () => void>()
+			vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(
+				async (key: string, value: unknown) => {
+					events.push(`start ${key}=${String(value)}`)
+					await new Promise<void>((resolve) => gates.set(`${key}=${String(value)}`, resolve))
+					stored[key] = value
+					events.push(`end ${key}=${String(value)}`)
+				},
+			)
+			const release = async (what: string) => {
+				await vi.waitFor(() => expect(gates.has(what)).toBe(true))
+				gates.get(what)!()
+			}
+			return { events, release }
+		}
+
+		it("does not start a newer save's write of a key before the older one has reached storage", async () => {
+			const { events, release } = slowStore()
+
+			const a = save({ interfaceFontScale: 120 }, "save-a")
+			await vi.waitFor(() => expect(events).toContain("start interfaceFontScale=120"))
+			const b = save({ interfaceFontScale: 150 }, "save-b")
+			// Give the second save every chance to start its write: it must wait for the first.
+			await new Promise((resolve) => setTimeout(resolve, 20))
+			expect(events).not.toContain("start interfaceFontScale=150")
+
+			await release("interfaceFontScale=120")
+			await vi.waitFor(() => expect(events).toContain("start interfaceFontScale=150"))
+			await release("interfaceFontScale=150")
+			await Promise.all([a, b])
+
+			// The newer value reached storage last, so it is the one that stays, and both saves succeeded.
+			expect(events).toEqual([
+				"start interfaceFontScale=120",
+				"end interfaceFontScale=120",
+				"start interfaceFontScale=150",
+				"end interfaceFontScale=150",
+			])
+			expect(stored.interfaceFontScale).toBe(150)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+				type: "settingsSaveResult",
+				requestId: "save-b",
+				success: true,
+			})
+		})
+
+		it("does not make writes of different keys wait for each other", async () => {
+			const { events, release } = slowStore()
+
+			const a = save({ interfaceFontScale: 120 }, "save-a")
+			await vi.waitFor(() => expect(events).toContain("start interfaceFontScale=120"))
+			const b = save({ terminalFontSize: 14 }, "save-b")
+
+			await vi.waitFor(() => expect(events).toContain("start terminalFontSize=14"))
+			await release("terminalFontSize=14")
+			await b
+			expect(stored.terminalFontSize).toBe(14)
+
+			await release("interfaceFontScale=120")
+			await a
+		})
+
+		it("lets the next write through when one has failed", async () => {
+			let first = true
+			const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+			vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(
+				async (key: string, value: unknown) => {
+					if (first && key === "interfaceFontScale") {
+						first = false
+						throw new Error("storage unavailable")
+					}
+					return real(key as never, value as never)
+				},
+			)
+
+			await save({ interfaceFontScale: 120 }, "save-a")
+			await save({ interfaceFontScale: 150 }, "save-b")
+
+			expect(stored.interfaceFontScale).toBe(150)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenLastCalledWith(
+				expect.objectContaining({ requestId: "save-b", success: true }),
+			)
+		})
+
+		it("also queues the write that puts a value back, behind the writes before it", async () => {
+			const events: string[] = []
+			const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+			let releaseRestore!: () => void
+			const restoreHeld = new Promise<void>((resolve) => (releaseRestore = resolve))
+			vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(
+				async (key: string, value: unknown) => {
+					events.push(`start ${key}=${String(value)}`)
+					if (key === "terminalFontSize" && value === 14) throw new Error("storage unavailable")
+					// Putting interfaceFontScale back is slow to reach storage.
+					if (key === "interfaceFontScale" && value === 100) await restoreHeld
+					await real(key as never, value as never)
+					events.push(`end ${key}=${String(value)}`)
+				},
+			)
+
+			// Save A writes interfaceFontScale, then fails: its restore of 100 is held.
+			const a = save({ interfaceFontScale: 120, terminalFontSize: 14 }, "save-a")
+			await vi.waitFor(() => expect(events).toContain("start interfaceFontScale=100"))
+			// Save B writes the same key while the restore is still on its way to storage.
+			const b = save({ interfaceFontScale: 150 }, "save-b")
+			await new Promise((resolve) => setTimeout(resolve, 20))
+			expect(events).not.toContain("start interfaceFontScale=150")
+
+			releaseRestore()
+			await Promise.all([a, b])
+
+			expect(events.indexOf("end interfaceFontScale=100")).toBeLessThan(
+				events.indexOf("start interfaceFontScale=150"),
+			)
+			expect(stored.interfaceFontScale).toBe(150)
+		})
+	})
+
+	describe("nothing is kept about writes once the saves are over", () => {
+		const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+		it("keeps nothing after a save that succeeded", async () => {
+			await save({ interfaceFontScale: 120, terminalFontSize: 14 })
+			await settled()
+
+			expect(settingWriteBookkeepingSize()).toEqual({ latestWrites: 0, queuedKeys: 0 })
+		})
+
+		it("keeps nothing after a save that failed and was rolled back", async () => {
+			failWriteOf("terminalFontSize", 14)
+
+			await save({ interfaceFontScale: 120, terminalFontSize: 14 })
+			await settled()
+
+			expect(settingWriteBookkeepingSize()).toEqual({ latestWrites: 0, queuedKeys: 0 })
+		})
+
+		it("keeps nothing after overlapping saves, whichever way they end", async () => {
+			let releaseFailure!: () => void
+			const held = new Promise<void>((resolve) => (releaseFailure = resolve))
+			failWriteOf("editorFontSize", 15, () => held)
+
+			// The older save succeeds first; the newer one then fails.
+			const newer = (async () => {
+				await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(120))
+				return save({ interfaceFontScale: 150, editorFontSize: 15 }, "save-b")
+			})()
+			await save({ interfaceFontScale: 120 }, "save-a")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(150))
+			releaseFailure()
+			await newer
+			await settled()
+
+			expect(stored.interfaceFontScale).toBe(120)
+			expect(settingWriteBookkeepingSize()).toEqual({ latestWrites: 0, queuedKeys: 0 })
+		})
+
+		it("keeps nothing after three overlapping saves that all fail", async () => {
+			const release: Record<"a" | "b" | "c", () => void> = { a: () => {}, b: () => {}, c: () => {} }
+			const gate = (name: "a" | "b" | "c") => new Promise<void>((resolve) => (release[name] = resolve))
+			const gates = { a: gate("a"), b: gate("b"), c: gate("c") }
+			failWriteOf("terminalFontSize", 14, () => gates.a)
+			failWriteOf("editorFontSize", 15, () => gates.b)
+			failWriteOf("spacingScale", 80, () => gates.c)
+
+			const a = save({ interfaceFontScale: 120, terminalFontSize: 14 }, "save-a")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(120))
+			const b = save({ interfaceFontScale: 150, editorFontSize: 15 }, "save-b")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(150))
+			const c = save({ interfaceFontScale: 180, spacingScale: 80 }, "save-c")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(180))
+			release.b()
+			await b
+			release.c()
+			await c
+			release.a()
+			await a
+			await settled()
+
+			expect(stored.interfaceFontScale).toBe(100)
+			expect(settingWriteBookkeepingSize()).toEqual({ latestWrites: 0, queuedKeys: 0 })
 		})
 	})
 

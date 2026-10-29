@@ -172,9 +172,50 @@ interface SettingWrite {
  * can overlap, and writes to the same key form a chain. Rolling back a write puts the key back only while it is the
  * latest one and the stored value is still what it wrote, so a newer save's value, or a change made outside a save
  * (an import), is kept. A write that is rolled back while a newer one is pending is taken out of the chain, so that
- * if the newer one fails too, it restores what was stored before either of them.
+ * if the newer one fails too, it restores what was stored before either of them. A write that has finished is taken
+ * out of the chain too, so nothing is kept after the saves are over.
  */
 const lastWriteOfSetting = new Map<string, SettingWrite>()
+
+/**
+ * The writes to one key, one at a time, from every save (and every rollback), across providers. A write is only
+ * started once the one before it has reached durable storage, so a slower write cannot complete after a newer one
+ * and overwrite it. A write that fails does not hold up the ones behind it.
+ */
+const settingWriteQueues = new Map<string, Promise<void>>()
+
+const queuedSettingWrite = (key: string, write: () => Promise<unknown>): Promise<void> => {
+	const run = (settingWriteQueues.get(key) ?? Promise.resolve()).then(async () => {
+		await write()
+	})
+	const tail = run.catch(() => undefined)
+	settingWriteQueues.set(key, tail)
+	void tail.then(() => {
+		if (settingWriteQueues.get(key) === tail) settingWriteQueues.delete(key)
+	})
+	return run
+}
+
+/** @internal test hook: how much is kept about writes. It is nothing once the saves are over. */
+export const settingWriteBookkeepingSize = () => ({
+	latestWrites: lastWriteOfSetting.size,
+	queuedKeys: settingWriteQueues.size,
+})
+
+/** Takes a write out of its chain, joining the writes on either side of it. */
+const unlinkSettingWrite = (write: SettingWrite) => {
+	if (write.prev) write.prev.next = write.next
+	if (write.next) write.next.prev = write.prev
+	write.prev = undefined
+	write.next = undefined
+}
+
+/** The save that made this write succeeded. */
+const finishSettingWrite = (write: SettingWrite) => {
+	write.done = true
+	if (lastWriteOfSetting.get(write.key) === write) lastWriteOfSetting.delete(write.key)
+	unlinkSettingWrite(write)
+}
 
 const undoSettingWrite = async (provider: ClineProvider, write: SettingWrite) => {
 	const { key } = write
@@ -182,22 +223,21 @@ const undoSettingWrite = async (provider: ClineProvider, write: SettingWrite) =>
 
 	if (lastWriteOfSetting.get(key) !== write) {
 		// A newer write exists. Make it restore the value from before this one if it fails as well.
-		const { next } = write
-		if (next && !next.done) {
-			next.previous = write.previous
-			next.prev = write.prev
-			if (write.prev) write.prev.next = next
-		}
-
+		if (write.next && !write.next.done) write.next.previous = write.previous
+		unlinkSettingWrite(write)
 		return
 	}
 
 	// The write before this one is pending again: it is the latest, and the value now stored is its value.
-	if (write.prev && !write.prev.done) lastWriteOfSetting.set(key, write.prev)
+	const { prev } = write
+	if (prev && !prev.done) lastWriteOfSetting.set(key, prev)
 	else lastWriteOfSetting.delete(key)
+	unlinkSettingWrite(write)
 
 	if (provider.contextProxy.getValue(key as keyof RooCodeSettings) === write.wrote) {
-		await provider.contextProxy.setValue(key as keyof RooCodeSettings, write.previous as never)
+		await queuedSettingWrite(key, () =>
+			provider.contextProxy.setValue(key as keyof RooCodeSettings, write.previous as never),
+		)
 	}
 }
 
@@ -976,12 +1016,18 @@ export const webviewMessageHandler = async (
 						if (write.prev) write.prev.next = write
 						written.push(write)
 						lastWriteOfSetting.set(key, write)
+
+						// One write of this key at a time, until it has reached durable storage.
+						await queuedSettingWrite(key, () =>
+							provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue),
+						)
+						continue
 					}
 
 					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
 				}
 
-				for (const write of written) write.done = true
+				for (const write of written) finishSettingWrite(write)
 			} catch (error) {
 				failure = error instanceof Error ? error.message : String(error)
 
