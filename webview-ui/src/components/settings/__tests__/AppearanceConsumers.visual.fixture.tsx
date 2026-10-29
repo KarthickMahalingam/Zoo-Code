@@ -2,6 +2,7 @@ import { useState } from "react"
 
 import { applyAppearanceVariables, type AppearanceValues } from "@src/utils/appearance"
 import { AppProviders } from "../../../../playwright/AppProviders"
+import ChatRow from "../../chat/ChatRow"
 import { QueuedMessages } from "../../chat/QueuedMessages"
 import { TerminalOutput } from "../../chat/TerminalOutput"
 import CodeBlock from "../../common/CodeBlock"
@@ -58,6 +59,17 @@ export function AppearanceConsumersStory() {
 
 				<div data-testid="consumer-markdown">
 					<MarkdownBlock markdown={"A paragraph of chat text, with `inline code` in it."} />
+				</div>
+				<div data-testid="consumer-chat-row">
+					<ChatRow
+						message={{ type: "say", say: "text", ts: 1, text: "A chat row with an assistant reply." }}
+						isExpanded={false}
+						isLast={false}
+						isStreaming={false}
+						onToggleExpand={() => {}}
+						onHeightChange={() => {}}
+						isFollowUpAnswered={false}
+					/>
 				</div>
 				<div data-testid="consumer-queued">
 					<QueuedMessages

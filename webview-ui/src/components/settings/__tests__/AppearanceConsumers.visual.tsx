@@ -20,6 +20,8 @@ for (const theme of visualThemes) {
 
 		const markdownText = story.getByTestId("consumer-markdown").locator("p").first()
 		const queued = story.getByTestId("queued-messages")
+		// The wrapper that ChatRow puts around every row: its padding is what the spacing setting changes.
+		const chatRowWrapper = story.getByTestId("consumer-chat-row").locator(":scope > div").first()
 		const terminal = story
 			.getByTestId("consumer-terminal")
 			.locator("pre, code, div")
@@ -29,6 +31,7 @@ for (const theme of visualThemes) {
 		const code = story.getByTestId("consumer-code").locator("code").first()
 		await expect(markdownText).toBeVisible()
 		await expect(queued).toBeVisible()
+		await expect(chatRowWrapper).toContainText("A chat row with an assistant reply.")
 		await expect(diffCode).toBeVisible()
 		// The code block highlights asynchronously: wait for it, so the picture is the same on every run.
 		await expect(code.locator("span[style]").first()).toBeVisible({ timeout: 20_000 })
@@ -45,6 +48,8 @@ for (const theme of visualThemes) {
 		}
 		expect(before.padX).toBe(15)
 		expect(before.padY).toBe(10)
+		expect(await px(chatRowWrapper, "padding-left")).toBe(15)
+		expect(await px(chatRowWrapper, "padding-top")).toBe(10)
 		expect(before.terminal).not.toBe(20)
 		expect(before.diff).not.toBe(22)
 		expect(before.code).not.toBe(22)
@@ -57,6 +62,8 @@ for (const theme of visualThemes) {
 		await expect(page.locator("html")).toHaveClass(/zoo-editor-font-set/)
 		await expect.poll(() => px(queued, "padding-left")).toBe(22.5) // 15px at 150%
 		expect(await px(queued, "padding-top")).toBe(15) // 10px at 150%
+		expect(await px(chatRowWrapper, "padding-left")).toBe(22.5)
+		expect(await px(chatRowWrapper, "padding-top")).toBe(15)
 		expect(await px(markdownText, "font-size")).toBeCloseTo(before.chat * 1.5, 1)
 		expect(await px(terminal, "font-size")).toBe(20)
 		expect(await px(diffCode, "font-size")).toBe(22)
@@ -69,6 +76,8 @@ for (const theme of visualThemes) {
 		await expect(page.locator("html")).not.toHaveClass(/zoo-editor-font-set/)
 		await expect.poll(() => px(queued, "padding-left")).toBe(15)
 		expect(await px(queued, "padding-top")).toBe(10)
+		expect(await px(chatRowWrapper, "padding-left")).toBe(15)
+		expect(await px(chatRowWrapper, "padding-top")).toBe(10)
 		expect(await px(markdownText, "font-size")).toBeCloseTo(before.chat, 1)
 		expect(await px(terminal, "font-size")).toBeCloseTo(before.terminal, 1)
 		expect(await px(diffCode, "font-size")).toBeCloseTo(before.diff, 1)
