@@ -141,12 +141,52 @@ const ROLLBACK_SETTING_KEYS = new Set<string>([
 	"spacingScale",
 ])
 
+/** One write of a rolled-back setting by a save, linked to the writes of other saves that overlap it. */
+interface SettingWrite {
+	key: string
+	/** What was stored when this save wrote it. With overlapping saves, this can be another save's pending value. */
+	previous: unknown
+	wrote: unknown
+	/** The write before this one that has not finished yet, and the one after it. */
+	prev?: SettingWrite
+	next?: SettingWrite
+	/** The save has finished: it succeeded, or it has been rolled back. */
+	done: boolean
+}
+
 /**
- * Which save wrote each of those settings last. A failed save puts a setting back only while it is still the one
- * that wrote it. Comparing values instead would not tell two saves apart when they write the same value, and the
- * failed one would undo the other's successful write. The store is shared by every provider (sidebar, editor tab).
+ * The latest write of each of those settings. The store is shared by every provider (sidebar, editor tab), so saves
+ * can overlap, and writes to the same key form a chain. Rolling back a write puts the key back only while it is the
+ * latest one and the stored value is still what it wrote, so a newer save's value, or a change made outside a save
+ * (an import), is kept. A write that is rolled back while a newer one is pending is taken out of the chain, so that
+ * if the newer one fails too, it restores what was stored before either of them.
  */
-const lastWriterOfSetting = new Map<string, object>()
+const lastWriteOfSetting = new Map<string, SettingWrite>()
+
+const undoSettingWrite = async (provider: ClineProvider, write: SettingWrite) => {
+	const { key } = write
+	write.done = true
+
+	if (lastWriteOfSetting.get(key) !== write) {
+		// A newer write exists. Make it restore the value from before this one if it fails as well.
+		const { next } = write
+		if (next && !next.done) {
+			next.previous = write.previous
+			next.prev = write.prev
+			if (write.prev) write.prev.next = next
+		}
+
+		return
+	}
+
+	// The write before this one is pending again: it is the latest, and the value now stored is its value.
+	if (write.prev && !write.prev.done) lastWriteOfSetting.set(key, write.prev)
+	else lastWriteOfSetting.delete(key)
+
+	if (provider.contextProxy.getValue(key as keyof RooCodeSettings) === write.wrote) {
+		await provider.contextProxy.setValue(key as keyof RooCodeSettings, write.previous as never)
+	}
+}
 
 export const webviewMessageHandler = async (
 	provider: ClineProvider,
@@ -758,10 +798,13 @@ export const webviewMessageHandler = async (
 		case "updateSettings": {
 			// The appearance values are saved all-or-nothing: if a write fails, the ones this save already stored are
 			// put back, so the webview can keep the user's edits and let them retry. A key is recorded before it is
-			// written, so a write that failed after changing the stored value is put back too. A key is put back only
-			// while this save is still the last one that wrote it, so a newer save's value is kept.
-			const written: Array<{ key: string; previous: unknown; writer: object }> = []
+			// written, so a write that failed after changing the stored value is put back too (see `undoSettingWrite`
+			// for when a key is left alone). A failure while writing any other setting is not handled here: it
+			// follows the existing error path, after the appearance values have been put back.
+			const written: SettingWrite[] = []
 			let failure: string | undefined
+			let failedKey: string | undefined
+			let unhandledFailure: unknown
 
 			try {
 				if (!message.updatedSettings) break
@@ -785,6 +828,7 @@ export const webviewMessageHandler = async (
 				}
 
 				for (const [key, value] of Object.entries(message.updatedSettings)) {
+					failedKey = key
 					const previous = provider.contextProxy.getValue(key as keyof RooCodeSettings)
 					let newValue = value
 
@@ -896,31 +940,44 @@ export const webviewMessageHandler = async (
 					}
 
 					if (ROLLBACK_SETTING_KEYS.has(key)) {
-						const writer = {}
-						written.push({ key, previous, writer })
-						lastWriterOfSetting.set(key, writer)
+						const before = lastWriteOfSetting.get(key)
+						const write: SettingWrite = {
+							key,
+							previous,
+							wrote: newValue,
+							prev: before && !before.done ? before : undefined,
+							done: false,
+						}
+						if (write.prev) write.prev.next = write
+						written.push(write)
+						lastWriteOfSetting.set(key, write)
 					}
 
 					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
 				}
+
+				for (const write of written) write.done = true
 			} catch (error) {
 				failure = error instanceof Error ? error.message : String(error)
 
-				for (const { key, previous, writer } of written.reverse()) {
+				for (const write of written.reverse()) {
 					try {
-						if (lastWriterOfSetting.get(key) === writer) {
-							lastWriterOfSetting.delete(key)
-							await provider.contextProxy.setValue(key as keyof RooCodeSettings, previous as never)
-						}
+						await undoSettingWrite(provider, write)
 					} catch (rollbackError) {
 						provider.log(
-							`[updateSettings] Could not restore ${key}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+							`[updateSettings] Could not restore ${write.key}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
 						)
 					}
 				}
 
-				provider.log(`[updateSettings] Save failed and was rolled back: ${failure}`)
-				vscode.window.showErrorMessage(t("common:errors.settings_save_failed", { error: failure }))
+				provider.log(`[updateSettings] Save failed: ${failure}`)
+
+				if (failedKey !== undefined && ROLLBACK_SETTING_KEYS.has(failedKey)) {
+					vscode.window.showErrorMessage(t("common:errors.settings_save_failed", { error: failure }))
+				} else {
+					// Not an appearance value: handled as it always was, once the webview has been told.
+					unhandledFailure = error
+				}
 			}
 
 			// The outcome is decided above. A failed refresh must neither undo a stored save nor keep the webview
@@ -941,6 +998,8 @@ export const webviewMessageHandler = async (
 					...(failure === undefined ? {} : { error: failure }),
 				})
 			}
+
+			if (unhandledFailure !== undefined) throw unhandledFailure
 
 			break
 		}

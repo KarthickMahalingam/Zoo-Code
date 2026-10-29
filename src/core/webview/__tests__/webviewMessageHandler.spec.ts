@@ -1925,9 +1925,11 @@ describe("webviewMessageHandler - the appearance settings are saved all-or-nothi
 			expect.objectContaining({ success: true }),
 		)
 		expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("common:errors.settings_save_failed")
-		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("rolled back"))
-		// The webview is re-synced with what is really stored.
+		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("Save failed"))
+		// The webview is re-synced with what is really stored: after the values were put back, not before.
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+		const lastWrite = Math.max(...vi.mocked(mockClineProvider.contextProxy.setValue).mock.invocationCallOrder)
+		expect(vi.mocked(mockClineProvider.postStateToWebview).mock.invocationCallOrder[0]).toBeGreaterThan(lastWrite)
 	})
 
 	it("puts back the value whose own write failed after it had changed the stored value", async () => {
@@ -1953,11 +1955,11 @@ describe("webviewMessageHandler - the appearance settings are saved all-or-nothi
 		await save({ interfaceFontScale: 120, terminalFontSize: 14, spacingScale: 80 })
 
 		expect(stored).toMatchObject({ interfaceFontScale: 100, terminalFontSize: 12 })
-		// Three writes forward (the last one fails), then the restores in the opposite order, failed key first.
+		// Three writes forward (the last one fails and never changed the stored value, so there is nothing to put
+		// back for it), then the restores in the opposite order.
 		expect(order).toEqual([
 			"interfaceFontScale",
 			"terminalFontSize",
-			"spacingScale",
 			"spacingScale",
 			"terminalFontSize",
 			"interfaceFontScale",
@@ -2015,6 +2017,104 @@ describe("webviewMessageHandler - the appearance settings are saved all-or-nothi
 			)
 		})
 
+		/** Two saves that both write the same key and then fail, each held at its own failing write. */
+		const twoFailingSaves = async (releaseFirst: "a" | "b") => {
+			const gates: Record<"a" | "b", () => void> = { a: () => {}, b: () => {} }
+			const heldA = new Promise<void>((resolve) => (gates.a = resolve))
+			const heldB = new Promise<void>((resolve) => (gates.b = resolve))
+			failWriteOf("terminalFontSize", 14, () => heldA)
+			failWriteOf("editorFontSize", 15, () => heldB)
+
+			const a = save({ interfaceFontScale: 120, terminalFontSize: 14 }, "save-a")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(120))
+			const b = save({ interfaceFontScale: 150, editorFontSize: 15 }, "save-b")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(150))
+
+			const [first, second] = releaseFirst === "a" ? (["a", "b"] as const) : (["b", "a"] as const)
+			gates[first]()
+			await (first === "a" ? a : b)
+			const afterFirst = stored.interfaceFontScale
+			gates[second]()
+			await (second === "a" ? a : b)
+			return { afterFirst, final: stored.interfaceFontScale }
+		}
+
+		it("puts back the value from before both saves when both fail, the earlier one failing first", async () => {
+			const { afterFirst, final } = await twoFailingSaves("a")
+
+			// The later save is still pending with 150, so the first failure leaves it. Then it restores 100.
+			expect(afterFirst).toBe(150)
+			expect(final).toBe(100)
+		})
+
+		it("puts back the value from before both saves when both fail, the later one failing first", async () => {
+			const { afterFirst, final } = await twoFailingSaves("b")
+
+			// The later save restores the earlier one's pending value, and the earlier one then restores 100.
+			expect(afterFirst).toBe(120)
+			expect(final).toBe(100)
+		})
+
+		it("puts back the original value when three overlapping saves all fail, the middle one first", async () => {
+			const release: Record<"a" | "b" | "c", () => void> = { a: () => {}, b: () => {}, c: () => {} }
+			const gate = (name: "a" | "b" | "c") => new Promise<void>((resolve) => (release[name] = resolve))
+			const gates = { a: gate("a"), b: gate("b"), c: gate("c") }
+			failWriteOf("terminalFontSize", 14, () => gates.a)
+			failWriteOf("editorFontSize", 15, () => gates.b)
+			failWriteOf("spacingScale", 80, () => gates.c)
+
+			const a = save({ interfaceFontScale: 120, terminalFontSize: 14 }, "save-a")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(120))
+			const b = save({ interfaceFontScale: 150, editorFontSize: 15 }, "save-b")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(150))
+			const c = save({ interfaceFontScale: 180, spacingScale: 80 }, "save-c")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(180))
+
+			// The middle save fails first: the newest is still pending, so the value stays.
+			release.b()
+			await b
+			expect(stored.interfaceFontScale).toBe(180)
+
+			// The newest fails: it goes back to the oldest save's pending value, not to the middle one's.
+			release.c()
+			await c
+			expect(stored.interfaceFontScale).toBe(120)
+
+			// The oldest fails: back to the value from before all three.
+			release.a()
+			await a
+			expect(stored.interfaceFontScale).toBe(100)
+		})
+
+		it("keeps the earlier save's value when the later one fails and the earlier one succeeds", async () => {
+			let releaseFailure!: () => void
+			const held = new Promise<void>((resolve) => (releaseFailure = resolve))
+			failWriteOf("editorFontSize", 15, () => held)
+
+			const later = (async () => {
+				await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(120))
+				return save({ interfaceFontScale: 150, editorFontSize: 15 }, "save-b")
+			})()
+			// The earlier save writes first and finishes while the later one is held.
+			await save({ interfaceFontScale: 120 }, "save-a")
+			await vi.waitFor(() => expect(stored.interfaceFontScale).toBe(150))
+
+			releaseFailure()
+			await later
+
+			expect(stored.interfaceFontScale).toBe(120)
+		})
+
+		it("keeps a value changed outside a save, such as an import, when a failed save rolls back", async () => {
+			failWriteOf("terminalFontSize", 14, () => {
+				stored.interfaceFontScale = 90 // an import writes the same key meanwhile
+			})
+
+			await save({ interfaceFontScale: 120, terminalFontSize: 14 })
+
+			expect(stored.interfaceFontScale).toBe(90)
+		})
+
 		it("a later failure of the other save still puts its own writes back", async () => {
 			let releaseFailure!: () => void
 			const held = new Promise<void>((resolve) => (releaseFailure = resolve))
@@ -2063,6 +2163,31 @@ describe("webviewMessageHandler - the appearance settings are saved all-or-nothi
 		await save({ interfaceFontScale: 120, terminalFontSize: 14 })
 
 		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("plain restore failure"))
+	})
+
+	describe("a failure while writing another setting", () => {
+		it("puts the appearance values back, tells the webview, and then follows the existing error path", async () => {
+			failWriteOf("soundEnabled", true)
+
+			await expect(save({ terminalFontSize: 14, soundEnabled: true })).rejects.toThrow("storage unavailable")
+
+			expect(stored.terminalFontSize).toBe(12)
+			expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+				type: "settingsSaveResult",
+				requestId: "save-1",
+				success: false,
+				error: "storage unavailable",
+			})
+			// No toast: the existing path did not show one for these settings.
+			expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+		})
+
+		it("does not reject for a failure of an appearance value, which is reported to the user instead", async () => {
+			failWriteOf("terminalFontSize", 14)
+
+			await expect(save({ terminalFontSize: 14 })).resolves.toBeUndefined()
+			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("common:errors.settings_save_failed")
+		})
 	})
 
 	it("reports a non-Error failure by its text", async () => {
