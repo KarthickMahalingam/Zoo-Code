@@ -83,6 +83,7 @@ import { SlashCommandsSettings } from "./SlashCommandsSettings"
 import { SkillsSettings } from "./SkillsSettings"
 import { RulesSettings } from "./RulesSettings"
 import { UISettings } from "./UISettings"
+import { nextSaveRequestId } from "./saveRequestId"
 import ModesView from "../modes/ModesView"
 import McpView from "../mcp/McpView"
 import { WorktreesView } from "../worktrees/WorktreesView"
@@ -95,10 +96,6 @@ export const settingsTabList =
 export const settingsTabTrigger =
 	"whitespace-nowrap overflow-hidden min-w-0 h-12 px-4 py-3 box-border flex items-center border-l-2 border-transparent text-vscode-foreground opacity-70 hover:bg-vscode-list-hoverBackground data-[compact=true]:w-12 data-[compact=true]:p-4"
 export const settingsTabTriggerActive = "opacity-100 border-vscode-focusBorder bg-vscode-list-activeSelectionBackground"
-
-// Module scope, not per mount: an answer to a save from an earlier mount can still arrive, and it must not
-// match a later mount's request id.
-let saveCounter = 0
 
 export interface SettingsViewRef {
 	checkUnsaveChanges: (then: () => void) => void
@@ -404,7 +401,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			const appearanceEdited = (Object.keys(APPEARANCE_SETTINGS) as AppearanceKey[]).some(
 				(key) => (cachedState[key] ?? null) !== (extensionState[key] ?? null),
 			)
-			const saveId = appearanceEdited ? `settings-save-${++saveCounter}` : undefined
+			const saveId = appearanceEdited ? nextSaveRequestId() : undefined
 			if (saveId) {
 				pendingSaveEditedState.current = cachedState
 				setPendingSaveId(saveId)

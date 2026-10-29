@@ -44,7 +44,7 @@ describe("SettingsView – save acknowledgement", () => {
 		fireEvent.click(screen.getByTestId("save-button"))
 
 		const [save] = posted("updateSettings") as Array<{ type: string; requestId?: string }>
-		expect(save.requestId).toMatch(/^settings-save-\d+$/)
+		expect(save.requestId).toMatch(/^settings-save-[a-z0-9]+-\d+$/)
 		// These do not wait for the host's answer, exactly as before the acknowledgement existed.
 		expect(posted("upsertApiConfiguration")).toHaveLength(1)
 		expect(posted("telemetrySetting")).toHaveLength(1)
@@ -109,7 +109,7 @@ describe("SettingsView – save acknowledgement", () => {
 			fireEvent.click(screen.getByTestId("collapse-thinking-checkbox"))
 			await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
 
-			answerSave("settings-save-1", { success: false, error: "nope" })
+			answerSave("settings-save-never-issued", { success: false, error: "nope" })
 
 			expect(screen.getByTestId("save-button")).toBeEnabled()
 		})
@@ -122,7 +122,7 @@ describe("SettingsView – save acknowledgement", () => {
 			fireEvent.click(screen.getByTestId("save-button"))
 
 			const [save] = posted("updateSettings") as Array<{ type: string; requestId?: string }>
-			expect(save.requestId).toMatch(/^settings-save-\d+$/)
+			expect(save.requestId).toMatch(/^settings-save-[a-z0-9]+-\d+$/)
 			expect(screen.getByTestId("save-button")).toBeDisabled()
 			answerSave(save.requestId, { success: false })
 			await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled())
@@ -139,7 +139,7 @@ describe("SettingsView – save acknowledgement", () => {
 			fireEvent.click(screen.getByTestId("save-button"))
 
 			const [save] = posted("updateSettings") as Array<{ type: string; requestId?: string }>
-			expect(save.requestId).toMatch(/^settings-save-\d+$/)
+			expect(save.requestId).toMatch(/^settings-save-[a-z0-9]+-\d+$/)
 		})
 	})
 
