@@ -112,6 +112,13 @@ export const LanguageSettings = ({
 										<RadioGroupPrimitive.Item
 											key={format}
 											value={format}
+											// Selection follows focus, as for any radio group: the arrow keys move the
+											// focus, and the option that gets it is the selected one. Radix only does
+											// this while the arrow key is still held when its focus move lands, so a
+											// quick tap would otherwise leave the focus and the saved value apart.
+											onFocus={() => {
+												if (format !== timeFormat) setCachedStateField("timeFormat", format)
+											}}
 											data-testid={`time-format-${format}`}
 											className={cn(
 												"px-3 py-1 text-sm border-r border-vscode-input-border last:border-r-0 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-vscode-focusBorder",

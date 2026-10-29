@@ -34,9 +34,7 @@ describe("LanguageSettings – date & time (design mock 2)", () => {
 			expect(setCachedStateField).toHaveBeenCalledWith("timeFormat", format)
 		})
 
-		describe("keyboard structure", () => {
-			// Real focus and the arrow keys are covered in LanguageSettings.visual.tsx (a real browser): the unit
-			// test setup stubs `focus()`. What can be checked here is the structure the keys depend on.
+		describe("keyboard", () => {
 			const option = (format: "auto" | "12h" | "24h") => screen.getByTestId(`time-format-${format}`)
 
 			it("is a horizontal radio group of three radios", () => {
@@ -49,19 +47,45 @@ describe("LanguageSettings – date & time (design mock 2)", () => {
 				expect(screen.getAllByRole("radio")).toHaveLength(3)
 			})
 
-			it("has one tab stop: the group, with the options reached by the arrow keys", () => {
+			it("has one tab stop: the group, which hands focus to the selected option", () => {
 				setup({ timeFormat: "12h" })
 
+				// Before the group has focus, the group itself is the tab stop and the options are not. Radix then
+				// moves the focus to the selected option, and makes that option the tab stop (see the browser test
+				// in LanguageSettings.visual.tsx, where real focus exists: the unit test setup stubs `focus()`).
 				expect(screen.getByRole("radiogroup")).toHaveAttribute("tabindex", "0")
 				for (const format of ["auto", "12h", "24h"] as const) {
 					expect(option(format)).toHaveAttribute("tabindex", "-1")
 				}
+				expect(screen.getByRole("radio", { checked: true })).toBe(option("12h"))
 			})
 
-			it("exposes exactly the selected option as checked", () => {
-				setup({ timeFormat: "24h" })
+			it("selects the option that receives focus", () => {
+				const { setCachedStateField } = setup({ timeFormat: "auto" })
 
-				expect(screen.getByRole("radio", { checked: true })).toBe(option("24h"))
+				fireEvent.focus(option("12h"))
+				expect(setCachedStateField).toHaveBeenLastCalledWith("timeFormat", "12h")
+
+				fireEvent.focus(option("24h"))
+				expect(setCachedStateField).toHaveBeenLastCalledWith("timeFormat", "24h")
+			})
+
+			it("selects it without any key being held, so a quick tap on an arrow key cannot leave them apart", () => {
+				const { setCachedStateField } = setup({ timeFormat: "auto" })
+
+				// No keydown at all: only the focus arrives, as when the key was released before Radix moved it.
+				fireEvent.focus(option("24h"))
+
+				expect(setCachedStateField).toHaveBeenCalledTimes(1)
+				expect(setCachedStateField).toHaveBeenCalledWith("timeFormat", "24h")
+			})
+
+			it("does nothing when the selected option receives focus", () => {
+				const { setCachedStateField } = setup({ timeFormat: "12h" })
+
+				fireEvent.focus(option("12h"))
+
+				expect(setCachedStateField).not.toHaveBeenCalled()
 			})
 		})
 
