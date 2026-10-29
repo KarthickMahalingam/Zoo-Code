@@ -130,6 +130,20 @@ import {
 const handlerFor = (apiConfiguration: ProviderSettings, provider: RouterName): ApiHandler =>
 	buildApiHandler({ ...apiConfiguration, apiProvider: provider })
 
+/**
+ * The settings a save puts back if it fails: the three display settings of the Language tab, which are saved
+ * together and must not be left half changed. Every other setting keeps the way it is written, and the way a
+ * failure is handled, as before.
+ */
+const ROLLBACK_SETTING_KEYS = new Set<string>(["timeFormat", "dateFormat", "showRelativeTimes"])
+
+/**
+ * Which save wrote each of those settings last. A failed save puts a setting back only while it is still the one
+ * that wrote it. Comparing values instead would not tell two saves apart when they write the same value, and the
+ * failed one would undo the other's successful write. The store is shared by every provider (sidebar, editor tab).
+ */
+const lastWriterOfSetting = new Map<string, object>()
+
 export const webviewMessageHandler = async (
 	provider: ClineProvider,
 	message: WebviewMessage,
@@ -737,8 +751,15 @@ export const webviewMessageHandler = async (
 			}
 			break
 
-		case "updateSettings":
-			if (message.updatedSettings) {
+		case "updateSettings": {
+			// The display settings are saved all-or-nothing: if a write fails, the ones this save already stored are
+			// put back. A key is recorded before it is written, so a write that failed after changing the stored
+			// value is put back too. A key is put back only while this save is still the last one that wrote it.
+			const written: Array<{ key: string; previous: unknown; writer: object }> = []
+
+			try {
+				if (!message.updatedSettings) break
+
 				if (message.updatedSettings.destructiveCommandGuardEnabled === true) {
 					try {
 						const { ensureDcgInstalled } = await import("../../services/destructive-command-guard")
@@ -758,6 +779,7 @@ export const webviewMessageHandler = async (
 				}
 
 				for (const [key, value] of Object.entries(message.updatedSettings)) {
+					const previous = provider.contextProxy.getValue(key as keyof RooCodeSettings)
 					let newValue = value
 
 					if (key === "language") {
@@ -867,13 +889,45 @@ export const webviewMessageHandler = async (
 						}
 					}
 
+					if (ROLLBACK_SETTING_KEYS.has(key)) {
+						const writer = {}
+						written.push({ key, previous, writer })
+						lastWriterOfSetting.set(key, writer)
+					}
+
 					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
 				}
+			} catch (error) {
+				const failure = error instanceof Error ? error.message : String(error)
 
+				for (const { key, previous, writer } of written.reverse()) {
+					try {
+						if (lastWriterOfSetting.get(key) === writer) {
+							lastWriterOfSetting.delete(key)
+							await provider.contextProxy.setValue(key as keyof RooCodeSettings, previous as never)
+						}
+					} catch (rollbackError) {
+						provider.log(
+							`[updateSettings] Could not restore ${key}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+						)
+					}
+				}
+
+				provider.log(`[updateSettings] Save failed and was rolled back: ${failure}`)
+				vscode.window.showErrorMessage(t("common:errors.settings_save_failed", { error: failure }))
+			}
+
+			// The outcome is decided above. A failed refresh must not undo a stored save.
+			try {
 				await provider.postStateToWebview()
+			} catch (error) {
+				provider.log(
+					`[updateSettings] Could not refresh the webview state: ${error instanceof Error ? error.message : String(error)}`,
+				)
 			}
 
 			break
+		}
 
 		case "terminalOperation":
 			if (message.terminalOperation) {

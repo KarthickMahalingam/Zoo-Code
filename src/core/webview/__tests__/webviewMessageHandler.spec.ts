@@ -1853,6 +1853,227 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 	})
 })
 
+describe("webviewMessageHandler - the display settings are saved all-or-nothing", () => {
+	const stored: Record<string, unknown> = {}
+
+	type WriteHook = (key: string, value: unknown) => Promise<void> | void
+
+	/**
+	 * Makes the write of one key fail. `beforeThrow` can hold the failure back (to let another save run) or
+	 * change what is stored, as a store whose cache was already updated when the write failed.
+	 */
+	const failWriteOf = (key: string, value: unknown, beforeThrow?: WriteHook) => {
+		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (k: string, v: unknown) => {
+			if (k === key && v === value) {
+				await beforeThrow?.(k, v)
+				throw new Error("storage unavailable")
+			}
+			return real(k as never, v as never)
+		})
+	}
+
+	const save = (updatedSettings: Record<string, unknown>) =>
+		webviewMessageHandler(mockClineProvider, { type: "updateSettings", updatedSettings })
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		for (const key of Object.keys(stored)) delete stored[key]
+		Object.assign(stored, { timeFormat: "auto", dateFormat: "auto", soundEnabled: false })
+		vi.mocked(mockClineProvider.contextProxy.getValue).mockImplementation((key: string) => stored[key] as never)
+		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
+			stored[key] = value
+		})
+		vi.mocked(mockClineProvider.postStateToWebview).mockResolvedValue(undefined as never)
+	})
+
+	it("stores every setting and refreshes the webview", async () => {
+		await save({ timeFormat: "24h", dateFormat: "ymd", showRelativeTimes: false })
+
+		expect(stored).toMatchObject({ timeFormat: "24h", dateFormat: "ymd", showRelativeTimes: false })
+		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+		expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+	})
+
+	it("puts back the values already stored when a later one fails, and reports it", async () => {
+		failWriteOf("showRelativeTimes", false)
+
+		await save({ timeFormat: "24h", dateFormat: "ymd", showRelativeTimes: false })
+
+		expect(stored).toMatchObject({ timeFormat: "auto", dateFormat: "auto" })
+		expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("common:errors.settings_save_failed")
+		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("rolled back"))
+		// The webview is re-synced with what is really stored.
+		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+	})
+
+	it("puts back the value whose own write failed after it had changed the stored value", async () => {
+		// As a store whose cache is updated before its write to disk fails.
+		failWriteOf("dateFormat", "dmy", (key, value) => {
+			stored[key] = value
+		})
+
+		await save({ dateFormat: "dmy" })
+
+		expect(stored.dateFormat).toBe("auto")
+	})
+
+	it("restores in reverse order, with the failed key first", async () => {
+		const order: string[] = []
+		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
+			order.push(key)
+			if (key === "showRelativeTimes" && value === false) throw new Error("boom")
+			return real(key as never, value as never)
+		})
+
+		await save({ timeFormat: "24h", dateFormat: "ymd", showRelativeTimes: false })
+
+		expect(order).toEqual([
+			"timeFormat",
+			"dateFormat",
+			"showRelativeTimes",
+			"showRelativeTimes",
+			"dateFormat",
+			"timeFormat",
+		])
+	})
+
+	it("clears a value again that had no stored value before the save", async () => {
+		failWriteOf("dateFormat", "ymd")
+
+		await save({ showRelativeTimes: false, dateFormat: "ymd" })
+
+		expect(stored.showRelativeTimes).toBeUndefined()
+	})
+
+	describe("two saves at once", () => {
+		it("a failed save does not undo another save that wrote the same value", async () => {
+			let releaseFailure!: () => void
+			const held = new Promise<void>((resolve) => (releaseFailure = resolve))
+			failWriteOf("dateFormat", "ymd", () => held)
+
+			// Save A stores timeFormat 24h, then waits at its failing write.
+			const a = save({ timeFormat: "24h", dateFormat: "ymd" })
+			await vi.waitFor(() => expect(stored.timeFormat).toBe("24h"))
+
+			// Save B stores the same value for the same key, and finishes.
+			await save({ timeFormat: "24h" })
+
+			// Save A now fails and rolls back. B's write of the same value must stand.
+			releaseFailure()
+			await a
+
+			expect(stored.timeFormat).toBe("24h")
+			expect(vscode.window.showErrorMessage).toHaveBeenCalledTimes(1)
+		})
+
+		it("a failed save does not undo another save's different value", async () => {
+			let releaseFailure!: () => void
+			const held = new Promise<void>((resolve) => (releaseFailure = resolve))
+			failWriteOf("dateFormat", "ymd", () => held)
+
+			const a = save({ timeFormat: "24h", dateFormat: "ymd" })
+			await vi.waitFor(() => expect(stored.timeFormat).toBe("24h"))
+			await save({ timeFormat: "12h" })
+
+			releaseFailure()
+			await a
+
+			expect(stored.timeFormat).toBe("12h")
+		})
+
+		it("the failed save still puts back the keys the other save did not touch", async () => {
+			let releaseFailure!: () => void
+			const held = new Promise<void>((resolve) => (releaseFailure = resolve))
+			failWriteOf("dateFormat", "ymd", () => held)
+
+			const a = save({ timeFormat: "24h", dateFormat: "ymd" })
+			await vi.waitFor(() => expect(stored.timeFormat).toBe("24h"))
+			await save({ showRelativeTimes: false })
+
+			releaseFailure()
+			await a
+
+			expect(stored.timeFormat).toBe("auto") // A's own write is put back
+			expect(stored.showRelativeTimes).toBe(false) // B's is untouched
+		})
+	})
+
+	it("keeps going when a restore itself fails, and says which one", async () => {
+		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
+			if (key === "dateFormat" && value === "ymd") throw new Error("dateFormat is broken")
+			if (key === "timeFormat" && value === "auto") throw new Error("cannot restore")
+			return real(key as never, value as never)
+		})
+
+		await save({ timeFormat: "24h", dateFormat: "ymd" })
+
+		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("Could not restore timeFormat"))
+		expect(vscode.window.showErrorMessage).toHaveBeenCalled()
+	})
+
+	it("reports a restore failure and a save failure that are not Errors", async () => {
+		const real = vi.mocked(mockClineProvider.contextProxy.setValue).getMockImplementation()!
+		vi.mocked(mockClineProvider.contextProxy.setValue).mockImplementation(async (key: string, value: unknown) => {
+			if (key === "dateFormat" && value === "ymd") throw "plain save failure"
+			if (key === "timeFormat" && value === "auto") throw "plain restore failure"
+			return real(key as never, value as never)
+		})
+
+		await save({ timeFormat: "24h", dateFormat: "ymd" })
+
+		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("plain restore failure"))
+		expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("plain save failure"))
+	})
+
+	it("leaves every other setting as it was written: it is not put back when a later write fails", async () => {
+		failWriteOf("dateFormat", "ymd")
+
+		await save({ soundEnabled: true, dateFormat: "ymd" })
+
+		expect(stored.soundEnabled).toBe(true)
+		expect(vscode.window.showErrorMessage).toHaveBeenCalled()
+	})
+
+	it("does nothing when there are no settings to save", async () => {
+		await webviewMessageHandler(mockClineProvider, { type: "updateSettings" })
+
+		expect(mockClineProvider.contextProxy.setValue).not.toHaveBeenCalled()
+		expect(mockClineProvider.postStateToWebview).not.toHaveBeenCalled()
+	})
+
+	describe("when the state refresh fails", () => {
+		it("keeps a stored save and does not report a failure", async () => {
+			vi.mocked(mockClineProvider.postStateToWebview).mockRejectedValueOnce(new Error("state unavailable"))
+
+			await save({ timeFormat: "24h", dateFormat: "ymd" })
+
+			expect(stored).toMatchObject({ timeFormat: "24h", dateFormat: "ymd" })
+			expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("state unavailable"))
+			expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+		})
+
+		it("logs a refresh failure that is not an Error", async () => {
+			vi.mocked(mockClineProvider.postStateToWebview).mockRejectedValueOnce("plain refresh failure")
+
+			await save({ timeFormat: "24h" })
+
+			expect(mockClineProvider.log).toHaveBeenCalledWith(expect.stringContaining("plain refresh failure"))
+		})
+
+		it("still reports a failed save", async () => {
+			failWriteOf("timeFormat", "24h")
+			vi.mocked(mockClineProvider.postStateToWebview).mockRejectedValueOnce(new Error("state unavailable"))
+
+			await save({ timeFormat: "24h" })
+
+			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("common:errors.settings_save_failed")
+		})
+	})
+})
+
 describe("webviewMessageHandler - mcpEnabled", () => {
 	let mockMcpHub: any
 
