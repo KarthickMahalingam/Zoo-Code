@@ -119,12 +119,28 @@ const unlinkSettingWrite = (write: SettingWrite) => {
 	write.next = undefined
 }
 
-/** The save or import that made these writes succeeded. Nothing is kept about them once they are over. */
+/**
+ * The save or import that made these writes succeeded. Nothing is kept about them once they are over. The value is
+ * committed, so it is what a later write that has not started yet replaces, and the writes on either side of it no
+ * longer hand values to each other: an earlier write that fails now has nothing left to put back behind it.
+ */
 export const finishSettingWrites = (writes: SettingWrite[]) => {
 	for (const write of writes) {
 		write.done = true
 		if (lastWriteOfSetting.get(write.key) === write) lastWriteOfSetting.delete(write.key)
-		unlinkSettingWrite(write)
+
+		const { next } = write
+		if (next && !next.done) {
+			if (next.generation === undefined) {
+				next.previous = write.wrote
+				next.inherited = true
+				next.handedOverAt = storedByOthers(write.key)
+			}
+			next.prev = undefined
+		}
+		if (write.prev) write.prev.next = undefined
+		write.prev = undefined
+		write.next = undefined
 	}
 }
 

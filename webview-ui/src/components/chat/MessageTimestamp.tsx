@@ -15,6 +15,14 @@ interface MessageTimestampProps {
 }
 
 /**
+ * Whether `ts` is a time that can be shown. Number.isFinite is not enough: a finite value beyond ±8.64e15 ms is an
+ * Invalid Date, and toISOString() would throw during render and take the whole chat row down with it. Callers that
+ * wrap the timestamp in spacing use this, so an invalid time leaves no empty block behind.
+ */
+export const isShowableTimestamp = (ts: number) =>
+	Number.isFinite(ts) && ts > 0 && !Number.isNaN(new Date(ts).getTime())
+
+/**
  * "🕒 Yesterday 11:43 AM" under a sent message.
  *
  * Purely presentational: the caller supplies the user's time/date formats, so
@@ -23,10 +31,8 @@ interface MessageTimestampProps {
  * gives assistive tech and copy/paste the exact value.
  */
 export const MessageTimestamp = ({ ts, timeFormat, dateFormat, className }: MessageTimestampProps) => {
-	// Number.isFinite is not enough: a finite value beyond ±8.64e15 ms is an Invalid Date, and
-	// toISOString() would throw during render and take the whole chat row down with it.
+	if (!isShowableTimestamp(ts)) return null
 	const date = new Date(ts)
-	if (!Number.isFinite(ts) || ts <= 0 || Number.isNaN(date.getTime())) return null
 
 	return (
 		<StandardTooltip content={formatDateTime(ts, timeFormat, dateFormat)}>

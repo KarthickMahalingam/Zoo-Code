@@ -130,6 +130,36 @@ describe("settingWrites", () => {
 			expect(stored.get("timeFormat")).toBe("auto")
 		})
 
+		it("keeps the value of a write that finished between two that fail", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+			await performSettingWrite(contextProxy, second)
+			const third = beginSettingWrite("timeFormat", "24h", "9h") // registered while the second is pending
+			finishSettingWrites([second]) // committed, between the other two
+			await performSettingWrite(contextProxy, third)
+
+			await undoSettingWrite(contextProxy, first) // superseded: the committed value is not its to restore
+			await undoSettingWrite(contextProxy, third)
+
+			expect(stored.get("timeFormat")).toBe("24h")
+		})
+
+		it("keeps the value of a write that finished before a queued write that then fails", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+			await performSettingWrite(contextProxy, second)
+			const third = beginSettingWrite("timeFormat", "24h", "9h") // queued, not started
+
+			await undoSettingWrite(contextProxy, first)
+			finishSettingWrites([second])
+			await performSettingWrite(contextProxy, third)
+			await undoSettingWrite(contextProxy, third)
+
+			expect(stored.get("timeFormat")).toBe("24h")
+		})
+
 		it("restores through a whole chain of failed writes: no restore is taken for a store by someone else", async () => {
 			const first = beginSettingWrite("timeFormat", "auto", "9h")
 			await performSettingWrite(contextProxy, first)

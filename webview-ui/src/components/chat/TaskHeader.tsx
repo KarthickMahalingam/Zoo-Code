@@ -25,7 +25,7 @@ import { vscode } from "@src/utils/vscode"
 import Thumbnails from "../common/Thumbnails"
 import { TaskTitleEditor } from "../history/TaskTitleEditor"
 import { TaskActions } from "./TaskActions"
-import { MessageTimestamp } from "./MessageTimestamp"
+import { isShowableTimestamp, MessageTimestamp } from "./MessageTimestamp"
 import { ContextWindowProgress } from "./ContextWindowProgress"
 import { Mention } from "./Mention"
 import { TodoListDisplay } from "./TodoListDisplay"
@@ -353,9 +353,11 @@ const TaskHeader = ({
 						{task.images && task.images.length > 0 && <Thumbnails images={task.images} />}
 
 						{/* When the task's first message was sent (follows the Time/Date format settings). */}
-						<div onClick={(e) => e.stopPropagation()}>
-							<MessageTimestamp ts={task.ts} timeFormat={timeFormat} dateFormat={dateFormat} />
-						</div>
+						{isShowableTimestamp(task.ts) && (
+							<div onClick={(e) => e.stopPropagation()}>
+								<MessageTimestamp ts={task.ts} timeFormat={timeFormat} dateFormat={dateFormat} />
+							</div>
+						)}
 
 						<div onClick={(e) => e.stopPropagation()}>
 							<TaskActions

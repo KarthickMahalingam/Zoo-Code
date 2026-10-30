@@ -197,6 +197,20 @@ describe("TaskHeader", () => {
 			expect(screen.queryByTestId("message-timestamp")).not.toBeInTheDocument()
 		})
 
+		it("leaves no empty block under the expanded task when the time is invalid", () => {
+			const valid = renderWithExtensionState(<TaskHeader {...defaultProps} task={task} />)
+			expand()
+			const withTime = valid.container.querySelectorAll("div").length
+			valid.unmount()
+
+			const invalid = renderWithExtensionState(
+				<TaskHeader {...defaultProps} task={{ ...defaultProps.task, ts: 0 }} />,
+			)
+			expand()
+
+			expect(invalid.container.querySelectorAll("div").length).toBe(withTime - 1)
+		})
+
 		it("is not shown while the task is collapsed", () => {
 			renderWithExtensionState(<TaskHeader {...defaultProps} task={task} />)
 

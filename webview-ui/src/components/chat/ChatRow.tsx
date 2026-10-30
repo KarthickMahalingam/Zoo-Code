@@ -38,7 +38,7 @@ import WarningRow from "./WarningRow"
 import McpResourceRow from "../mcp/McpResourceRow"
 
 import { Mention } from "./Mention"
-import { MessageTimestamp } from "./MessageTimestamp"
+import { isShowableTimestamp, MessageTimestamp } from "./MessageTimestamp"
 import { CheckpointSaved } from "./checkpoints/CheckpointSaved"
 import { FollowUpSuggest } from "./FollowUpSuggest"
 import { BatchFilePermission } from "./BatchFilePermission"
@@ -1253,7 +1253,7 @@ export const ChatRowContent = ({
 							</div>
 							{/* When the reply was sent. Held back while it streams, so the line does not appear and
 							    shift as the text grows. */}
-							{!message.partial && (
+							{!message.partial && isShowableTimestamp(message.ts) && (
 								<div className="ml-6 mt-1">
 									<MessageTimestamp ts={message.ts} timeFormat={timeFormat} dateFormat={dateFormat} />
 								</div>
@@ -1334,7 +1334,7 @@ export const ChatRowContent = ({
 								)}
 							</div>
 							{/* When the message was sent. Hidden while editing: the edit box replaces the bubble. */}
-							{!isEditing && (
+							{!isEditing && isShowableTimestamp(message.ts) && (
 								<div className="ml-6 mt-1">
 									<MessageTimestamp ts={message.ts} timeFormat={timeFormat} dateFormat={dateFormat} />
 								</div>
@@ -1401,7 +1401,7 @@ export const ChatRowContent = ({
 								) : null}
 							</div>
 							{/* When the final result was sent. Held back while it streams, like other replies. */}
-							{!message.partial && (
+							{!message.partial && isShowableTimestamp(message.ts) && (
 								<div className="ml-6 mt-1">
 									<MessageTimestamp ts={message.ts} timeFormat={timeFormat} dateFormat={dateFormat} />
 								</div>

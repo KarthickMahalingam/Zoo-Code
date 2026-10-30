@@ -179,6 +179,27 @@ describe("ChatRow – message timestamp", () => {
 		})
 	})
 
+	describe("an invalid timestamp leaves no empty block (and so no extra gap) under the message", () => {
+		const rows: [string, Partial<ClineMessage>][] = [
+			["a user message", { say: "user_feedback", text: "hello there" }],
+			["an assistant reply", { say: "text", text: "the reply" }],
+			["a completion result", { say: "completion_result", text: "all done" }],
+		]
+
+		const wrappers = (container: HTMLElement) => container.querySelectorAll(".ml-6.mt-1").length
+
+		it.each(rows)("%s", (_name, row) => {
+			const valid = renderRow({ ts: Date.now(), type: "say", ...row } as ClineMessage)
+			const withTime = wrappers(valid.container)
+			valid.unmount()
+
+			const invalid = renderRow({ ts: 0, type: "say", ...row } as ClineMessage)
+
+			expect(screen.queryByTestId("message-timestamp")).toBeNull()
+			expect(wrappers(invalid.container)).toBe(withTime - 1)
+		})
+	})
+
 	describe("date format on an older message, for every row that shows a time", () => {
 		// Years back, so the date (not "Today" or a weekday) is shown, whatever day the tests run.
 		const OLD = new Date(2024, 2, 7, 14, 41, 0, 0).getTime()
