@@ -1078,6 +1078,14 @@ describe("window names", () => {
 		})
 	})
 
+	it("names a rolling window of whole days by its count", async () => {
+		const q = await quotaFrom(
+			{ apiProvider: providerIdentifiers.zai, zaiApiKey: "sk" },
+			{ code: 200, data: { limits: [{ type: "TOKENS_LIMIT", unit: 6, number: 2, percentage: 10 }] } },
+		)
+		expect(q).toMatchObject({ ok: true, windows: [{ valueLabel: "14-day", name: { key: "days", count: 14 } }] })
+	})
+
 	it("names a Copilot unlimited plan, and leaves a figure without a name", async () => {
 		const copilot = await import("../copilotQuota")
 		vi.mocked(copilot.getGitHubCopilotQuota).mockResolvedValueOnce({
