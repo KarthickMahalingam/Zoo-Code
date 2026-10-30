@@ -19,6 +19,8 @@ export interface SettingWrite {
 	inherited?: boolean
 	/** How many times the key had been stored when this write was made. A different count later means something else wrote it. */
 	generation?: number
+	/** For a handed-over `previous`: how many stores by others there had been when it was handed over. */
+	handedOverAt?: number
 	wrote: unknown
 	/** The write before this one that has not finished yet, and the one after it. */
 	prev?: SettingWrite
@@ -43,6 +45,15 @@ const lastWriteOfSetting = new Map<TrackedSettingKey, SettingWrite>()
  * between is kept, even when it stored the same value.
  */
 const storedCount = new Map<TrackedSettingKey, number>()
+
+/** How many of those stores were made by the saves and imports here, restores included. */
+const ownStoredCount = new Map<TrackedSettingKey, number>()
+
+/** How many times the key was stored by anyone but the saves and imports here. */
+const storedByOthers = (key: TrackedSettingKey) => (storedCount.get(key) ?? 0) - (ownStoredCount.get(key) ?? 0)
+
+/** Call right after a store made here, so it is not counted as a store by someone else. */
+const noteOwnStore = (key: TrackedSettingKey) => ownStoredCount.set(key, (ownStoredCount.get(key) ?? 0) + 1)
 
 /** `ContextProxy` calls this, synchronously, each time a setting is stored. */
 export const noteSettingStored = (key: string) => {
@@ -90,10 +101,13 @@ export const settingWriteBookkeepingSize = () => ({
  */
 export const performSettingWrite = (contextProxy: ContextProxy, write: SettingWrite): Promise<void> =>
 	queuedSettingWrite(write.key, () => {
-		if (!write.inherited) write.previous = contextProxy.getValue(write.key as keyof RooCodeSettings)
+		// A handed-over value is kept only while nobody else has stored the key since it was handed over.
+		if (!write.inherited || storedByOthers(write.key) !== write.handedOverAt) {
+			write.previous = contextProxy.getValue(write.key as keyof RooCodeSettings)
+		}
 		const stored = contextProxy.setValue(write.key as keyof RooCodeSettings, write.wrote as never)
-		// The store was reported when `setValue` was called, so the count now includes this write.
-		write.generation = storedCount.get(write.key) ?? 0
+		noteOwnStore(write.key)
+		write.generation = storedByOthers(write.key)
 		return stored
 	})
 
@@ -124,6 +138,7 @@ export const undoSettingWrite = async (contextProxy: ContextProxy, write: Settin
 		if (write.next && !write.next.done) {
 			write.next.previous = write.previous
 			write.next.inherited = true
+			write.next.handedOverAt = storedByOthers(key)
 		}
 		unlinkSettingWrite(write)
 		return
@@ -136,11 +151,12 @@ export const undoSettingWrite = async (contextProxy: ContextProxy, write: Settin
 	unlinkSettingWrite(write)
 
 	await queuedSettingWrite(key, async () => {
-		const untouched = write.generation === undefined || (storedCount.get(key) ?? 0) === write.generation
+		const untouched = write.generation === undefined || storedByOthers(key) === write.generation
 		if (untouched && contextProxy.getValue(key as keyof RooCodeSettings) === write.wrote) {
 			const restored = contextProxy.setValue(key as keyof RooCodeSettings, write.previous as never)
 			// The write before this one is the owner of the value again.
-			if (prev && !prev.done) prev.generation = storedCount.get(key) ?? 0
+			noteOwnStore(key)
+			if (prev && !prev.done) prev.generation = storedByOthers(key)
 			await restored
 		}
 	})

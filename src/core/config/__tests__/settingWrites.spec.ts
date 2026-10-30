@@ -118,6 +118,71 @@ describe("settingWrites", () => {
 			expect(stored.get("timeFormat")).toBe("auto")
 		})
 
+		it("does not count the restore of a rolled-back write as a store by someone else", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+			await performSettingWrite(contextProxy, second)
+
+			await undoSettingWrite(contextProxy, second) // restores "12h", which the first write owns again
+			await undoSettingWrite(contextProxy, first)
+
+			expect(stored.get("timeFormat")).toBe("auto")
+		})
+
+		it("restores through a whole chain of failed writes: no restore is taken for a store by someone else", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "9h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "9h", "12h")
+			await performSettingWrite(contextProxy, second)
+			const third = beginSettingWrite("timeFormat", "12h", "24h")
+			await performSettingWrite(contextProxy, third)
+
+			await undoSettingWrite(contextProxy, third)
+			await undoSettingWrite(contextProxy, second)
+			await undoSettingWrite(contextProxy, first)
+
+			expect(stored.get("timeFormat")).toBe("auto")
+		})
+
+		it("keeps a store made after the restore that handed the value back, even with the same value", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+			await performSettingWrite(contextProxy, second)
+
+			await undoSettingWrite(contextProxy, second)
+			await contextProxy.setValue("timeFormat" as never, "12h" as never) // someone else stores the same value
+			await undoSettingWrite(contextProxy, first)
+
+			expect(stored.get("timeFormat")).toBe("12h")
+		})
+
+		it("reads what a handed-over write replaces when someone else stored the key before it started", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "12h", "24h") // queued, not started
+
+			await undoSettingWrite(contextProxy, first) // hands "auto" to the second write
+			await contextProxy.setValue("timeFormat" as never, "9h" as never) // someone else stores before it starts
+			await performSettingWrite(contextProxy, second)
+			await undoSettingWrite(contextProxy, second)
+
+			expect(stored.get("timeFormat")).toBe("9h")
+		})
+
+		it("keeps a handed-over value when nobody else stored the key before the write started", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+
+			await undoSettingWrite(contextProxy, first)
+			await performSettingWrite(contextProxy, second)
+			await undoSettingWrite(contextProxy, second)
+
+			expect(stored.get("timeFormat")).toBe("auto")
+		})
+
 		it("puts back the earlier write when the write after it is rolled back, and that one then fails too", async () => {
 			const first = beginSettingWrite("timeFormat", "auto", "12h")
 			await performSettingWrite(contextProxy, first)
