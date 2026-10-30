@@ -145,6 +145,20 @@ describe("settingWrites", () => {
 			expect(stored.get("timeFormat")).toBe("24h")
 		})
 
+		it("leaves what a write read when it started, if that write had already started when the earlier one finished", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+			await performSettingWrite(contextProxy, second)
+			const third = beginSettingWrite("timeFormat", "24h", "9h")
+			await performSettingWrite(contextProxy, third) // started: it read "24h"
+
+			finishSettingWrites([second])
+			await undoSettingWrite(contextProxy, third)
+
+			expect(stored.get("timeFormat")).toBe("24h")
+		})
+
 		it("keeps the value of a write that finished before a queued write that then fails", async () => {
 			const first = beginSettingWrite("timeFormat", "auto", "12h")
 			await performSettingWrite(contextProxy, first)
