@@ -171,6 +171,44 @@ describe("ContextProxy", () => {
 			finishSettingWrites([write])
 		})
 
+		describe("the cache after a rejected store of a tracked setting", () => {
+			it("goes back to what was stored, so the next save does not read a value storage does not have", async () => {
+				await proxy.setValue("timeFormat", "24h")
+				mockGlobalState.update.mockRejectedValueOnce(new Error("storage unavailable"))
+
+				await expect(proxy.setValue("timeFormat", "12h")).rejects.toThrow("storage unavailable")
+
+				expect(proxy.getValue("timeFormat")).toBe("24h")
+				const write = beginSettingWrite("timeFormat", undefined, "auto")
+				await performSettingWrite(proxy, write)
+				expect(write.previous).toBe("24h") // what is really stored, not the rejected 12h
+				finishSettingWrites([write])
+			})
+
+			it("keeps a newer store's value when the older one is rejected afterwards", async () => {
+				await proxy.setValue("timeFormat", "24h")
+				let rejectOlder!: (error: Error) => void
+				mockGlobalState.update.mockImplementationOnce(
+					() => new Promise((_resolve, reject) => (rejectOlder = reject)),
+				)
+				const older = proxy.setValue("timeFormat", "12h").catch(() => undefined) // pending
+				await proxy.setValue("timeFormat", "auto") // a newer store lands
+
+				rejectOlder(new Error("storage unavailable"))
+				await older
+
+				expect(proxy.getValue("timeFormat")).toBe("auto")
+			})
+
+			it("leaves an untracked setting's cache as it always was after a rejection", async () => {
+				mockGlobalState.update.mockRejectedValueOnce(new Error("untracked failure"))
+
+				await expect(proxy.updateGlobalState("apiProvider", "deepseek")).rejects.toThrow("untracked failure")
+
+				expect(proxy.getValue("apiProvider")).toBe("deepseek")
+			})
+		})
+
 		it("rejects with the original error, and only a tracked setting's store is wrapped", async () => {
 			mockGlobalState.update.mockRejectedValueOnce(new Error("untracked failure"))
 
