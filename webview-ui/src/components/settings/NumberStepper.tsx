@@ -41,6 +41,9 @@ export const NumberStepper = ({
 		setTyped(false)
 	}, [current])
 
+	// Arrow keys step from what is in the box when the user has typed a number, so the typed value is not lost.
+	const stepBase = typed && draft.trim() !== "" && Number.isFinite(Number(draft)) ? Number(draft) : current
+
 	const commitTyped = () => {
 		if (!typed) return
 		setTyped(false)
@@ -89,6 +92,7 @@ export const NumberStepper = ({
 						className="w-16 text-center bg-vscode-input-background text-vscode-input-foreground border-x border-vscode-input-border outline-none focus:border-vscode-focusBorder tabular-nums"
 						inputMode="numeric"
 						value={draft}
+						aria-describedby={`${testId}-unit ${testId}-description`}
 						onChange={(e) => {
 							setDraft(e.target.value.replace(/[^\d]/g, ""))
 							setTyped(true)
@@ -98,11 +102,11 @@ export const NumberStepper = ({
 							if (e.key === "Enter") commitTyped()
 							if (e.key === "ArrowUp") {
 								e.preventDefault()
-								commit(current + step)
+								commit(stepBase + step)
 							}
 							if (e.key === "ArrowDown") {
 								e.preventDefault()
-								commit(current - step)
+								commit(stepBase - step)
 							}
 						}}
 						data-testid={`${testId}-input`}
@@ -117,7 +121,9 @@ export const NumberStepper = ({
 						<Plus className="size-3.5" />
 					</button>
 				</div>
-				<span className="text-vscode-descriptionForeground w-5">{unit}</span>
+				<span id={`${testId}-unit`} className="text-vscode-descriptionForeground w-5">
+					{unit}
+				</span>
 				<button
 					type="button"
 					className={cn(
@@ -131,7 +137,9 @@ export const NumberStepper = ({
 					<RotateCcw className="size-3.5" />
 				</button>
 			</div>
-			<div className="text-vscode-descriptionForeground text-sm mt-1">{description}</div>
+			<div id={`${testId}-description`} className="text-vscode-descriptionForeground text-sm mt-1">
+				{description}
+			</div>
 		</div>
 	)
 }

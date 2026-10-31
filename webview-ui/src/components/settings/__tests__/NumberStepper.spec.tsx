@@ -97,6 +97,48 @@ describe("NumberStepper", () => {
 		expect(onChange).toHaveBeenLastCalledWith(15)
 	})
 
+	describe("arrow keys", () => {
+		it("step from the stored value when nothing was typed", () => {
+			const { onChange, input } = setup({ value: 16 })
+			fireEvent.keyDown(input, { key: "ArrowUp" })
+			expect(onChange).toHaveBeenLastCalledWith(17)
+			fireEvent.keyDown(input, { key: "ArrowDown" })
+			expect(onChange).toHaveBeenLastCalledWith(15)
+		})
+
+		it("step from the number typed in the box, not the stored value", () => {
+			const { onChange, input } = setup({ value: 16 })
+			fireEvent.change(input, { target: { value: "20" } })
+			fireEvent.keyDown(input, { key: "ArrowUp" })
+			expect(onChange).toHaveBeenLastCalledWith(21)
+		})
+
+		it("step down from the typed number", () => {
+			const { onChange, input } = setup({ value: 16 })
+			fireEvent.change(input, { target: { value: "20" } })
+			fireEvent.keyDown(input, { key: "ArrowDown" })
+			expect(onChange).toHaveBeenLastCalledWith(19)
+		})
+
+		it("step from the stored value when the box was emptied", () => {
+			const { onChange, input } = setup({ value: 16 })
+			fireEvent.change(input, { target: { value: "" } })
+			fireEvent.keyDown(input, { key: "ArrowUp" })
+			expect(onChange).toHaveBeenLastCalledWith(17)
+		})
+	})
+
+	describe("accessibility", () => {
+		it("announces the unit and the description with the value", () => {
+			const { input } = setup({ description: "Size of the terminal text" })
+
+			const described = (input.getAttribute("aria-describedby") ?? "").split(" ")
+			const texts = described.map((id) => document.getElementById(id)?.textContent)
+
+			expect(texts).toEqual([setting.unit, "Size of the terminal text"])
+		})
+	})
+
 	describe("leaving the box without typing", () => {
 		it("stores nothing when the setting is unset and the box is only focused and left", () => {
 			const { onChange, input } = setup() // unset: shows the fallback, 12
