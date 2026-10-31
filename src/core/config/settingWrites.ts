@@ -39,25 +39,31 @@ export interface SettingWrite {
 const lastWriteOfSetting = new Map<TrackedSettingKey, SettingWrite>()
 
 /**
- * How many times each tracked key has been stored, by anyone. `ContextProxy` reports every store here (`noteSettingStored`),
- * including the ones that do not go through a save or an import (the public API, other callers of `setValues`). A
- * write is put back only if the count is still what it was just after its own store, so a write made by anyone else in
- * between is kept, even when it stored the same value.
+ * How many times each tracked key has been stored by anyone but the saves and imports here. `ContextProxy` reports every
+ * store (`noteSettingStored`), including the ones that do not go through a save or an import (the public API, other
+ * callers of `setValues`). A write is put back only if the count is still what it was just after its own store, so a
+ * store made by anyone else in between is kept, even when it stored the same value.
  */
-const storedCount = new Map<TrackedSettingKey, number>()
+const storedByOthersCount = new Map<TrackedSettingKey, number>()
 
-/** How many of those stores were made by the saves and imports here, restores included. */
-const ownStoredCount = new Map<TrackedSettingKey, number>()
+/** The key whose store is being issued right now by a save or an import, so that its report is not counted. */
+let ownStoreOf: TrackedSettingKey | undefined
 
-/** How many times the key was stored by anyone but the saves and imports here. */
-const storedByOthers = (key: TrackedSettingKey) => (storedCount.get(key) ?? 0) - (ownStoredCount.get(key) ?? 0)
+const storedByOthers = (key: TrackedSettingKey) => storedByOthersCount.get(key) ?? 0
 
-/** Call right after a store made here, so it is not counted as a store by someone else. */
-const noteOwnStore = (key: TrackedSettingKey) => ownStoredCount.set(key, (ownStoredCount.get(key) ?? 0) + 1)
+/** Issues a store made here. `ContextProxy` reports it synchronously, while `store` runs. */
+const storeHere = <T>(key: TrackedSettingKey, store: () => T): T => {
+	ownStoreOf = key
+	try {
+		return store()
+	} finally {
+		ownStoreOf = undefined
+	}
+}
 
 /** `ContextProxy` calls this, synchronously, each time a setting is stored. */
 export const noteSettingStored = (key: string) => {
-	if (isTrackedSetting(key)) storedCount.set(key, (storedCount.get(key) ?? 0) + 1)
+	if (isTrackedSetting(key) && key !== ownStoreOf) storedByOthersCount.set(key, storedByOthers(key) + 1)
 }
 
 /** Records a write that is about to be made, as the latest one of its key. */
@@ -105,8 +111,9 @@ export const performSettingWrite = (contextProxy: ContextProxy, write: SettingWr
 		if (!write.inherited || storedByOthers(write.key) !== write.handedOverAt) {
 			write.previous = contextProxy.getValue(write.key as keyof RooCodeSettings)
 		}
-		const stored = contextProxy.setValue(write.key as keyof RooCodeSettings, write.wrote as never)
-		noteOwnStore(write.key)
+		const stored = storeHere(write.key, () =>
+			contextProxy.setValue(write.key as keyof RooCodeSettings, write.wrote as never),
+		)
 		write.generation = storedByOthers(write.key)
 		return stored
 	})
@@ -171,9 +178,10 @@ export const undoSettingWrite = async (contextProxy: ContextProxy, write: Settin
 	await queuedSettingWrite(key, async () => {
 		const untouched = write.generation === undefined || storedByOthers(key) === write.generation
 		if (untouched && contextProxy.getValue(key as keyof RooCodeSettings) === write.wrote) {
-			const restored = contextProxy.setValue(key as keyof RooCodeSettings, write.previous as never)
+			const restored = storeHere(key, () =>
+				contextProxy.setValue(key as keyof RooCodeSettings, write.previous as never),
+			)
 			// The write before this one is the owner of the value again.
-			noteOwnStore(key)
 			if (prev && !prev.done) prev.generation = storedByOthers(key)
 			await restored
 		}
