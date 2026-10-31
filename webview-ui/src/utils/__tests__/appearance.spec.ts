@@ -1,4 +1,6 @@
-import { APPEARANCE_SETTINGS, applyAppearanceVariables, clampAppearance } from "../appearance"
+import { globalSettingsSchema } from "@roo-code/types"
+
+import { applyAppearanceVariables, clampAppearance } from "../appearance"
 
 describe("clampAppearance", () => {
 	it("passes through in-range integers", () => {
@@ -6,9 +8,34 @@ describe("clampAppearance", () => {
 		expect(clampAppearance("terminalFontSize", 14)).toBe(14)
 	})
 
-	it("clamps to the setting's range", () => {
-		expect(clampAppearance("interfaceFontScale", 10)).toBe(APPEARANCE_SETTINGS.interfaceFontScale.min)
-		expect(clampAppearance("editorFontSize", 999)).toBe(APPEARANCE_SETTINGS.editorFontSize.max)
+	// The bounds are written out here, not read from APPEARANCE_SETTINGS (the thing under test), and the host checks
+	// the same bounds with globalSettingsSchema: a drift in either place fails one of these.
+	const bounds = [
+		["interfaceFontScale", 50, 200],
+		["terminalFontSize", 8, 32],
+		["editorFontSize", 8, 32],
+		["spacingScale", 50, 200],
+	] as const
+
+	it.each(bounds)("%s is clamped to %i..%i", (key, min, max) => {
+		expect(clampAppearance(key, min - 1)).toBe(min)
+		expect(clampAppearance(key, 0)).toBe(min)
+		expect(clampAppearance(key, min)).toBe(min)
+		expect(clampAppearance(key, max)).toBe(max)
+		expect(clampAppearance(key, max + 1)).toBe(max)
+		expect(clampAppearance(key, 99999)).toBe(max)
+	})
+
+	it.each(bounds)("%s: the host's schema accepts the bounds and refuses a value outside them", (key, min, max) => {
+		const schema = globalSettingsSchema.shape[key]
+		expect(schema.safeParse(min).success).toBe(true)
+		expect(schema.safeParse(max).success).toBe(true)
+		expect(schema.safeParse(min - 1).success).toBe(false)
+		expect(schema.safeParse(max + 1).success).toBe(false)
+		// And what the stepper can produce is always accepted.
+		for (const value of [min - 10, min, max, max + 10]) {
+			expect(schema.safeParse(clampAppearance(key, value)).success).toBe(true)
+		}
 	})
 
 	it("rounds fractional input", () => {

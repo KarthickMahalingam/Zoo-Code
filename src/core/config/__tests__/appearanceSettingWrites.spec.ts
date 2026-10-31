@@ -100,6 +100,52 @@ describe("appearanceSettingWrites", () => {
 		})
 	})
 
+	describe("a write that finished between two that fail", () => {
+		it("keeps its value when the earlier one fails and then the later one", async () => {
+			const first = beginSettingWrite("interfaceFontScale", 100, 150)
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("interfaceFontScale", 150, 120)
+			await performSettingWrite(contextProxy, second)
+			const third = beginSettingWrite("interfaceFontScale", 120, 80) // registered while the second is pending
+			finishSettingWrites([second]) // committed, between the other two
+			await performSettingWrite(contextProxy, third)
+
+			await undoSettingWrite(contextProxy, first) // superseded: the committed value is not its to restore
+			await undoSettingWrite(contextProxy, third)
+
+			expect(stored.get("interfaceFontScale")).toBe(120)
+		})
+
+		it("keeps its value for a later write that has not started when the earlier one fails", async () => {
+			const first = beginSettingWrite("interfaceFontScale", 100, 150)
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("interfaceFontScale", 150, 120)
+			await performSettingWrite(contextProxy, second)
+			const third = beginSettingWrite("interfaceFontScale", 120, 80) // queued, not started
+
+			await undoSettingWrite(contextProxy, first)
+			finishSettingWrites([second])
+			await performSettingWrite(contextProxy, third)
+			await undoSettingWrite(contextProxy, third)
+
+			expect(stored.get("interfaceFontScale")).toBe(120)
+		})
+
+		it("leaves what a write read when it started, if it had started when the earlier one finished", async () => {
+			const first = beginSettingWrite("interfaceFontScale", 100, 150)
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("interfaceFontScale", 150, 120)
+			await performSettingWrite(contextProxy, second)
+			const third = beginSettingWrite("interfaceFontScale", 120, 80)
+			await performSettingWrite(contextProxy, third) // started: it read 120
+
+			finishSettingWrites([second])
+			await undoSettingWrite(contextProxy, third)
+
+			expect(stored.get("interfaceFontScale")).toBe(120)
+		})
+	})
+
 	it("puts a failed write back to what was stored before it", async () => {
 		const write = beginSettingWrite("interfaceFontScale", 100, 120)
 		store("interfaceFontScale", 120)

@@ -32,8 +32,20 @@ export const NumberStepper = ({
 	const { min, max, step, fallback, unit } = setting
 	const current = value ?? fallback
 	const [draft, setDraft] = useState(String(current))
+	// Whether the user typed in the box. Leaving or confirming an untouched box must not turn what it shows (the
+	// fallback, while nothing is set) into a stored value.
+	const [typed, setTyped] = useState(false)
 
-	useEffect(() => setDraft(String(current)), [current])
+	useEffect(() => {
+		setDraft(String(current))
+		setTyped(false)
+	}, [current])
+
+	const commitTyped = () => {
+		if (!typed) return
+		setTyped(false)
+		commit(Number(draft))
+	}
 
 	const commit = (next: number) => {
 		if (!Number.isFinite(next)) {
@@ -77,10 +89,13 @@ export const NumberStepper = ({
 						className="w-16 text-center bg-vscode-input-background text-vscode-input-foreground border-x border-vscode-input-border outline-none focus:border-vscode-focusBorder tabular-nums"
 						inputMode="numeric"
 						value={draft}
-						onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
-						onBlur={() => commit(Number(draft))}
+						onChange={(e) => {
+							setDraft(e.target.value.replace(/[^\d]/g, ""))
+							setTyped(true)
+						}}
+						onBlur={commitTyped}
 						onKeyDown={(e) => {
-							if (e.key === "Enter") commit(Number(draft))
+							if (e.key === "Enter") commitTyped()
 							if (e.key === "ArrowUp") {
 								e.preventDefault()
 								commit(current + step)

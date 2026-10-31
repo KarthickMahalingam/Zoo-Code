@@ -53,6 +53,8 @@ describe("NumberStepper", () => {
 
 	it("stores a typed value that equals the displayed default as that number", () => {
 		const { onChange, input } = setup()
+		// As typed over the shown 12: the box goes through "1" on the way to "12".
+		fireEvent.change(input, { target: { value: "1" } })
 		fireEvent.change(input, { target: { value: "12" } })
 		fireEvent.blur(input)
 		expect(onChange).toHaveBeenCalledTimes(1)
@@ -93,6 +95,45 @@ describe("NumberStepper", () => {
 		expect(onChange).toHaveBeenLastCalledWith(17)
 		fireEvent.keyDown(input, { key: "ArrowDown" })
 		expect(onChange).toHaveBeenLastCalledWith(15)
+	})
+
+	describe("leaving the box without typing", () => {
+		it("stores nothing when the setting is unset and the box is only focused and left", () => {
+			const { onChange, input } = setup() // unset: shows the fallback, 12
+			fireEvent.focus(input)
+			fireEvent.blur(input)
+			expect(onChange).not.toHaveBeenCalled()
+			expect(input.value).toBe("12")
+		})
+
+		it("stores nothing when Enter is pressed in an untouched box", () => {
+			const { onChange, input } = setup()
+			fireEvent.keyDown(input, { key: "Enter" })
+			expect(onChange).not.toHaveBeenCalled()
+		})
+
+		it("stores nothing when a set value is only focused and left", () => {
+			const { onChange, input } = setup({ value: 16 })
+			fireEvent.focus(input)
+			fireEvent.blur(input)
+			expect(onChange).not.toHaveBeenCalled()
+		})
+
+		it("still stores what the user typed, even when it equals the shown fallback", () => {
+			const { onChange, input } = setup()
+			fireEvent.change(input, { target: { value: "1" } })
+			fireEvent.change(input, { target: { value: "12" } })
+			fireEvent.blur(input)
+			expect(onChange).toHaveBeenCalledWith(12)
+		})
+
+		it("treats a second blur after a commit as untouched", () => {
+			const { onChange, input } = setup({ value: 16 })
+			fireEvent.change(input, { target: { value: "20" } })
+			fireEvent.blur(input)
+			fireEvent.blur(input)
+			expect(onChange).toHaveBeenCalledTimes(1)
+		})
 	})
 
 	it("reverts an empty entry to the current value", () => {

@@ -22,6 +22,8 @@ export interface SettingWrite {
 	previous: unknown
 	/** `previous` was handed over by a write that was rolled back, so it is not read again when this write starts. */
 	inherited?: boolean
+	/** Its store has been issued, so `previous` has been read. */
+	started?: boolean
 	wrote: unknown
 	/** The write before this one that has not finished yet, and the one after it. */
 	prev?: SettingWrite
@@ -81,6 +83,7 @@ export const settingWriteBookkeepingSize = () => ({
 export const performSettingWrite = (contextProxy: ContextProxy, write: SettingWrite): Promise<void> =>
 	queuedSettingWrite(write.key, () => {
 		if (!write.inherited) write.previous = contextProxy.getValue(write.key as keyof RooCodeSettings)
+		write.started = true
 		return contextProxy.setValue(write.key as keyof RooCodeSettings, write.wrote as never)
 	})
 
@@ -92,12 +95,27 @@ const unlinkSettingWrite = (write: SettingWrite) => {
 	write.next = undefined
 }
 
-/** The save that made these writes succeeded. Nothing is kept about them once they are over. */
+/**
+ * The save that made these writes succeeded. Nothing is kept about them once they are over. The value is committed,
+ * so it is what a later write that has not started yet replaces, and the writes on either side of it no longer hand
+ * values to each other: an earlier write that fails now has nothing left to put back behind it.
+ */
 export const finishSettingWrites = (writes: SettingWrite[]) => {
 	for (const write of writes) {
 		write.done = true
 		if (lastWriteOfSetting.get(write.key) === write) lastWriteOfSetting.delete(write.key)
-		unlinkSettingWrite(write)
+
+		const { next } = write
+		if (next && !next.done) {
+			if (!next.started) {
+				next.previous = write.wrote
+				next.inherited = true
+			}
+			next.prev = undefined
+		}
+		if (write.prev) write.prev.next = undefined
+		write.prev = undefined
+		write.next = undefined
 	}
 }
 
