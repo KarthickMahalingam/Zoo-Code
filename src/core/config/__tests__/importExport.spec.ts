@@ -357,6 +357,16 @@ describe("importExport", () => {
 				expect(settingWriteBookkeepingSize()).toEqual({ latestWrites: 0, queuedKeys: 0 })
 			})
 
+			it("keeps the appearance values that were stored when the other settings fail to store", async () => {
+				mockContextProxy.setValues.mockRejectedValue(new Error("other settings failed"))
+
+				const result = await importWith({ interfaceFontScale: 120, mode: "code" })
+
+				expect(result).toEqual({ success: false, error: "other settings failed" })
+				expect(stored.get("interfaceFontScale")).toBe(120)
+				expect(settingWriteBookkeepingSize()).toEqual({ latestWrites: 0, queuedKeys: 0 })
+			})
+
 			it("puts back a value that was stored before its write failed, and still reports the failure", async () => {
 				mockContextProxy.setValue.mockImplementation((async (key: string, value: unknown) => {
 					stored.set(key, value)
