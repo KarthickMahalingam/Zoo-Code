@@ -60,8 +60,14 @@ const othersStoredSince = (key: TrackedSettingKey, since: number) => {
 
 /** The stores by others only matter while writes of the key are pending. */
 const pruneOthersStores = (key: TrackedSettingKey) => {
-	if (!lastWriteOfSetting.has(key)) othersStores.delete(key)
+	if (!isPending(key)) othersStores.delete(key)
 }
+
+/** Restores of an undone write that are still waiting in the queue: the key is not settled until they have run. */
+const pendingRestores = new Map<TrackedSettingKey, number>()
+
+/** A write of the key is pending, or a restore of one is still waiting its turn. */
+const isPending = (key: TrackedSettingKey) => lastWriteOfSetting.has(key) || (pendingRestores.get(key) ?? 0) > 0
 
 /** The key whose store is being issued right now by a save or an import, so that its report is not counted. */
 let ownStoreOf: TrackedSettingKey | undefined
@@ -84,7 +90,7 @@ const storeHere = <T>(key: TrackedSettingKey, store: () => T): T => {
 export const noteSettingStored = (key: string): number | undefined => {
 	// Only a store that a pending write could be mistaken for matters, so nothing is kept while no write of the key is
 	// pending: the set stays as small as the writes that are in flight, however often others store the key.
-	if (!isTrackedSetting(key) || key === ownStoreOf || !lastWriteOfSetting.has(key)) return undefined
+	if (!isTrackedSetting(key) || key === ownStoreOf || !isPending(key)) return undefined
 	const seq = ++storeClockValue
 	othersStores.set(key, (othersStores.get(key) ?? new Set<number>()).add(seq))
 	return seq
@@ -203,16 +209,25 @@ export const undoSettingWrite = async (contextProxy: ContextProxy, write: Settin
 	else lastWriteOfSetting.delete(key)
 	unlinkSettingWrite(write)
 
-	await queuedSettingWrite(key, async () => {
-		const untouched = write.generation === undefined || !othersStoredSince(key, write.generation)
-		if (untouched && contextProxy.getValue(key as keyof RooCodeSettings) === write.wrote) {
-			const restored = storeHere(key, () =>
-				contextProxy.setValue(key as keyof RooCodeSettings, write.previous as never),
-			)
-			// The write before this one is the owner of the value again.
-			if (prev && !prev.done) prev.generation = storeClock()
-			await restored
-		}
-	})
-	pruneOthersStores(key)
+	// The restore waits in the queue. Until it has run the key is still pending, so a store by someone else that
+	// lands meanwhile is recorded, and the restore leaves it alone.
+	pendingRestores.set(key, (pendingRestores.get(key) ?? 0) + 1)
+	try {
+		await queuedSettingWrite(key, async () => {
+			const untouched = write.generation === undefined || !othersStoredSince(key, write.generation)
+			if (untouched && contextProxy.getValue(key as keyof RooCodeSettings) === write.wrote) {
+				const restored = storeHere(key, () =>
+					contextProxy.setValue(key as keyof RooCodeSettings, write.previous as never),
+				)
+				// The write before this one is the owner of the value again.
+				if (prev && !prev.done) prev.generation = storeClock()
+				await restored
+			}
+		})
+	} finally {
+		const left = (pendingRestores.get(key) ?? 1) - 1
+		if (left > 0) pendingRestores.set(key, left)
+		else pendingRestores.delete(key)
+		pruneOthersStores(key)
+	}
 }

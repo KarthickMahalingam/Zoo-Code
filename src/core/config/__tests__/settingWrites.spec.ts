@@ -100,6 +100,34 @@ describe("settingWrites", () => {
 			expect(stored.get("timeFormat")).toBe("24h")
 		})
 
+		it("keeps a store made while the restore of the undone latest write is still waiting in the queue", async () => {
+			const write = beginSettingWrite("timeFormat", "auto", "24h")
+			await performSettingWrite(contextProxy, write)
+
+			const undone = undoSettingWrite(contextProxy, write) // the restore waits its turn in the queue
+			await contextProxy.setValue("timeFormat" as never, "24h" as never) // the same value, by someone else
+			await undone
+
+			expect(stored.get("timeFormat")).toBe("24h")
+		})
+
+		it("still puts the write back when nobody stored the key while the restore waited", async () => {
+			const write = beginSettingWrite("timeFormat", "auto", "24h")
+			await performSettingWrite(contextProxy, write)
+
+			await undoSettingWrite(contextProxy, write)
+
+			expect(stored.get("timeFormat")).toBe("auto")
+		})
+
+		it("keeps nothing for a store made after the restore has run", async () => {
+			const write = beginSettingWrite("timeFormat", "auto", "24h")
+			await performSettingWrite(contextProxy, write)
+			await undoSettingWrite(contextProxy, write)
+
+			expect(noteSettingStored("timeFormat")).toBeUndefined()
+		})
+
 		it("does not stop a write from being put back when nobody else stored the key", async () => {
 			const write = beginSettingWrite("timeFormat", "auto", "24h")
 			await performSettingWrite(contextProxy, write)
