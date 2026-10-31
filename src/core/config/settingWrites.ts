@@ -66,6 +66,12 @@ const pruneOthersStores = (key: TrackedSettingKey) => {
 /** Restores of an undone write that are still waiting in the queue: the key is not settled until they have run. */
 const pendingRestores = new Map<TrackedSettingKey, number>()
 
+const changePendingRestores = (key: TrackedSettingKey, change: 1 | -1) => {
+	const count = (pendingRestores.get(key) ?? 0) + change
+	if (count > 0) pendingRestores.set(key, count)
+	else pendingRestores.delete(key)
+}
+
 /** A write of the key is pending, or a restore of one is still waiting its turn. */
 const isPending = (key: TrackedSettingKey) => lastWriteOfSetting.has(key) || (pendingRestores.get(key) ?? 0) > 0
 
@@ -211,7 +217,7 @@ export const undoSettingWrite = async (contextProxy: ContextProxy, write: Settin
 
 	// The restore waits in the queue. Until it has run the key is still pending, so a store by someone else that
 	// lands meanwhile is recorded, and the restore leaves it alone.
-	pendingRestores.set(key, (pendingRestores.get(key) ?? 0) + 1)
+	changePendingRestores(key, 1)
 	try {
 		await queuedSettingWrite(key, async () => {
 			const untouched = write.generation === undefined || !othersStoredSince(key, write.generation)
@@ -225,9 +231,7 @@ export const undoSettingWrite = async (contextProxy: ContextProxy, write: Settin
 			}
 		})
 	} finally {
-		const left = (pendingRestores.get(key) ?? 1) - 1
-		if (left > 0) pendingRestores.set(key, left)
-		else pendingRestores.delete(key)
+		changePendingRestores(key, -1)
 		pruneOthersStores(key)
 	}
 }
