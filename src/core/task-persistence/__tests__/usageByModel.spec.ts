@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { providerIdentifiers, type ClineMessage } from "@roo-code/types"
 
-import { resolveRecordedModelId, summarizeUsageByModel } from "../usageByModel"
+import { bindRequestToHandler, resolveRecordedModelId, summarizeUsageByModel } from "../usageByModel"
 
 const req = (data: Record<string, unknown>, ts = 1): ClineMessage => ({
 	ts,
@@ -129,5 +129,42 @@ describe("resolveRecordedModelId", () => {
 
 	it("ignores a recorded value that is not a string", () => {
 		expect(resolveRecordedModelId(42, "claude-sonnet-5")).toBe("claude-sonnet-5")
+	})
+})
+
+describe("bindRequestToHandler", () => {
+	const placeholder = JSON.stringify({ apiProtocol: "openai", apiProvider: "old-provider", modelId: "old-model" })
+
+	it("records the provider of the handler that serves the request, over the one the placeholder was written with", () => {
+		const bound = JSON.parse(
+			bindRequestToHandler(placeholder, {
+				apiProvider: "new-provider",
+				configuredModelId: "new-model",
+				servedModelId: "served-model",
+			}),
+		)
+		expect(bound).toEqual({ apiProtocol: "openai", apiProvider: "new-provider", modelId: "new-model" })
+	})
+
+	it("records the model the handler reports when the profile names none", () => {
+		const bound = JSON.parse(
+			bindRequestToHandler(placeholder, {
+				apiProvider: "p",
+				configuredModelId: undefined,
+				servedModelId: "served-model",
+			}),
+		)
+		expect(bound.modelId).toBe("served-model")
+	})
+
+	it.each([[undefined], [""], ["not json"]])("starts from nothing when the placeholder is %j", (text) => {
+		const bound = JSON.parse(
+			bindRequestToHandler(text as string | undefined, {
+				apiProvider: "p",
+				configuredModelId: "m",
+				servedModelId: undefined,
+			}),
+		)
+		expect(bound).toEqual({ apiProvider: "p", modelId: "m" })
 	})
 })

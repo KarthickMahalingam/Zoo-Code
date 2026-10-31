@@ -50,8 +50,12 @@ export function parseOpenRouterKey(payload: unknown): ProviderQuotaWindow[] | un
 		]
 	}
 
-	const usage = toNumber(data.usage_monthly) ?? toNumber(data.usage)
-	return usage === undefined ? undefined : [{ id: "spend", valueLabel: `${formatMoney(usage)} spent this month` }]
+	const monthly = toNumber(data.usage_monthly)
+	if (monthly !== undefined) return [{ id: "spend", valueLabel: `${formatMoney(monthly)} spent this month` }]
+
+	// OpenRouter documents `usage` as all-time credit use, so it must not be shown as this month's spend.
+	const total = toNumber(data.usage)
+	return total === undefined ? undefined : [{ id: "spend", valueLabel: `${formatMoney(total)} spent in total` }]
 }
 
 /** DeepSeek `GET /user/balance` → prepaid balance (prefers a positive USD balance). */
@@ -564,25 +568,40 @@ async function fetchCopilot(force: boolean, signal?: AbortSignal): Promise<Provi
 
 /** The slice of `ProviderSettingsManager` this service needs (keeps it testable without the manager). */
 export interface ProfileSource {
-	listConfig(): Promise<{ id: string }[]>
+	listConfig(): Promise<{ id: string; name?: string }[]>
 	getProfile(params: { id: string }): Promise<ProviderSettings>
 }
 
 /**
  * Loads full profiles (including API keys) host-side. A profile that fails to
- * load is skipped rather than failing the whole refresh. Keys never leave the
- * extension host: only formatted quota rows are posted to the webview.
+ * load is skipped rather than failing the whole refresh, but if none of the saved
+ * profiles can be read that is a failure, not "no connected providers". The active
+ * profile (`activeName`) comes first, so a provider that has several profiles is
+ * shown with the account the requests use. Keys never leave the extension host:
+ * only formatted quota rows are posted to the webview.
  */
-export async function loadProfiles(source: ProfileSource, signal?: AbortSignal): Promise<ProviderSettings[]> {
+export async function loadProfiles(
+	source: ProfileSource,
+	signal?: AbortSignal,
+	activeName?: string,
+): Promise<ProviderSettings[]> {
 	// Stops waiting as soon as `signal` aborts. The reads themselves cannot be cancelled, but the profile reads
 	// are not started once the list wait has been abandoned.
-	const entries = await until(source.listConfig(), signal, () => {})
+	const listed = await until(source.listConfig(), signal, () => {})
+	const entries = activeName
+		? [
+				...listed.filter((entry) => entry.name === activeName),
+				...listed.filter((entry) => entry.name !== activeName),
+			]
+		: listed
 	const profiles = await until(
 		Promise.all(entries.map((entry) => source.getProfile({ id: entry.id }).catch(() => undefined))),
 		signal,
 		() => {},
 	)
-	return profiles.filter((p): p is ProviderSettings => !!p)
+	const loaded = profiles.filter((p): p is ProviderSettings => !!p)
+	if (entries.length > 0 && loaded.length === 0) throw new Error("None of the saved profiles could be read")
+	return loaded
 }
 
 // Successful results only, per provider and URL set. A missing key, a sign-out or a

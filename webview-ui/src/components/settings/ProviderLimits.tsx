@@ -167,40 +167,44 @@ const QuotaRow = ({
 			</div>
 
 			{quota.ok &&
-				quota.windows.map((w) => (
-					<div key={w.id} className="mt-1.5 pl-3.5">
-						<div className="flex items-baseline justify-between gap-2 text-xs">
-							<span className="tabular-nums text-vscode-foreground">
-								{w.name
-									? t(`settings:usage.limits.window.${w.name.key}`, { n: w.name.count })
-									: w.valueLabel}
-							</span>
+				quota.windows.map((w) => {
+					const windowText = w.name
+						? t(`settings:usage.limits.window.${w.name.key}`, { n: w.name.count })
+						: w.valueLabel
+
+					return (
+						<div key={w.id} className="mt-1.5 pl-3.5">
+							<div className="flex items-baseline justify-between gap-2 text-xs">
+								<span className="tabular-nums text-vscode-foreground">{windowText}</span>
+								{w.usedPercent !== undefined && (
+									<span className="tabular-nums text-vscode-descriptionForeground">
+										{Math.round(w.usedPercent)}%
+									</span>
+								)}
+							</div>
 							{w.usedPercent !== undefined && (
-								<span className="tabular-nums text-vscode-descriptionForeground">
-									{Math.round(w.usedPercent)}%
-								</span>
+								<div
+									className="h-1 mt-1 rounded-full bg-vscode-input-background overflow-hidden"
+									role="progressbar"
+									// Names the bar: a provider with a 5-hour and a weekly window has two of them.
+									aria-label={`${name}: ${windowText}`}
+									aria-valuenow={Math.round(w.usedPercent)}
+									aria-valuemin={0}
+									aria-valuemax={100}>
+									<div
+										className={cn("h-full rounded-full", barColor(w.usedPercent))}
+										style={{ width: `${w.usedPercent}%` }}
+									/>
+								</div>
+							)}
+							{w.resetAt && (
+								<div className="mt-1 text-[11px] text-vscode-descriptionForeground">
+									{t("settings:usage.limits.resets", { date: formatReset(w.resetAt) })}
+								</div>
 							)}
 						</div>
-						{w.usedPercent !== undefined && (
-							<div
-								className="h-1 mt-1 rounded-full bg-vscode-input-background overflow-hidden"
-								role="progressbar"
-								aria-valuenow={Math.round(w.usedPercent)}
-								aria-valuemin={0}
-								aria-valuemax={100}>
-								<div
-									className={cn("h-full rounded-full", barColor(w.usedPercent))}
-									style={{ width: `${w.usedPercent}%` }}
-								/>
-							</div>
-						)}
-						{w.resetAt && (
-							<div className="mt-1 text-[11px] text-vscode-descriptionForeground">
-								{t("settings:usage.limits.resets", { date: formatReset(w.resetAt) })}
-							</div>
-						)}
-					</div>
-				))}
+					)
+				})}
 		</div>
 	)
 }

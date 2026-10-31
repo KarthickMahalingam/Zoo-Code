@@ -46,6 +46,18 @@ describe("parseOpenRouterKey", () => {
 		])
 	})
 
+	it("labels the all-time usage as total spend, never as this month's", () => {
+		expect(parseOpenRouterKey({ data: { limit: null, usage: 42 } })).toEqual([
+			{ id: "spend", valueLabel: "$42.00 spent in total" },
+		])
+	})
+
+	it("prefers the monthly figure when both are reported", () => {
+		expect(parseOpenRouterKey({ data: { usage: 42, usage_monthly: 3.2 } })).toEqual([
+			{ id: "spend", valueLabel: "$3.20 spent this month" },
+		])
+	})
+
 	it("returns undefined without data", () => {
 		expect(parseOpenRouterKey({})).toBeUndefined()
 		expect(parseOpenRouterKey({ data: {} })).toBeUndefined()
@@ -1127,6 +1139,46 @@ describe("loadProfiles", () => {
 			}),
 		}
 		expect(await loadProfiles(source)).toEqual([{ apiProvider: "x" }])
+	})
+
+	it("fails when none of the saved profiles can be read, instead of reporting no providers", async () => {
+		const source = {
+			listConfig: vi.fn(async () => [{ id: "a" }, { id: "b" }]),
+			getProfile: vi.fn(async () => {
+				throw new Error("corrupt secret storage")
+			}),
+		}
+		await expect(loadProfiles(source)).rejects.toThrow("None of the saved profiles could be read")
+	})
+
+	it("returns an empty list when there are no saved profiles", async () => {
+		const source = { listConfig: vi.fn(async () => []), getProfile: vi.fn() }
+		expect(await loadProfiles(source)).toEqual([])
+	})
+
+	it("puts the active profile first, so a provider with several profiles shows the account in use", async () => {
+		const source = {
+			listConfig: vi.fn(async () => [
+				{ id: "a", name: "work" },
+				{ id: "b", name: "personal" },
+				{ id: "c", name: "spare" },
+			]),
+			getProfile: vi.fn(async ({ id }: { id: string }) => ({ apiProvider: "x", id }) as never),
+		}
+		expect((await loadProfiles(source, undefined, "personal")).map((p) => (p as { id: string }).id)).toEqual([
+			"b",
+			"a",
+			"c",
+		])
+		expect((await loadProfiles(source)).map((p) => (p as { id: string }).id)).toEqual(["a", "b", "c"])
+	})
+
+	it("keeps the list order when the active profile is not among the saved ones", async () => {
+		const source = {
+			listConfig: vi.fn(async () => [{ id: "a", name: "work" }]),
+			getProfile: vi.fn(async () => ({ apiProvider: "x" }) as never),
+		}
+		expect(await loadProfiles(source, undefined, "gone")).toEqual([{ apiProvider: "x" }])
 	})
 
 	it("stops waiting for the profile list when the signal aborts, and reads no profile", async () => {

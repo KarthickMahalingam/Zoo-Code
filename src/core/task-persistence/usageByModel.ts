@@ -59,3 +59,32 @@ export function summarizeUsageByModel(messages: ClineMessage[]): UsageByModelEnt
 export function resolveRecordedModelId(recorded: unknown, served: string | undefined): string | undefined {
 	return typeof recorded === "string" && recorded.length > 0 ? recorded : served
 }
+
+/**
+ * Binds a request's placeholder `api_req_started` to the handler that serves it. The placeholder is written before
+ * the rate-limit wait and the environment details, and a profile switch in that window replaces the handler, so the
+ * provider and model written then can differ from the handler whose tokens and cost are recorded at the end. Called
+ * once the serving handler is known. The configured model is kept when the profile names one; otherwise the model the
+ * handler reports is recorded.
+ */
+export function bindRequestToHandler(
+	text: string | undefined,
+	handler: {
+		apiProvider: string | undefined
+		configuredModelId: string | undefined
+		servedModelId: string | undefined
+	},
+): string {
+	let existing: Record<string, unknown> = {}
+	try {
+		existing = JSON.parse(text || "{}")
+	} catch {
+		// An unreadable placeholder is replaced, not kept.
+	}
+
+	return JSON.stringify({
+		...existing,
+		apiProvider: handler.apiProvider,
+		modelId: resolveRecordedModelId(handler.configuredModelId, handler.servedModelId),
+	})
+}

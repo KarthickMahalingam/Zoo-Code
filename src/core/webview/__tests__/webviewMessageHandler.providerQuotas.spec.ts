@@ -23,6 +23,7 @@ const makeProvider = (overrides: Record<string, unknown> = {}) =>
 	({
 		postMessageToWebview: vi.fn(),
 		log: vi.fn(),
+		contextProxy: { getValue: vi.fn((key: string) => (key === "currentApiConfigName" ? "default" : undefined)) },
 		providerSettingsManager: {
 			listConfig: vi.fn(async () => [{ id: "a" }, { id: "b" }]),
 			getProfile: vi.fn(async ({ id }: { id: string }) => ({
@@ -46,6 +47,43 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 				windows: [{ id: "key_limit", valueLabel: "$5.00 / $10.00 used", usedPercent: 50 }],
 			},
 		])
+	})
+
+	it("puts the active profile first, so the quota row is the account the requests use", async () => {
+		const provider = makeProvider({
+			contextProxy: { getValue: vi.fn(() => "personal") },
+			providerSettingsManager: {
+				listConfig: vi.fn(async () => [
+					{ id: "a", name: "work" },
+					{ id: "b", name: "personal" },
+				]),
+				getProfile: vi.fn(async ({ id }: { id: string }) => ({
+					apiProvider: providerIdentifiers.openrouter,
+					openRouterApiKey: `key-${id}`,
+				})),
+			},
+		})
+		await webviewMessageHandler(provider, { type: "requestProviderQuotas" })
+
+		expect(
+			quotas.getProviderQuotas.mock.calls[0][0].map((p: { openRouterApiKey: string }) => p.openRouterApiKey),
+		).toEqual(["key-b", "key-a"])
+	})
+
+	it("reports a failure, not an empty list, when no saved profile can be read", async () => {
+		const provider = makeProvider({
+			providerSettingsManager: {
+				listConfig: vi.fn(async () => [{ id: "a" }]),
+				getProfile: vi.fn(async () => {
+					throw new Error("corrupt secret storage")
+				}),
+			},
+		})
+		await webviewMessageHandler(provider, { type: "requestProviderQuotas" })
+
+		expect(provider.postMessageToWebview).toHaveBeenCalledWith(
+			expect.objectContaining({ type: "providerQuotas", providerQuotas: [], providerQuotasFailed: true }),
+		)
 	})
 
 	it("loads every saved profile and posts the formatted quotas back", async () => {

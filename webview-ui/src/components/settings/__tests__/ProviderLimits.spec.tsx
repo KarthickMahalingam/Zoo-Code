@@ -53,6 +53,34 @@ describe("ProviderLimits", () => {
 		})
 	})
 
+	describe("progress bars", () => {
+		it("names each bar with its provider and window, so two windows of one provider can be told apart", () => {
+			render(<ProviderLimits />)
+			respond([
+				{
+					providerId: providerIdentifiers.zai,
+					ok: true,
+					fetchedAt: 1,
+					windows: [
+						{ id: "a", valueLabel: "5-hour", usedPercent: 40, name: { key: "hours", count: 5 } },
+						{ id: "b", valueLabel: "Weekly", usedPercent: 10, name: { key: "weekly" } },
+						{ id: "c", valueLabel: "$4.25 left" },
+					],
+				},
+			])
+
+			const bars = screen.getAllByRole("progressbar")
+			expect(bars).toHaveLength(2)
+			const labels = bars.map((bar) => bar.getAttribute("aria-label"))
+			expect(labels[0]).toContain("settings:usage.limits.window.hours 5")
+			expect(labels[1]).toContain("settings:usage.limits.window.weekly")
+			expect(new Set(labels).size).toBe(2)
+			const shown = screen.getByTestId(`provider-limit-${providerIdentifiers.zai}`).querySelector(".font-medium")
+			expect(shown?.textContent).toBeTruthy()
+			for (const label of labels) expect(label).toContain(shown?.textContent as string)
+		})
+	})
+
 	describe("window names", () => {
 		const quota = (windows: Extract<ProviderQuota, { ok: true }>["windows"]): ProviderQuota => ({
 			providerId: providerIdentifiers.zai,
