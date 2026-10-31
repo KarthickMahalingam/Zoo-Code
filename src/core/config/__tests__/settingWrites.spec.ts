@@ -111,6 +111,21 @@ describe("settingWrites", () => {
 			expect(stored.get("timeFormat")).toBe("24h")
 		})
 
+		it("keeps the key pending until every waiting restore has run", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+			await performSettingWrite(contextProxy, second)
+
+			const undoSecond = undoSettingWrite(contextProxy, second) // two restores wait in the queue
+			const undoFirst = undoSettingWrite(contextProxy, first)
+			await undoSecond
+			await undoFirst
+
+			expect(stored.get("timeFormat")).toBe("auto")
+			expect(noteSettingStored("timeFormat")).toBeUndefined() // all restores have run
+		})
+
 		it("still puts the write back when nobody stored the key while the restore waited", async () => {
 			const write = beginSettingWrite("timeFormat", "auto", "24h")
 			await performSettingWrite(contextProxy, write)
