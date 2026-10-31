@@ -159,6 +159,46 @@ describe("settingWrites", () => {
 			expect(stored.get("timeFormat")).toBe("24h")
 		})
 
+		it("keeps an external store made after a write stored, when that write is handed over", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+			await performSettingWrite(contextProxy, second)
+			await contextProxy.setValue("timeFormat" as never, "12h" as never) // external store before the handover
+			const third = beginSettingWrite("timeFormat", "24h", "9h")
+
+			finishSettingWrites([second])
+			await performSettingWrite(contextProxy, third)
+			await undoSettingWrite(contextProxy, third)
+
+			expect(stored.get("timeFormat")).toBe("12h")
+		})
+
+		it("keeps an external store made after a superseded write stored, before the write after it starts", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			await performSettingWrite(contextProxy, first)
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+			await contextProxy.setValue("timeFormat" as never, "9h" as never) // external store before the superseded undo
+
+			await undoSettingWrite(contextProxy, first) // superseded by second
+			await performSettingWrite(contextProxy, second)
+			await undoSettingWrite(contextProxy, second)
+
+			expect(stored.get("timeFormat")).toBe("9h")
+		})
+
+		it("hands over the value of a write that finished without having been stored through performSettingWrite", async () => {
+			const first = beginSettingWrite("timeFormat", "auto", "12h")
+			store("timeFormat", "12h")
+			const second = beginSettingWrite("timeFormat", "12h", "24h")
+
+			finishSettingWrites([first])
+			await performSettingWrite(contextProxy, second)
+			await undoSettingWrite(contextProxy, second)
+
+			expect(stored.get("timeFormat")).toBe("12h")
+		})
+
 		it("keeps the value of a write that finished before a queued write that then fails", async () => {
 			const first = beginSettingWrite("timeFormat", "auto", "12h")
 			await performSettingWrite(contextProxy, first)

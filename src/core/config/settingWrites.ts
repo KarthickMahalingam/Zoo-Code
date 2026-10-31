@@ -19,7 +19,7 @@ export interface SettingWrite {
 	inherited?: boolean
 	/** How many times the key had been stored when this write was made. A different count later means something else wrote it. */
 	generation?: number
-	/** For a handed-over `previous`: how many stores by others there had been when it was handed over. */
+	/** For a handed-over `previous`: how many stores by others there had been when the write that held it stored its own value. */
 	handedOverAt?: number
 	wrote: unknown
 	/** The write before this one that has not finished yet, and the one after it. */
@@ -134,7 +134,7 @@ export const finishSettingWrites = (writes: SettingWrite[]) => {
 			if (next.generation === undefined) {
 				next.previous = write.wrote
 				next.inherited = true
-				next.handedOverAt = storedByOthers(write.key)
+				next.handedOverAt = write.generation ?? storedByOthers(write.key)
 			}
 			next.prev = undefined
 		}
@@ -154,7 +154,7 @@ export const undoSettingWrite = async (contextProxy: ContextProxy, write: Settin
 		if (write.next && !write.next.done) {
 			write.next.previous = write.previous
 			write.next.inherited = true
-			write.next.handedOverAt = storedByOthers(key)
+			write.next.handedOverAt = write.generation ?? storedByOthers(key)
 		}
 		unlinkSettingWrite(write)
 		return

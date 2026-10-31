@@ -19,7 +19,7 @@ import {
 } from "../importExport"
 import { ProviderSettingsManager } from "../ProviderSettingsManager"
 import { ContextProxy } from "../ContextProxy"
-import { beginSettingWrite, undoSettingWrite } from "../settingWrites"
+import { beginSettingWrite, performSettingWrite, settingWriteBookkeepingSize, undoSettingWrite } from "../settingWrites"
 import { CustomModesManager } from "../CustomModesManager"
 import { safeWriteJson } from "../../../utils/safeWriteJson"
 
@@ -448,6 +448,54 @@ describe("importExport", () => {
 			expect(stored.get("timeFormat")).toBe("auto")
 			expect(stored.get("dateFormat")).toBe("auto")
 			expect(stored.get("showRelativeTimes")).toBe(true)
+		})
+
+		describe("when a step after the settings were written fails", () => {
+			it("puts the display settings back and reports the failure of that step", async () => {
+				mockContextProxy.setProviderSettings.mockRejectedValue(new Error("provider settings failed"))
+
+				const result = await importWith(display)
+
+				expect(result).toEqual({ success: false, error: "provider settings failed" })
+				expect(stored.get("timeFormat")).toBe("auto")
+				expect(stored.get("dateFormat")).toBe("auto")
+				expect(stored.get("showRelativeTimes")).toBe(true)
+			})
+
+			it("says which display settings could not be put back", async () => {
+				const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+				mockContextProxy.setProviderSettings.mockRejectedValue(new Error("provider settings failed"))
+				failingRestoreKeys.add("timeFormat")
+
+				const result = await importWith(display)
+
+				expect(result).toEqual({
+					success: false,
+					error: "provider settings failed (these settings could not be restored: timeFormat)",
+				})
+				expect(stored.get("dateFormat")).toBe("auto")
+				consoleError.mockRestore()
+			})
+
+			it("keeps a save that wrote the same setting while the step was running", async () => {
+				mockContextProxy.setProviderSettings.mockImplementation(async () => {
+					const save = beginSettingWrite("timeFormat", stored.get("timeFormat"), "24h")
+					await performSettingWrite(mockContextProxy as unknown as ContextProxy, save)
+					throw new Error("provider settings failed")
+				})
+
+				await importWith(display)
+
+				expect(stored.get("timeFormat")).toBe("24h")
+			})
+
+			it("keeps the display settings when every step succeeds, and keeps nothing about the writes", async () => {
+				const result = await importWith(display)
+
+				expect(result).toMatchObject({ success: true })
+				expect(stored.get("timeFormat")).toBe("24h")
+				expect(settingWriteBookkeepingSize()).toEqual({ latestWrites: 0, queuedKeys: 0 })
+			})
 		})
 
 		it("leaves display settings absent from the file untouched on failure", async () => {
