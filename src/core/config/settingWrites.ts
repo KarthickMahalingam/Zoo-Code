@@ -150,8 +150,10 @@ export const undoSettingWrite = async (contextProxy: ContextProxy, write: Settin
 	write.done = true
 
 	if (lastWriteOfSetting.get(key) !== write) {
-		// A newer write exists. Make it restore the value from before this one if it fails as well.
-		if (write.next && !write.next.done) {
+		// A newer write exists. Make it restore the value from before this one if it fails as well, unless someone
+		// else stored the key since this write stored: a write that already started has read that store.
+		const heldByOthers = write.generation !== undefined && storedByOthers(key) !== write.generation
+		if (write.next && !write.next.done && !heldByOthers) {
 			write.next.previous = write.previous
 			write.next.inherited = true
 			write.next.handedOverAt = write.generation ?? storedByOthers(key)

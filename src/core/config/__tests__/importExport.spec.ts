@@ -499,14 +499,22 @@ describe("importExport", () => {
 		})
 
 		it("leaves display settings absent from the file untouched on failure", async () => {
+			// Not the defaults, so a reset to the default could not pass for "untouched".
+			stored.set("timeFormat", "12h")
+			stored.set("showRelativeTimes", false)
 			failingKeys.add("dateFormat")
 
 			await importWith({ dateFormat: "ymd" })
 
-			expect(stored.get("timeFormat")).toBe("auto")
-			expect(stored.get("showRelativeTimes")).toBe(true)
+			expect(stored.get("timeFormat")).toBe("12h")
+			expect(stored.get("showRelativeTimes")).toBe(false)
 			expect(mockContextProxy.setValue).not.toHaveBeenCalledWith("timeFormat", expect.anything())
 			expect(mockContextProxy.setValue).not.toHaveBeenCalledWith("showRelativeTimes", expect.anything())
+			// setValues does not go through the setValue spy, so check what it was given as well.
+			for (const [values] of mockContextProxy.setValues.mock.calls) {
+				expect(Object.keys(values)).not.toEqual(expect.arrayContaining(["timeFormat"]))
+				expect(Object.keys(values)).not.toEqual(expect.arrayContaining(["showRelativeTimes"]))
+			}
 		})
 
 		it("does not restore non-display settings when their write fails", async () => {
