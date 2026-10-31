@@ -137,6 +137,12 @@ const handlerFor = (apiConfiguration: ProviderSettings, provider: RouterName): A
  * request id alone would let one webview cancel, or overwrite, another's request.
  */
 const pendingProviderQuotaRequests = new WeakMap<ClineProvider, Map<string, AbortController>>()
+/** Stops the provider-limit requests still in flight for a provider, e.g. when it is disposed. */
+export const abortProviderQuotaRequests = (provider: ClineProvider) => {
+	for (const controller of pendingProviderQuotaRequests.get(provider)?.values() ?? []) controller.abort()
+	pendingProviderQuotaRequests.delete(provider)
+}
+
 const pendingQuotaFor = (provider: ClineProvider) => {
 	let pending = pendingProviderQuotaRequests.get(provider)
 	if (!pending) pendingProviderQuotaRequests.set(provider, (pending = new Map()))

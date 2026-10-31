@@ -112,6 +112,22 @@ describe("summarizeUsageByModel", () => {
 	})
 })
 
+describe("summarizeUsageByModel with stored text that is not a request object", () => {
+	const msg = (text: string) =>
+		({ ts: 1, type: "say", say: "api_req_started", text }) as unknown as Parameters<
+			typeof summarizeUsageByModel
+		>[0][number]
+
+	it.each(["null", "42", '"text"', "true", "[]"])("skips %s and keeps reading the other messages", (text) => {
+		const summary = summarizeUsageByModel([
+			msg(text),
+			msg(JSON.stringify({ apiProvider: "p", modelId: "m", tokensIn: 5, tokensOut: 2, cost: 0.5 })),
+		])
+
+		expect(summary).toEqual([{ apiProvider: "p", modelId: "m", requests: 1, tokensIn: 5, tokensOut: 2, cost: 0.5 }])
+	})
+})
+
 describe("resolveRecordedModelId", () => {
 	it("keeps a model that was recorded when the request started", () => {
 		expect(resolveRecordedModelId("gpt-5", "gpt-5-mini")).toBe("gpt-5")

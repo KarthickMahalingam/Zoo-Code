@@ -235,14 +235,14 @@ export function parseMiniMaxRemains(payload: unknown, isTokenPlan = true): Provi
 		return clampPercent((used / total) * 100)
 	}
 
-	const windows: ProviderQuotaWindow[] = [
-		{
-			id: "5h",
-			valueLabel: "5-hour",
-			usedPercent: usedPercentOf("interval"),
-			resetAt: toEpochMs(model.end_time),
-		},
-	]
+	const windows: ProviderQuotaWindow[] = []
+
+	// A window with neither a figure nor a reset time would show a label with no value.
+	const intervalPercent = usedPercentOf("interval")
+	const intervalReset = toEpochMs(model.end_time)
+	if (intervalPercent !== undefined || intervalReset !== undefined) {
+		windows.push({ id: "5h", valueLabel: "5-hour", usedPercent: intervalPercent, resetAt: intervalReset })
+	}
 
 	// Status 3 = the window does not apply to this plan tier.
 	const weeklyApplies = toNumber(model.current_weekly_status) !== 3
@@ -255,7 +255,7 @@ export function parseMiniMaxRemains(payload: unknown, isTokenPlan = true): Provi
 			resetAt: toEpochMs(model.weekly_end_time),
 		})
 	}
-	return windows
+	return windows.length ? windows : undefined
 }
 
 /** NanoGPT `GET /api/subscription/v1/usage` → daily / weekly / monthly allowance. */

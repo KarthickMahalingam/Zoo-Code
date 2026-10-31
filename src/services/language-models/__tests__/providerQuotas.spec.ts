@@ -350,10 +350,22 @@ describe("parser edge cases", () => {
 		expect(byPercent?.[0].usedPercent).toBe(25)
 
 		const first = parseMiniMaxRemains({ model_remains: [{ model_name: "only" }] })
-		expect(first).toEqual([{ id: "5h", valueLabel: "5-hour", usedPercent: undefined, resetAt: undefined }])
+		// A row with neither a figure nor a reset time has nothing to show.
+		expect(first).toBeUndefined()
 		expect(
 			parseMiniMaxRemains({ model_remains: [{ current_interval_remaining_percent: 5 }] })?.[0].usedPercent,
 		).toBe(95)
+	})
+
+	it("MiniMax: shows the 5-hour window with only a reset time, and with only a figure", () => {
+		expect(
+			parseMiniMaxRemains({ model_remains: [{ model_name: "MiniMax-M2", end_time: 1_800_000_000_000 }] }),
+		).toEqual([{ id: "5h", valueLabel: "5-hour", usedPercent: undefined, resetAt: 1_800_000_000_000 }])
+		expect(
+			parseMiniMaxRemains({
+				model_remains: [{ model_name: "MiniMax-M2", current_interval_remaining_percent: 70 }],
+			}),
+		).toEqual([{ id: "5h", valueLabel: "5-hour", usedPercent: 30, resetAt: undefined }])
 	})
 
 	it("MiniMax: skips a weekly window with no data and clamps an out-of-range percent", () => {

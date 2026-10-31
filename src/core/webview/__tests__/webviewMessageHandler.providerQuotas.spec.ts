@@ -14,7 +14,7 @@ vi.mock("../../../services/language-models/providerQuotas", async (importOrigina
 	getProviderQuotas: quotas.getProviderQuotas,
 }))
 
-import { webviewMessageHandler } from "../webviewMessageHandler"
+import { abortProviderQuotaRequests, webviewMessageHandler } from "../webviewMessageHandler"
 import type { ClineProvider } from "../ClineProvider"
 
 const SECRET = "sk-super-secret"
@@ -84,6 +84,34 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 		expect(provider.postMessageToWebview).toHaveBeenCalledWith(
 			expect.objectContaining({ type: "providerQuotas", providerQuotas: [], providerQuotasFailed: true }),
 		)
+	})
+
+	describe("when the provider is disposed", () => {
+		it("aborts the requests in flight, and posts nothing for them", async () => {
+			let signal: AbortSignal | undefined
+			quotas.getProviderQuotas.mockImplementation(
+				(_profiles: unknown, options: { signal: AbortSignal }) =>
+					new Promise((_resolve, reject) => {
+						signal = options.signal
+						options.signal.addEventListener("abort", () =>
+							reject(new DOMException("Aborted", "AbortError")),
+						)
+					}),
+			)
+			const provider = makeProvider()
+			const handling = webviewMessageHandler(provider, { type: "requestProviderQuotas", requestId: "q1" })
+			await vi.waitFor(() => expect(signal).toBeDefined())
+
+			abortProviderQuotaRequests(provider)
+			await handling
+
+			expect(signal?.aborted).toBe(true)
+			expect(provider.postMessageToWebview).not.toHaveBeenCalled()
+		})
+
+		it("does nothing for a provider with no requests in flight", () => {
+			expect(() => abortProviderQuotaRequests(makeProvider())).not.toThrow()
+		})
 	})
 
 	it("loads every saved profile and posts the formatted quotas back", async () => {

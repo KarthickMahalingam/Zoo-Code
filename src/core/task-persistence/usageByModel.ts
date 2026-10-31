@@ -25,6 +25,9 @@ export function summarizeUsageByModel(messages: ClineMessage[]): UsageByModelEnt
 			continue
 		}
 
+		// Valid JSON that is not an object ("null", a number, a string) has no fields to read.
+		if (typeof parsed !== "object" || parsed === null) continue
+
 		// A placeholder (request not finished) has no token counts yet.
 		if (typeof parsed.tokensIn !== "number" && typeof parsed.tokensOut !== "number") continue
 
