@@ -70,6 +70,28 @@ describe("webviewMessageHandler – requestProviderQuotas", () => {
 		).toEqual(["key-b", "key-a"])
 	})
 
+	it("passes the active profile's id on, so its own credentials are the ones queried", async () => {
+		const provider = makeProvider({
+			contextProxy: { getValue: vi.fn(() => "personal") },
+			providerSettingsManager: {
+				listConfig: vi.fn(async () => [
+					{ id: "a", name: "work" },
+					{ id: "b", name: "personal" },
+				]),
+				getProfile: vi.fn(async ({ id }: { id: string }) => ({
+					apiProvider: providerIdentifiers.openrouter,
+					id,
+				})),
+			},
+		})
+		await webviewMessageHandler(provider, { type: "requestProviderQuotas" })
+
+		expect(quotas.getProviderQuotas).toHaveBeenCalledWith(
+			expect.any(Array),
+			expect.objectContaining({ activeProfileId: "b" }),
+		)
+	})
+
 	it("reports a failure, not an empty list, when no saved profile can be read", async () => {
 		const provider = makeProvider({
 			providerSettingsManager: {

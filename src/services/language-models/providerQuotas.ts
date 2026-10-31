@@ -3,6 +3,7 @@ import {
 	type ProviderQuota,
 	type ProviderQuotaWindow,
 	type ProviderSettings,
+	type ProviderSettingsWithId,
 } from "@roo-code/types"
 
 import { getGitHubCopilotQuota } from "./copilotQuota"
@@ -485,7 +486,20 @@ type KeyedCredentials = ReturnType<KeyedProvider["credentials"]>
  * one pointed at a custom gateway, which is only a fallback (reported as
  * unsupported when nothing better exists).
  */
-function pickCredentials(provider: KeyedProvider, profiles: ProviderSettings[]): KeyedCredentials | undefined {
+function pickCredentials(
+	provider: KeyedProvider,
+	profiles: ProviderSettings[],
+	activeProfileId?: string,
+): KeyedCredentials | undefined {
+	// The active profile of this provider is the account the requests use: take its credentials as they are, so a
+	// keyless one is reported as no key and a custom gateway as unsupported, not replaced by a sibling profile.
+	const active = activeProfileId
+		? (profiles as ProviderSettingsWithId[]).find(
+				(p) => p.id === activeProfileId && p.apiProvider === provider.providerId,
+			)
+		: undefined
+	if (active) return provider.credentials(active)
+
 	const withKey = profiles
 		.filter((p) => p.apiProvider === provider.providerId)
 		.map(provider.credentials)
@@ -572,19 +586,37 @@ export interface ProfileSource {
 	getProfile(params: { id: string }): Promise<ProviderSettings>
 }
 
+/** How long one profile read may take. A read that never settles is skipped, so the others still produce a response. */
+const PROFILE_READ_TIMEOUT_MS = 10_000
+
+function readProfile(source: ProfileSource, id: string): Promise<ProviderSettings | undefined> {
+	return new Promise((resolve) => {
+		const timer = setTimeout(() => resolve(undefined), PROFILE_READ_TIMEOUT_MS)
+		source.getProfile({ id }).then(
+			(profile) => {
+				clearTimeout(timer)
+				resolve(profile)
+			},
+			() => {
+				clearTimeout(timer)
+				resolve(undefined)
+			},
+		)
+	})
+}
+
 /**
- * Loads full profiles (including API keys) host-side. A profile that fails to
- * load is skipped rather than failing the whole refresh, but if none of the saved
- * profiles can be read that is a failure, not "no connected providers". The active
- * profile (`activeName`) comes first, so a provider that has several profiles is
- * shown with the account the requests use. Keys never leave the extension host:
- * only formatted quota rows are posted to the webview.
+ * Loads full profiles (including API keys) host-side. A profile that fails to load, or takes too long, is skipped
+ * rather than failing the whole refresh, but if none of the saved profiles can be read that is a failure, not "no
+ * connected providers". The active profile (`activeName`) comes first, and its id is returned so that its own
+ * credentials are the ones queried for its provider. Keys never leave the extension host: only formatted quota rows
+ * are posted to the webview.
  */
-export async function loadProfiles(
+export async function loadProfilesWithActive(
 	source: ProfileSource,
 	signal?: AbortSignal,
 	activeName?: string,
-): Promise<ProviderSettings[]> {
+): Promise<{ profiles: ProviderSettings[]; activeProfileId?: string }> {
 	// Stops waiting as soon as `signal` aborts. The reads themselves cannot be cancelled, but the profile reads
 	// are not started once the list wait has been abandoned.
 	const listed = await until(source.listConfig(), signal, () => {})
@@ -594,14 +626,20 @@ export async function loadProfiles(
 				...listed.filter((entry) => entry.name !== activeName),
 			]
 		: listed
-	const profiles = await until(
-		Promise.all(entries.map((entry) => source.getProfile({ id: entry.id }).catch(() => undefined))),
-		signal,
-		() => {},
-	)
+	const profiles = await until(Promise.all(entries.map((entry) => readProfile(source, entry.id))), signal, () => {})
 	const loaded = profiles.filter((p): p is ProviderSettings => !!p)
 	if (entries.length > 0 && loaded.length === 0) throw new Error("None of the saved profiles could be read")
-	return loaded
+
+	const activeEntry = activeName ? listed.find((entry) => entry.name === activeName) : undefined
+	return { profiles: loaded, activeProfileId: activeEntry?.id }
+}
+
+export async function loadProfiles(
+	source: ProfileSource,
+	signal?: AbortSignal,
+	activeName?: string,
+): Promise<ProviderSettings[]> {
+	return (await loadProfilesWithActive(source, signal, activeName)).profiles
 }
 
 // Successful results only, per provider and URL set. A missing key, a sign-out or a
@@ -643,8 +681,9 @@ function quotaForKeyedProvider(
 	force: boolean,
 	fetchImpl: Fetch,
 	signal?: AbortSignal,
+	activeProfileId?: string,
 ): Promise<ProviderQuota> {
-	const creds = pickCredentials(provider, profiles)
+	const creds = pickCredentials(provider, profiles, activeProfileId)
 	const skipped = unqueryable(provider, creds)
 	if (skipped) return Promise.resolve(skipped)
 
@@ -701,7 +740,11 @@ function quotaForKeyedProvider(
  */
 export async function getProviderQuotas(
 	profiles: ProviderSettings[],
-	{ force = false, signal }: { force?: boolean; signal?: AbortSignal } = {},
+	{
+		force = false,
+		signal,
+		activeProfileId,
+	}: { force?: boolean; signal?: AbortSignal; activeProfileId?: string } = {},
 	fetchImpl: Fetch = fetch,
 ): Promise<ProviderQuota[]> {
 	const connected = new Set(profiles.map((p) => p.apiProvider).filter(Boolean) as string[])
@@ -710,7 +753,7 @@ export async function getProviderQuotas(
 	if (connected.has(providerIdentifiers.githubCopilot)) tasks.push(fetchCopilot(force, signal))
 	for (const provider of KEYED_PROVIDERS) {
 		if (connected.has(provider.providerId)) {
-			tasks.push(quotaForKeyedProvider(provider, profiles, force, fetchImpl, signal))
+			tasks.push(quotaForKeyedProvider(provider, profiles, force, fetchImpl, signal, activeProfileId))
 		}
 	}
 

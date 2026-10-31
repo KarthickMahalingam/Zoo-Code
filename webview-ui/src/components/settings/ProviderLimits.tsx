@@ -66,9 +66,13 @@ export const ProviderLimits = () => {
 			setLoading(false)
 		}
 		window.addEventListener("message", onMessage)
+		// A profile saved in another webview does not reach this one, so look again when it regains focus.
+		const onFocus = () => request(false)
+		window.addEventListener("focus", onFocus)
 		request(false)
 		return () => {
 			window.removeEventListener("message", onMessage)
+			window.removeEventListener("focus", onFocus)
 			// Tell the host nobody is waiting any more so it can stop the profile load and any fetches.
 			cancelLatest()
 		}

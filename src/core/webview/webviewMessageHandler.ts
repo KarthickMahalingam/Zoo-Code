@@ -1603,9 +1603,9 @@ export const webviewMessageHandler = async (
 			let providerQuotas: ProviderQuota[] = []
 			let providerQuotasFailed = false
 			try {
-				const { getProviderQuotas, loadProfiles } =
+				const { getProviderQuotas, loadProfilesWithActive } =
 					await import("../../services/language-models/providerQuotas")
-				const profiles = await loadProfiles(
+				const { profiles, activeProfileId } = await loadProfilesWithActive(
 					provider.providerSettingsManager,
 					controller.signal,
 					provider.contextProxy.getValue("currentApiConfigName"),
@@ -1613,6 +1613,7 @@ export const webviewMessageHandler = async (
 				providerQuotas = await getProviderQuotas(profiles, {
 					force: message.bool === true,
 					signal: controller.signal,
+					activeProfileId,
 				})
 			} catch (error) {
 				providerQuotasFailed = true

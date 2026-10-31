@@ -21,6 +21,7 @@ vi.mock("../copilotQuota", () => ({
 import {
 	getProviderQuotas,
 	loadProfiles,
+	loadProfilesWithActive,
 	parseDeepSeekBalance,
 	parseKimiCodeUsage,
 	parseMiniMaxRemains,
@@ -1069,6 +1070,86 @@ describe("getProviderQuotas", () => {
 	})
 })
 
+describe("the active profile decides which account is queried", () => {
+	beforeEach(() => resetProviderQuotaCache())
+
+	const okSpend = () => vi.fn(async () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
+
+	it("reports no key for an active profile without one, instead of using a sibling's key", async () => {
+		const fetchSpy = okSpend()
+		const [q] = await getProviderQuotas(
+			[
+				{ id: "active", apiProvider: providerIdentifiers.openrouter } as never,
+				{ id: "other", apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sibling-key" } as never,
+			],
+			{ activeProfileId: "active" },
+			fetchSpy,
+		)
+
+		expect(q).toMatchObject({ ok: false, reason: "noKey" })
+		expect(fetchSpy).not.toHaveBeenCalled()
+	})
+
+	it("reports a custom gateway as unsupported when the active profile uses one, not a sibling on the default host", async () => {
+		const fetchSpy = okSpend()
+		const [q] = await getProviderQuotas(
+			[
+				{
+					id: "active",
+					apiProvider: providerIdentifiers.deepseek,
+					deepSeekApiKey: "k1",
+					deepSeekBaseUrl: "https://gateway.example/v1",
+				} as never,
+				{ id: "other", apiProvider: providerIdentifiers.deepseek, deepSeekApiKey: "k2" } as never,
+			],
+			{ activeProfileId: "active" },
+			fetchSpy,
+		)
+
+		expect(q).toMatchObject({ ok: false, reason: "unsupported" })
+		expect(fetchSpy).not.toHaveBeenCalled()
+	})
+
+	it("queries with the active profile's key when a sibling also has one", async () => {
+		const fetchSpy = okSpend()
+		await getProviderQuotas(
+			[
+				{ id: "other", apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sibling-key" } as never,
+				{ id: "active", apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "active-key" } as never,
+			],
+			{ activeProfileId: "active" },
+			fetchSpy,
+		)
+
+		expect(fetchSpy).toHaveBeenCalledWith(
+			"https://openrouter.ai/api/v1/key",
+			expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer active-key" }) }),
+		)
+	})
+
+	it.each([
+		["there is no active profile", undefined],
+		["the active profile is for another provider", "elsewhere"],
+		["the active profile is not among the loaded ones", "gone"],
+	])("keeps the usual choice of profile when %s", async (_name, activeProfileId) => {
+		const fetchSpy = okSpend()
+		await getProviderQuotas(
+			[
+				{ id: "elsewhere", apiProvider: providerIdentifiers.anthropic } as never,
+				{ id: "keyless", apiProvider: providerIdentifiers.openrouter } as never,
+				{ id: "keyed", apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "the-key" } as never,
+			],
+			{ activeProfileId },
+			fetchSpy,
+		)
+
+		expect(fetchSpy).toHaveBeenCalledWith(
+			"https://openrouter.ai/api/v1/key",
+			expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer the-key" }) }),
+		)
+	})
+})
+
 describe("window names", () => {
 	beforeEach(() => resetProviderQuotaCache())
 
@@ -1191,6 +1272,64 @@ describe("loadProfiles", () => {
 			getProfile: vi.fn(async () => ({ apiProvider: "x" }) as never),
 		}
 		expect(await loadProfiles(source, undefined, "gone")).toEqual([{ apiProvider: "x" }])
+	})
+
+	it("returns the id of the active profile with the profiles", async () => {
+		const source = {
+			listConfig: vi.fn(async () => [
+				{ id: "a", name: "work" },
+				{ id: "b", name: "personal" },
+			]),
+			getProfile: vi.fn(async ({ id }: { id: string }) => ({ apiProvider: "x", id }) as never),
+		}
+
+		expect(await loadProfilesWithActive(source, undefined, "personal")).toMatchObject({ activeProfileId: "b" })
+		expect((await loadProfilesWithActive(source, undefined, "gone")).activeProfileId).toBeUndefined()
+		expect((await loadProfilesWithActive(source)).activeProfileId).toBeUndefined()
+	})
+
+	describe("a profile read that never settles", () => {
+		afterEach(() => vi.useRealTimers())
+
+		it("is skipped after the deadline, so the profiles that were read still produce a response", async () => {
+			vi.useFakeTimers()
+			const source = {
+				listConfig: vi.fn(async () => [{ id: "ok" }, { id: "stuck" }]),
+				getProfile: vi.fn(({ id }: { id: string }) =>
+					id === "stuck" ? new Promise<never>(() => {}) : Promise.resolve({ apiProvider: "x" } as never),
+				),
+			}
+
+			const loading = loadProfiles(source)
+			await vi.advanceTimersByTimeAsync(10_000)
+
+			expect(await loading).toEqual([{ apiProvider: "x" }])
+		})
+
+		it("fails when every read is stuck, instead of waiting for ever", async () => {
+			vi.useFakeTimers()
+			const source = {
+				listConfig: vi.fn(async () => [{ id: "a" }, { id: "b" }]),
+				getProfile: vi.fn(() => new Promise<never>(() => {})),
+			}
+
+			const loading = loadProfiles(source)
+			const settled = expect(loading).rejects.toThrow("None of the saved profiles could be read")
+			await vi.advanceTimersByTimeAsync(10_000)
+
+			await settled
+		})
+
+		it("does not wait for the deadline when the reads finish", async () => {
+			vi.useFakeTimers()
+			const source = {
+				listConfig: vi.fn(async () => [{ id: "a" }]),
+				getProfile: vi.fn(async () => ({ apiProvider: "x" }) as never),
+			}
+
+			expect(await loadProfiles(source)).toEqual([{ apiProvider: "x" }])
+			expect(vi.getTimerCount()).toBe(0)
+		})
 	})
 
 	it("stops waiting for the profile list when the signal aborts, and reads no profile", async () => {

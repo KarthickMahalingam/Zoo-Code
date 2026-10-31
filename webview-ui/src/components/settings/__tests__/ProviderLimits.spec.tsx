@@ -53,6 +53,35 @@ describe("ProviderLimits", () => {
 		})
 	})
 
+	describe("when the webview regains focus", () => {
+		const requests = () => post.mock.calls.map((c) => c[0]).filter((m) => m.type === "requestProviderQuotas")
+
+		it("asks again without forcing, so a profile saved elsewhere is picked up", () => {
+			render(<ProviderLimits />)
+			expect(requests()).toHaveLength(1)
+
+			act(() => {
+				window.dispatchEvent(new Event("focus"))
+			})
+
+			expect(requests()).toHaveLength(2)
+			expect(requests()[1]).toMatchObject({ bool: false })
+			expect(requests()[1].requestId).not.toBe(requests()[0].requestId)
+		})
+
+		it("stops listening once the section is gone", () => {
+			const { unmount } = render(<ProviderLimits />)
+			unmount()
+			post.mockClear()
+
+			act(() => {
+				window.dispatchEvent(new Event("focus"))
+			})
+
+			expect(requests()).toHaveLength(0)
+		})
+	})
+
 	describe("progress bars", () => {
 		it("names each bar with its provider and window, so two windows of one provider can be told apart", () => {
 			render(<ProviderLimits />)
