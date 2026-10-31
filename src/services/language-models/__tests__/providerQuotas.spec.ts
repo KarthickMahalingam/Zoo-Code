@@ -357,6 +357,16 @@ describe("parser edge cases", () => {
 		).toBe(95)
 	})
 
+	it("MiniMax: prefers a MiniMax-M row that reports a percentage over a chat row", () => {
+		const windows = parseMiniMaxRemains({
+			model_remains: [
+				{ model_name: "chat", current_interval_remaining_percent: 10 },
+				{ model_name: "MiniMax-M2", current_interval_remaining_percent: 80 },
+			],
+		})
+		expect(windows?.[0].usedPercent).toBe(20) // the M row's 80% left, not the chat row's 10% left
+	})
+
 	it("MiniMax: shows the 5-hour window with only a reset time, and with only a figure", () => {
 		expect(
 			parseMiniMaxRemains({ model_remains: [{ model_name: "MiniMax-M2", end_time: 1_800_000_000_000 }] }),
@@ -1058,6 +1068,25 @@ describe("getProviderQuotas", () => {
 		})
 	})
 
+	it("a failed request for one key does not remove the cached success of another key", async () => {
+		const ok = () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } }))
+		const fetchSpy = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) =>
+			String((init?.headers as Record<string, string>)?.Authorization).includes("sk-two")
+				? new Response("", { status: 500 })
+				: ok(),
+		)
+		const one = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk-one" } as never]
+		const two = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk-two" } as never]
+
+		await getProviderQuotas(one, {}, fetchSpy) // cached for sk-one
+		const [failed] = await getProviderQuotas(two, {}, fetchSpy) // fails for sk-two
+		expect(failed).toMatchObject({ ok: false })
+		const [again] = await getProviderQuotas(one, {}, fetchSpy)
+
+		expect(again).toMatchObject({ ok: true })
+		expect(fetchSpy).toHaveBeenCalledTimes(2) // the third call came from the cache
+	})
+
 	it("caches results for the same set of providers unless forced", async () => {
 		const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 5 } })))
 		const profiles = [{ apiProvider: providerIdentifiers.openrouter, openRouterApiKey: "sk" } as never]
@@ -1321,6 +1350,31 @@ describe("loadProfiles", () => {
 			await vi.advanceTimersByTimeAsync(10_000)
 
 			await settled
+		})
+
+		it("fails when the list of saved profiles never arrives, instead of waiting for ever", async () => {
+			vi.useFakeTimers()
+			const source = { listConfig: vi.fn(() => new Promise<never>(() => {})), getProfile: vi.fn() }
+
+			const loading = loadProfiles(source)
+			const settled = expect(loading).rejects.toThrow("Reading the saved profiles timed out")
+			await vi.advanceTimersByTimeAsync(10_000)
+
+			await settled
+			expect(source.getProfile).not.toHaveBeenCalled()
+		})
+
+		it("passes a failure of the list read on as it is, and clears its timer", async () => {
+			vi.useFakeTimers()
+			const source = {
+				listConfig: vi.fn(async () => {
+					throw new Error("storage unavailable")
+				}),
+				getProfile: vi.fn(),
+			}
+
+			await expect(loadProfiles(source)).rejects.toThrow("storage unavailable")
+			expect(vi.getTimerCount()).toBe(0)
 		})
 
 		it("does not wait for the deadline when the reads finish", async () => {

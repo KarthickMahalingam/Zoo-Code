@@ -219,7 +219,12 @@ export function parseMiniMaxRemains(payload: unknown, isTokenPlan = true): Provi
 	const rows = remains.map(asRecord).filter((r): r is Record<string, unknown> => !!r)
 	const name = (r: Record<string, unknown>) => (typeof r.model_name === "string" ? r.model_name : "")
 	const model =
-		rows.find((r) => /^minimax-m/i.test(name(r)) && (toNumber(r.current_interval_total_count) ?? 0) > 0) ??
+		rows.find(
+			(r) =>
+				/^minimax-m/i.test(name(r)) &&
+				((toNumber(r.current_interval_total_count) ?? 0) > 0 ||
+					typeof r.current_interval_remaining_percent === "number"),
+		) ??
 		rows.find((r) => ["general", "chat", "text"].includes(name(r).toLowerCase())) ??
 		rows.find((r) => typeof r.current_interval_remaining_percent === "number") ??
 		rows[0]
@@ -589,6 +594,23 @@ export interface ProfileSource {
 /** How long one profile read may take. A read that never settles is skipped, so the others still produce a response. */
 const PROFILE_READ_TIMEOUT_MS = 10_000
 
+/** Rejects with `message` if `work` has not settled within `ms`. */
+function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(message)), ms)
+		work.then(
+			(value) => {
+				clearTimeout(timer)
+				resolve(value)
+			},
+			(error: unknown) => {
+				clearTimeout(timer)
+				reject(error)
+			},
+		)
+	})
+}
+
 function readProfile(source: ProfileSource, id: string): Promise<ProviderSettings | undefined> {
 	return new Promise((resolve) => {
 		const timer = setTimeout(() => resolve(undefined), PROFILE_READ_TIMEOUT_MS)
@@ -619,7 +641,11 @@ export async function loadProfilesWithActive(
 ): Promise<{ profiles: ProviderSettings[]; activeProfileId?: string }> {
 	// Stops waiting as soon as `signal` aborts. The reads themselves cannot be cancelled, but the profile reads
 	// are not started once the list wait has been abandoned.
-	const listed = await until(source.listConfig(), signal, () => {})
+	const listed = await until(
+		withDeadline(source.listConfig(), PROFILE_READ_TIMEOUT_MS, "Reading the saved profiles timed out"),
+		signal,
+		() => {},
+	)
 	const entries = activeName
 		? [
 				...listed.filter((entry) => entry.name === activeName),
@@ -696,8 +722,9 @@ function quotaForKeyedProvider(
 				if (!controller.signal.aborted) {
 					if (result.ok) {
 						cache.set(key, { at: Date.now(), apiKey, result })
-					} else {
-						// A failed refresh must not leave an older success to be served as if it were current.
+					} else if (cache.get(key)?.apiKey === apiKey) {
+						// A failed refresh must not leave an older success of this key to be served as if it were
+						// current. A success cached for another key is not this request's to remove.
 						cache.delete(key)
 					}
 				}

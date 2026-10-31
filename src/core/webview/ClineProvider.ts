@@ -1058,6 +1058,8 @@ export class ClineProvider
 				} else {
 					this.log("Clearing webview resources for sidebar view")
 					this.view = undefined
+					// The view that asked for provider limits is gone: stop fetching them.
+					abortProviderQuotaRequests(this)
 					this.clearWebviewResources()
 				}
 			},
