@@ -2,6 +2,7 @@ import {
 	TRACKED_SETTING_KEYS,
 	beginSettingWrite,
 	finishSettingWrites,
+	forgetSettingStore,
 	isTrackedSetting,
 	noteSettingStored,
 	performSettingWrite,
@@ -304,6 +305,19 @@ describe("settingWrites", () => {
 			await undoSettingWrite(contextProxy, first)
 
 			expect(stored.get("timeFormat")).toBe("auto")
+		})
+	})
+
+	describe("noteSettingStored and forgetSettingStore", () => {
+		it("count a store of a tracked key only, and never go below zero", () => {
+			expect(noteSettingStored("soundEnabled")).toBe(false)
+			expect(noteSettingStored("timeFormat")).toBe(true)
+
+			forgetSettingStore("soundEnabled") // not tracked: ignored
+			forgetSettingStore("timeFormat")
+			forgetSettingStore("timeFormat") // nothing left to forget
+			expect(noteSettingStored("timeFormat")).toBe(true)
+			forgetSettingStore("timeFormat")
 		})
 	})
 

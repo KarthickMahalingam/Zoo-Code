@@ -158,6 +158,25 @@ describe("ContextProxy", () => {
 	})
 
 	describe("updateGlobalState", () => {
+		it("does not count a store of a tracked setting that was rejected, so a rollback still happens", async () => {
+			await proxy.setValue("timeFormat", "auto")
+			const write = beginSettingWrite("timeFormat", "auto", "24h")
+			await performSettingWrite(proxy, write)
+			mockGlobalState.update.mockRejectedValueOnce(new Error("storage unavailable"))
+
+			await expect(proxy.setValue("timeFormat", "24h")).rejects.toThrow("storage unavailable")
+			await undoSettingWrite(proxy, write)
+
+			expect(mockGlobalState.update).toHaveBeenLastCalledWith("timeFormat", "auto")
+			finishSettingWrites([write])
+		})
+
+		it("rejects with the original error, and only a tracked setting's store is wrapped", async () => {
+			mockGlobalState.update.mockRejectedValueOnce(new Error("untracked failure"))
+
+			await expect(proxy.updateGlobalState("apiProvider", "deepseek")).rejects.toThrow("untracked failure")
+		})
+
 		it.each([
 			["setValue", (p: ContextProxy) => p.setValue("timeFormat", "24h")],
 			["setValues", (p: ContextProxy) => p.setValues({ timeFormat: "24h" })],

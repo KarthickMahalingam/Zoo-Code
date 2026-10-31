@@ -23,7 +23,7 @@ import { TelemetryService } from "@roo-code/telemetry"
 import { logger } from "../../utils/logging"
 import { supportPrompt } from "../../shared/support-prompt"
 import { downgradeLegacyRooConfig } from "./routerRemoval"
-import { noteSettingStored } from "./settingWrites"
+import { forgetSettingStore, noteSettingStored } from "./settingWrites"
 
 type GlobalStateKey = keyof GlobalState
 type SecretStateKey = keyof SecretState
@@ -362,13 +362,21 @@ export class ContextProxy {
 	}
 
 	updateGlobalState<K extends GlobalStateKey>(key: K, value: GlobalState[K]) {
-		noteSettingStored(key)
+		const counted = noteSettingStored(key)
+
 		if (isPassThroughStateKey(key)) {
 			return this.originalContext.globalState.update(key, value)
 		}
 
 		this.stateCache[key] = value
-		return this.originalContext.globalState.update(key, value)
+		const updated = this.originalContext.globalState.update(key, value)
+		if (!counted) return updated
+
+		// A rejected store never reached storage, so a rollback must not treat it as someone else's store.
+		return Promise.resolve(updated).catch((error: unknown) => {
+			forgetSettingStore(key)
+			throw error
+		})
 	}
 
 	private getAllGlobalState(): GlobalState {

@@ -61,9 +61,19 @@ const storeHere = <T>(key: TrackedSettingKey, store: () => T): T => {
 	}
 }
 
-/** `ContextProxy` calls this, synchronously, each time a setting is stored. */
-export const noteSettingStored = (key: string) => {
-	if (isTrackedSetting(key) && key !== ownStoreOf) storedByOthersCount.set(key, storedByOthers(key) + 1)
+/**
+ * `ContextProxy` calls this, synchronously, each time a setting is stored. Returns true when the store was counted as
+ * one made by someone else; if that store is then rejected, the caller reports it with `forgetSettingStore`.
+ */
+export const noteSettingStored = (key: string): boolean => {
+	if (!isTrackedSetting(key) || key === ownStoreOf) return false
+	storedByOthersCount.set(key, storedByOthers(key) + 1)
+	return true
+}
+
+/** A store counted by `noteSettingStored` was rejected: it never reached storage, so it is not a store to protect. */
+export const forgetSettingStore = (key: string) => {
+	if (isTrackedSetting(key)) storedByOthersCount.set(key, Math.max(0, storedByOthers(key) - 1))
 }
 
 /** Records a write that is about to be made, as the latest one of its key. */
