@@ -309,7 +309,8 @@ describe("settingWrites", () => {
 	})
 
 	describe("noteSettingStored and forgetSettingStore", () => {
-		it("number the stores of a tracked key only, and tolerate a store that is not known", () => {
+		it("number the stores of a tracked key made while a write of it is pending, and tolerate an unknown one", async () => {
+			const write = beginSettingWrite("timeFormat", "auto", "24h")
 			expect(noteSettingStored("soundEnabled")).toBeUndefined()
 			const first = noteSettingStored("timeFormat")
 			const second = noteSettingStored("timeFormat")
@@ -321,6 +322,22 @@ describe("settingWrites", () => {
 			forgetSettingStore("timeFormat", first as number)
 			forgetSettingStore("timeFormat", first as number) // already forgotten
 			forgetSettingStore("timeFormat", second as number)
+			finishSettingWrites([write])
+		})
+
+		it("keeps nothing for a store made while no write of the key is pending", () => {
+			expect(noteSettingStored("timeFormat")).toBeUndefined()
+			expect(noteSettingStored("dateFormat")).toBeUndefined()
+		})
+
+		it("does not let stores made before a write stored block its rollback, nor grow without a write", async () => {
+			for (let i = 0; i < 1000; i++) noteSettingStored("timeFormat") // no write pending: nothing is recorded
+
+			const write = beginSettingWrite("timeFormat", "auto", "24h")
+			await performSettingWrite(contextProxy, write)
+			await undoSettingWrite(contextProxy, write)
+
+			expect(stored.get("timeFormat")).toBe("auto")
 		})
 
 		it("a rejected store cancels only itself, not a store made by someone else after it", async () => {

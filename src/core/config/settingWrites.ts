@@ -78,11 +78,13 @@ const storeHere = <T>(key: TrackedSettingKey, store: () => T): T => {
 
 /**
  * `ContextProxy` calls this, synchronously, each time a setting is stored. Returns the number of the store when it was
- * counted as one made by someone else; if that store is then rejected, the caller reports it with
+ * counted as one made by someone else (only while a write of the key is pending); if that store is then rejected, the caller reports it with
  * `forgetSettingStore`.
  */
 export const noteSettingStored = (key: string): number | undefined => {
-	if (!isTrackedSetting(key) || key === ownStoreOf) return undefined
+	// Only a store that a pending write could be mistaken for matters, so nothing is kept while no write of the key is
+	// pending: the set stays as small as the writes that are in flight, however often others store the key.
+	if (!isTrackedSetting(key) || key === ownStoreOf || !lastWriteOfSetting.has(key)) return undefined
 	const seq = ++storeClockValue
 	othersStores.set(key, (othersStores.get(key) ?? new Set<number>()).add(seq))
 	return seq
