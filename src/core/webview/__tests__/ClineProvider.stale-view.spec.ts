@@ -132,6 +132,7 @@ vi.mock("../../../integrations/theme/getTheme", () => ({
 
 vi.mock("../webviewMessageHandler", () => ({
 	webviewMessageHandler: vi.fn().mockResolvedValue(undefined),
+	abortProviderQuotaRequests: vi.fn(),
 }))
 
 type ProviderState = Awaited<ReturnType<ClineProvider["getState"]>>

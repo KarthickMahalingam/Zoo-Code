@@ -20,7 +20,6 @@ vi.mock("../copilotQuota", () => ({
 
 import {
 	getProviderQuotas,
-	loadProfiles,
 	loadProfilesWithActive,
 	parseDeepSeekBalance,
 	parseKimiCodeUsage,
@@ -1206,6 +1205,10 @@ describe("window names", () => {
 		expect(counted.ok && counted.windows[0]).not.toHaveProperty("name")
 	})
 })
+
+/** The profiles only: most of these tests do not look at the active profile's id. */
+const loadProfiles = async (...args: Parameters<typeof loadProfilesWithActive>) =>
+	(await loadProfilesWithActive(...args)).profiles
 
 describe("loadProfiles", () => {
 	it("loads every saved profile through the manager, with keys", async () => {

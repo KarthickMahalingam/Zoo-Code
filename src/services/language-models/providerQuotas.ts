@@ -634,14 +634,6 @@ export async function loadProfilesWithActive(
 	return { profiles: loaded, activeProfileId: activeEntry?.id }
 }
 
-export async function loadProfiles(
-	source: ProfileSource,
-	signal?: AbortSignal,
-	activeName?: string,
-): Promise<ProviderSettings[]> {
-	return (await loadProfilesWithActive(source, signal, activeName)).profiles
-}
-
 // Successful results only, per provider and URL set. A missing key, a sign-out or a
 // transient error is never pinned, so fixing it shows up on the next open instead of
 // after the TTL. An entry is reused only for the exact key it was fetched with, so
