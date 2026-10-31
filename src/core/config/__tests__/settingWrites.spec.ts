@@ -309,15 +309,32 @@ describe("settingWrites", () => {
 	})
 
 	describe("noteSettingStored and forgetSettingStore", () => {
-		it("count a store of a tracked key only, and never go below zero", () => {
-			expect(noteSettingStored("soundEnabled")).toBe(false)
-			expect(noteSettingStored("timeFormat")).toBe(true)
+		it("number the stores of a tracked key only, and tolerate a store that is not known", () => {
+			expect(noteSettingStored("soundEnabled")).toBeUndefined()
+			const first = noteSettingStored("timeFormat")
+			const second = noteSettingStored("timeFormat")
+			expect(first).toEqual(expect.any(Number))
+			expect(second).toBeGreaterThan(first as number)
 
-			forgetSettingStore("soundEnabled") // not tracked: ignored
-			forgetSettingStore("timeFormat")
-			forgetSettingStore("timeFormat") // nothing left to forget
-			expect(noteSettingStored("timeFormat")).toBe(true)
-			forgetSettingStore("timeFormat")
+			forgetSettingStore("soundEnabled", 1) // not tracked: ignored
+			forgetSettingStore("dateFormat", 1) // nothing recorded for the key
+			forgetSettingStore("timeFormat", first as number)
+			forgetSettingStore("timeFormat", first as number) // already forgotten
+			forgetSettingStore("timeFormat", second as number)
+		})
+
+		it("a rejected store cancels only itself, not a store made by someone else after it", async () => {
+			const write = beginSettingWrite("timeFormat", "auto", "24h")
+			await performSettingWrite(contextProxy, write)
+			const rejected = noteSettingStored("timeFormat") as number // an outside store, still pending
+			const later = noteSettingStored("timeFormat") as number // another outside store, which lands
+			void later
+			forgetSettingStore("timeFormat", rejected) // the first one is rejected
+
+			await undoSettingWrite(contextProxy, write)
+
+			// The later store is not forgotten: the failed write leaves the value alone.
+			expect(stored.get("timeFormat")).toBe("24h")
 		})
 	})
 

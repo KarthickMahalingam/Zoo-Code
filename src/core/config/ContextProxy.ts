@@ -362,7 +362,7 @@ export class ContextProxy {
 	}
 
 	updateGlobalState<K extends GlobalStateKey>(key: K, value: GlobalState[K]) {
-		const counted = noteSettingStored(key)
+		const storeNumber = noteSettingStored(key)
 
 		if (isPassThroughStateKey(key)) {
 			return this.originalContext.globalState.update(key, value)
@@ -370,11 +370,11 @@ export class ContextProxy {
 
 		this.stateCache[key] = value
 		const updated = this.originalContext.globalState.update(key, value)
-		if (!counted) return updated
+		if (storeNumber === undefined) return updated
 
 		// A rejected store never reached storage, so a rollback must not treat it as someone else's store.
 		return Promise.resolve(updated).catch((error: unknown) => {
-			forgetSettingStore(key)
+			forgetSettingStore(key, storeNumber)
 			throw error
 		})
 	}
