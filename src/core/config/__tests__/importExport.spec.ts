@@ -339,7 +339,52 @@ describe("importExport", () => {
 				expect(stored.get("interfaceFontScale")).toBe(120)
 			})
 
-			it("finishes its writes, and reports the failure, when a write fails", async () => {
+			it("undoes a write that failed, so an earlier save still pending keeps its own rollback", async () => {
+				const proxy = mockContextProxy as unknown as ContextProxy
+				const save = beginSettingWrite("interfaceFontScale", 100, 150)
+				await performSettingWrite(proxy, save) // a save has stored 150 and is still pending
+
+				mockContextProxy.setValue.mockImplementation((async (key: string, value: unknown) => {
+					if (value === 120) throw new Error("storage unavailable") // the import's write fails
+					stored.set(key, value)
+				}) as unknown as typeof mockContextProxy.setValue)
+				const result = await importWith({ interfaceFontScale: 120 })
+				expect(result).toEqual({ success: false, error: "storage unavailable" })
+
+				await undoSettingWrite(proxy, save) // the save fails afterwards
+
+				expect(stored.get("interfaceFontScale")).toBe(100)
+				expect(settingWriteBookkeepingSize()).toEqual({ latestWrites: 0, queuedKeys: 0 })
+			})
+
+			it("puts back a value that was stored before its write failed, and still reports the failure", async () => {
+				mockContextProxy.setValue.mockImplementation((async (key: string, value: unknown) => {
+					stored.set(key, value)
+					if (value === 120) throw new Error("failed after storing")
+				}) as unknown as typeof mockContextProxy.setValue)
+
+				const result = await importWith({ interfaceFontScale: 120 })
+
+				expect(result).toEqual({ success: false, error: "failed after storing" })
+				expect(stored.get("interfaceFontScale")).toBe(100)
+			})
+
+			it("reports the failure even when putting a value back fails as well", async () => {
+				const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+				mockContextProxy.setValue.mockImplementation((async (key: string, value: unknown) => {
+					if (value === 100) throw new Error("restore failed")
+					stored.set(key, value)
+					if (value === 120) throw new Error("failed after storing")
+				}) as unknown as typeof mockContextProxy.setValue)
+
+				const result = await importWith({ interfaceFontScale: 120 })
+
+				expect(result).toEqual({ success: false, error: "failed after storing" })
+				expect(consoleError).toHaveBeenCalled()
+				consoleError.mockRestore()
+			})
+
+			it("leaves nothing in the chain, and reports the failure, when a write fails", async () => {
 				mockContextProxy.setValue.mockRejectedValue(new Error("storage unavailable"))
 
 				const result = await importWith({ interfaceFontScale: 120 })

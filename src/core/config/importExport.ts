@@ -25,6 +25,7 @@ import {
 	finishSettingWrites,
 	isAppearanceSetting,
 	performSettingWrite,
+	undoSettingWrite,
 } from "./appearanceSettingWrites"
 import { downgradeLegacyRooConfig, ROUTER_REMOVAL_IMPORT_WARNING } from "./routerRemoval"
 import { resolveDefaultSaveUri, saveLastExportPath } from "../../utils/export"
@@ -274,7 +275,9 @@ export async function importSettingsFromPath(
 /**
  * Writes global settings. The appearance values go through the same per-key write chain as saves, so a save that
  * fails and rolls back does not undo a value the import stored meanwhile, even when it is the same value. The import
- * itself is not rolled back, as before: its writes are final once they have been stored or have failed.
+ * is not rolled back as a whole, as before: a write that succeeded is final. A write that failed is undone, not
+ * finished, so it leaves the chain the way a failed save does and an earlier save that is still pending keeps its own
+ * rollback.
  */
 async function setValuesThroughWriteChain(contextProxy: ContextProxy, settings: GlobalSettings) {
 	const keys = APPEARANCE_SETTING_KEYS.filter((key) => key in settings)
@@ -285,15 +288,28 @@ async function setValuesThroughWriteChain(contextProxy: ContextProxy, settings: 
 		Object.entries(settings).filter(([key]) => !isAppearanceSetting(key)),
 	) as GlobalSettings
 
-	// Every write is awaited before the writes are finished, so none is still running when it leaves the chain.
-	const results = await Promise.allSettled([
+	// Every write is awaited before any is finished or undone, so none is still running when it leaves the chain.
+	const [othersResult, ...writeResults] = await Promise.allSettled([
 		contextProxy.setValues(others),
 		...writes.map((write) => performSettingWrite(contextProxy, write)),
 	])
-	finishSettingWrites(writes)
 
-	const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
-	if (failed) throw failed.reason
+	let failure = othersResult.status === "rejected" ? othersResult : undefined
+	for (const [index, write] of writes.entries()) {
+		const result = writeResults[index]
+		if (result.status === "fulfilled") {
+			finishSettingWrites([write])
+			continue
+		}
+		failure ??= result
+		try {
+			await undoSettingWrite(contextProxy, write)
+		} catch (restoreError) {
+			console.error(`Failed to restore setting "${write.key}" after import failure:`, restoreError)
+		}
+	}
+
+	if (failure) throw failure.reason
 }
 
 /**
